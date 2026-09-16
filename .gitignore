@@ -1,0 +1,13 @@
+# Dependencies & Build Artifacts
+node_modules/
+dist/
+.turbo/
+
+# Tauri Rust target
+src-tauri/target/
+target/
+
+# Logs & Environment
+*.log
+.env.local
+.env.*.local
