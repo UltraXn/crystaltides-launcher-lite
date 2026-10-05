@@ -1,9 +1,10 @@
 import React from 'react';
 import { X, Sparkles, Heart, Globe } from 'lucide-react';
 import { DiscordIcon } from '../icons/DiscordIcon';
-import { useLauncherStore, launcherActions, LauncherState } from '../../store/launcherStore';
+import { useLauncherStore, launcherActions, LauncherState, useT } from '../../store/launcherStore';
 
 export const AboutModal: React.FC = () => {
+  const t = useT();
   const activeModal = useLauncherStore((s: LauncherState) => s.activeModal);
 
   if (activeModal !== 'about') return null;
@@ -12,7 +13,7 @@ export const AboutModal: React.FC = () => {
     <div className="papyrus-modal-overlay">
       <button
         type="button"
-        aria-label="Cerrar modal"
+        aria-label={t.settings.close}
         tabIndex={-1}
         style={{
           position: 'absolute',
@@ -36,8 +37,8 @@ export const AboutModal: React.FC = () => {
           type="button"
           onClick={launcherActions.closeModal}
           className="settings-card-close"
-          title="Cerrar"
-          aria-label="Cerrar"
+          title={t.settings.close}
+          aria-label={t.settings.close}
         >
           <X style={{ width: '16px', height: '16px' }} />
         </button>
@@ -45,10 +46,10 @@ export const AboutModal: React.FC = () => {
         {/* Title */}
         <div className="settings-header-block">
           <h2 id="about-modal-title" className="settings-main-title">
-            About CrystalTides
+            {t.about.title}
           </h2>
           <p style={{ fontSize: '12px', color: '#94a3b8', fontFamily: 'var(--font-inter)' }}>
-            Launcher Lite Edition • High Performance Client
+            {t.about.tagline}
           </p>
         </div>
 
@@ -56,30 +57,29 @@ export const AboutModal: React.FC = () => {
         <div className="about-highlight-box">
           <div className="about-highlight-title">
             <Sparkles style={{ width: '16px', height: '16px', color: '#22c55e' }} />
-            <span>Experiencia Ultraligera</span>
+            <span>{t.about.highlightTitle}</span>
           </div>
           <p className="about-highlight-desc">
-            Diseñado para arrancar en menos de 100ms, consumir menos de 30MB de memoria y proteger
-            tus credenciales con cifrado militar AES-256-GCM.
+            {t.about.highlightDesc}
           </p>
         </div>
 
         {/* System Specs Grid */}
         <div className="about-specs-grid">
           <div className="spec-tile">
-            <span className="spec-title">MOTOR</span>
+            <span className="spec-title">{t.about.specEngine}</span>
             <span className="spec-value">Tauri v2 + React 19</span>
           </div>
           <div className="spec-tile">
-            <span className="spec-title">SEGURIDAD</span>
+            <span className="spec-title">{t.about.specSecurity}</span>
             <span className="spec-value green">AES-256-GCM</span>
           </div>
           <div className="spec-tile">
-            <span className="spec-title">SERVIDOR</span>
-            <span className="spec-value">play.crystaltides.net</span>
+            <span className="spec-title">{t.about.specServer}</span>
+            <span className="spec-value">mc.crystaltidessmp.net</span>
           </div>
           <div className="spec-tile">
-            <span className="spec-title">VERSIÓN</span>
+            <span className="spec-title">{t.about.specVersion}</span>
             <span className="spec-value">1.0.0-lite</span>
           </div>
         </div>
@@ -87,7 +87,7 @@ export const AboutModal: React.FC = () => {
         {/* Footer info & Links */}
         <div className="about-footer-row">
           <span className="about-credit-text">
-            Desarrollado con{' '}
+            {t.about.developedWith}{' '}
             <Heart
               style={{
                 width: '12px',
@@ -97,7 +97,7 @@ export const AboutModal: React.FC = () => {
                 display: 'inline',
               }}
             />{' '}
-            para la comunidad
+            {t.about.forCommunity}
           </span>
 
           <div className="about-footer-links">

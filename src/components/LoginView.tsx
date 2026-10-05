@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X, ArrowRight, Loader2, Globe } from 'lucide-react';
 import { DiscordIcon } from './icons/DiscordIcon';
 import { launcherActions } from '../store/launcherStore';
+import { validateMinecraftUsername, generateOfflineUuid } from '../services/offlineAuth';
 
 const YoutubeIcon: React.FC<{ style?: React.CSSProperties }> = ({ style }) => (
   <svg style={style} viewBox="0 0 24 24" fill="currentColor">
@@ -61,11 +62,12 @@ export const LoginView: React.FC = () => {
     }
   };
 
-  // Direct login / Offline username login
+  // Direct login / Offline username login (No-Premium)
   const handleDirectLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!username.trim()) {
-      setErrorMsg('Por favor, introduce tu nombre de usuario.');
+    const val = validateMinecraftUsername(username);
+    if (!val.valid) {
+      setErrorMsg(val.error || 'Por favor, introduce un nombre de usuario válido (3 a 16 caracteres).');
       return;
     }
 
@@ -73,10 +75,13 @@ export const LoginView: React.FC = () => {
       setIsLoggingIn(true);
       setErrorMsg(null);
 
+      const cleanName = username.trim();
+      const offlineUuid = generateOfflineUuid(cleanName);
+
       const userAccount = {
-        id: `user_${Date.now()}`,
-        username: username.trim(),
-        uuid: '00000000-0000-0000-0000-000000000000',
+        id: `guest_${cleanName.toLowerCase()}`,
+        username: cleanName,
+        uuid: offlineUuid,
         type: 'guest' as const,
         lastUsed: Date.now(),
       };
@@ -100,9 +105,9 @@ export const LoginView: React.FC = () => {
 
         {/* Card Header */}
         <div className="login-header-text">
-          <h1 className="login-main-title">Welcome!</h1>
+          <h1 className="login-main-title">CrystalTides</h1>
           <p className="login-sub-title">
-            Are you new here? <span className="login-link-highlight">Sign in!</span>
+            Inicia sesión con tu apodo <span className="login-link-highlight">No-Premium</span> o Microsoft
           </p>
         </div>
 
@@ -114,20 +119,25 @@ export const LoginView: React.FC = () => {
           <div className="login-fields-col">
             <input
               type="text"
-              placeholder="Username"
+              placeholder="Tu Apodo / Nickname (No-Premium)"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               className="login-text-input"
-              maxLength={24}
+              maxLength={16}
+              autoFocus
             />
 
             <input
               type="password"
-              placeholder="Password"
+              placeholder="Contraseña (Opcional)"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="login-text-input"
             />
+          </div>
+
+          <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '-4px', textAlign: 'left' }}>
+            Modo Offline / No-Premium activo (No requiere contraseña para ingresar).
           </div>
 
           {/* Remember Account Checkbox */}
@@ -138,7 +148,7 @@ export const LoginView: React.FC = () => {
               onChange={(e) => setRememberAccount(e.target.checked)}
               className="login-custom-checkbox"
             />
-            <span className="login-checkbox-text">Remember this account.</span>
+            <span className="login-checkbox-text">Recordar este apodo.</span>
           </label>
 
           {/* Solid Green Continue Button */}
@@ -147,7 +157,7 @@ export const LoginView: React.FC = () => {
               <Loader2 className="login-btn-spinner" />
             ) : (
               <>
-                Continue <ArrowRight style={{ width: '16px', height: '16px', strokeWidth: 2.5 }} />
+                Entrar a Jugar <ArrowRight style={{ width: '16px', height: '16px', strokeWidth: 2.5 }} />
               </>
             )}
           </button>

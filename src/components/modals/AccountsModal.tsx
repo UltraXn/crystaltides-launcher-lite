@@ -15,9 +15,12 @@ import {
   launcherActions,
   LauncherState,
   UserAccount,
+  useT,
 } from '../../store/launcherStore';
+import { validateMinecraftUsername, generateOfflineUuid } from '../../services/offlineAuth';
 
 export const AccountsModal: React.FC = () => {
+  const t = useT();
   const activeModal = useLauncherStore((s: LauncherState) => s.activeModal);
   const accounts = useLauncherStore((s: LauncherState) => s.accounts);
   const activeAccountId = useLauncherStore((s: LauncherState) => s.activeAccountId);
@@ -58,12 +61,16 @@ export const AccountsModal: React.FC = () => {
 
   const handleCreateGuest = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newUsername.trim()) return;
+    const clean = newUsername.trim();
+    const val = validateMinecraftUsername(clean);
+    if (!val.valid) return;
+
+    const offlineUuid = generateOfflineUuid(clean);
 
     await launcherActions.addAccount({
-      id: `guest_${Date.now()}`,
-      username: newUsername.trim(),
-      uuid: '00000000-0000-0000-0000-000000000000',
+      id: `guest_${clean.toLowerCase()}`,
+      username: clean,
+      uuid: offlineUuid,
       skinUrl: newSkinUrl,
       type: 'guest',
       lastUsed: Date.now(),
@@ -143,8 +150,8 @@ export const AccountsModal: React.FC = () => {
           type="button"
           onClick={launcherActions.closeModal}
           className="settings-card-close"
-          title="Cerrar"
-          aria-label="Cerrar"
+          title={t.settings.close}
+          aria-label={t.settings.close}
         >
           <X style={{ width: '16px', height: '16px' }} />
         </button>
@@ -152,10 +159,10 @@ export const AccountsModal: React.FC = () => {
         {/* Title */}
         <div className="settings-header-block">
           <h2 id="accounts-modal-title" className="settings-main-title">
-            Accounts
+            {t.accounts.title}
           </h2>
           <p style={{ fontSize: '12px', color: '#94a3b8', fontFamily: 'var(--font-inter)' }}>
-            Gestiona tus perfiles, credenciales seguras y personaliza tu skin
+            {t.accounts.subtitle}
           </p>
         </div>
 
@@ -167,7 +174,7 @@ export const AccountsModal: React.FC = () => {
               <div
                 role="button"
                 tabIndex={0}
-                aria-label={`Seleccionar cuenta ${acc.username}`}
+                aria-label={`${t.accounts.select} ${acc.username}`}
                 key={acc.id}
                 onClick={() => launcherActions.setActiveAccount(acc.id)}
                 onKeyDown={(e) => {
@@ -179,7 +186,7 @@ export const AccountsModal: React.FC = () => {
                 className={`account-row-item ${isActive ? 'active' : ''}`}
               >
                 <div className="account-row-left">
-                  <div className="account-skin-head" title="Click para editar o subir skin">
+                  <div className="account-skin-head" title={t.accounts.uploadSkinTitle}>
                     {acc.skinUrl ? (
                       <img src={acc.skinUrl} alt="Skin" className="skin-head-img" />
                     ) : acc.uuid && acc.uuid !== '00000000-0000-0000-0000-000000000000' ? (
@@ -195,10 +202,14 @@ export const AccountsModal: React.FC = () => {
                   <div className="account-details-col">
                     <div className="account-username-row">
                       <span className="account-username">{acc.username}</span>
-                      {isActive && <span className="account-active-tag">ACTIVO</span>}
+                      {isActive && (
+                        <span className="account-active-tag">{t.accounts.activeTag}</span>
+                      )}
                     </div>
                     <span className="account-type-sub">
-                      {acc.type === 'microsoft' ? 'Microsoft Authenticated' : 'Cuenta Offline'}
+                      {acc.type === 'microsoft'
+                        ? t.accounts.microsoftAuth
+                        : t.accounts.offlineAccount}
                     </span>
                   </div>
                 </div>
@@ -212,7 +223,7 @@ export const AccountsModal: React.FC = () => {
                     }}
                     className="account-delete-btn"
                     style={{ color: '#22c55e', borderColor: 'rgba(34, 197, 94, 0.25)' }}
-                    title="Subir o cambiar Skin (.png)"
+                    title={t.accounts.uploadSkinTitle}
                   >
                     <Upload style={{ width: '13px', height: '13px' }} />
                   </button>
@@ -228,7 +239,7 @@ export const AccountsModal: React.FC = () => {
                         launcherActions.removeAccount(acc.id);
                       }}
                       className="account-delete-btn"
-                      title="Eliminar perfil"
+                      title={t.accounts.deleteProfileTitle}
                     >
                       <Trash2 style={{ width: '14px', height: '14px' }} />
                     </button>
@@ -249,7 +260,7 @@ export const AccountsModal: React.FC = () => {
             <div style={{ display: 'flex', gap: '8px', width: '100%', alignItems: 'center' }}>
               <input
                 type="text"
-                placeholder="Nombre de usuario..."
+                placeholder={t.accounts.usernamePlaceholder}
                 value={newUsername}
                 onChange={(e) => setNewUsername(e.target.value)}
                 className="login-text-input"
@@ -268,14 +279,14 @@ export const AccountsModal: React.FC = () => {
                   color: newSkinUrl ? '#22c55e' : '#cbd5e1',
                   background: newSkinUrl ? 'rgba(34, 197, 94, 0.12)' : 'rgba(255, 255, 255, 0.05)',
                 }}
-                title="Subir archivo .png de Skin"
+                title={t.accounts.uploadSkinTitle}
               >
                 {newSkinUrl ? (
                   <Check style={{ width: '12px', height: '12px' }} />
                 ) : (
                   <ImageIcon style={{ width: '12px', height: '12px' }} />
                 )}
-                {newSkinUrl ? 'Skin Cargada' : 'Subir Skin'}
+                {newSkinUrl ? t.accounts.skinLoaded : t.accounts.uploadSkinBtn}
               </button>
             </div>
 
@@ -288,14 +299,14 @@ export const AccountsModal: React.FC = () => {
                 }}
                 className="settings-action-btn"
               >
-                Cancelar
+                {t.accounts.cancelBtn}
               </button>
               <button
                 type="submit"
                 className="settings-action-btn"
                 style={{ background: '#22c55e', color: '#ffffff', borderColor: '#22c55e' }}
               >
-                Guardar Perfil
+                {t.accounts.saveProfileBtn}
               </button>
             </div>
           </form>
@@ -306,7 +317,8 @@ export const AccountsModal: React.FC = () => {
               className="account-add-btn"
               style={{ flex: 1 }}
             >
-              <Plus style={{ width: '15px', height: '15px', color: '#22c55e' }} /> Cuenta Offline
+              <Plus style={{ width: '15px', height: '15px', color: '#22c55e' }} />{' '}
+              {t.accounts.btnOffline}
             </button>
             <button
               onClick={handleAddMicrosoft}
@@ -315,7 +327,7 @@ export const AccountsModal: React.FC = () => {
               style={{ flex: 1, borderColor: 'rgba(0, 164, 239, 0.3)' }}
             >
               <span style={{ color: '#00a4ef', fontWeight: 'bold' }}>+</span>{' '}
-              {isAddingMs ? 'Conectando...' : 'Microsoft'}
+              {isAddingMs ? t.accounts.connecting : t.accounts.btnMicrosoft}
             </button>
           </div>
         )}
@@ -324,12 +336,12 @@ export const AccountsModal: React.FC = () => {
         <div className="accounts-footer-row">
           <div className="accounts-vault-badge">
             <Shield style={{ width: '13px', height: '13px', color: '#22c55e' }} />
-            <span>Bóveda AES-256-GCM</span>
+            <span>{t.accounts.vaultBadge}</span>
           </div>
 
           <button onClick={() => launcherActions.logout()} className="accounts-logout-btn">
             <LogOut style={{ width: '12px', height: '12px' }} />
-            <span>Cerrar Sesión</span>
+            <span>{t.accounts.logoutBtn}</span>
           </button>
         </div>
       </div>
