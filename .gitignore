@@ -11,3 +11,7 @@ target/
 *.log
 .env.local
 .env.*.local
+
+# Release artifacts
+release/
+release-artifacts/

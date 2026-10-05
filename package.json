@@ -11,7 +11,14 @@
     "build:tauri": "tauri build",
     "preview": "vite preview",
     "lint": "tsc --noEmit",
-    "lint:fast": "oxlint src",
+    "lint:fast": "oxlint --no-ignore src",
+    "doctor": "react-doctor",
+    "doctor:score": "react-doctor --score",
+    "doctor:staged": "react-doctor --staged --blocking warning",
+    "doctor:changed": "react-doctor --verbose --scope changed",
+    "lint:rust": "cargo clippy -p launcher-lite-tauri",
+    "deny:rust": "cargo deny check",
+    "machete:rust": "cargo machete",
     "tauri": "tauri"
   },
   "dependencies": {

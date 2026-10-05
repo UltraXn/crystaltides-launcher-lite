@@ -1,0 +1,98 @@
+name: Release Standalone Launcher
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Tag de versión (ej: v0.1.1)'
+        required: false
+        default: ''
+
+concurrency:
+  group: release-launcher-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    name: Build & Publish Standalone Windows Launcher
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          cache: true
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build Frontend Assets (Vite)
+        run: npm run build
+
+      - name: Build Standalone Launcher (Tauri CLI)
+        run: npx tauri build --no-bundle --ignore-version-mismatches
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+      - name: Prepare Release Artifacts
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release-artifacts | Out-Null
+          
+          # 1. Encontrar el ejecutable compilado
+          $exeSource = Get-ChildItem -Path "src-tauri/target/release", "target/release" -Filter "*.exe" -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -like "*launcher*" -and $_.Name -notlike "*.build*" -and $_.Name -notlike "*deps*" } |
+            Select-Object -First 1
+
+          if (-not $exeSource) {
+            Write-Error "No se encontró el ejecutable en target/release!"
+            exit 1
+          }
+
+          Write-Host "Encontrado binario: $($exeSource.FullName) ($($exeSource.Length) bytes)"
+          Copy-Item -Path $exeSource.FullName -Destination "release-artifacts/CrystalTidesLauncher.exe" -Force
+
+          # 2. Copiar archivos de updater si existen (latest.json, firmas .sig)
+          Get-ChildItem -Path "src-tauri/target/release", "target/release" -Include "*.sig", "latest.json" -Recurse -ErrorAction SilentlyContinue |
+            ForEach-Object {
+              Write-Host "Adjuntando artefacto de update: $($_.Name)"
+              Copy-Item -Path $_.FullName -Destination "release-artifacts/$($_.Name)" -Force
+            }
+
+          # 3. Generar Checksums SHA256
+          Get-ChildItem -Path release-artifacts -File | ForEach-Object {
+            $hash = (Get-FileHash -Path $_.FullName -Algorithm SHA256).Hash
+            "$hash  $($_.Name)" | Out-File -FilePath release-artifacts/SHA256SUMS.txt -Append -Encoding utf8
+          }
+
+          Get-ChildItem -Path release-artifacts | Format-Table Name, Length
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-artifacts/*
+          tag_name: ${{ github.ref_name != '' && github.ref_name || inputs.tag_name }}
+          name: "CrystalTides Launcher ${{ github.ref_name != '' && github.ref_name || inputs.tag_name }}"
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
