@@ -1,6 +1,13 @@
+mod agent;
+mod discord_rpc;
+mod gpu_preset;
+mod hardware;
 mod java_manager;
+mod logger;
+mod mod_sync;
 mod process_manager;
 mod sys;
+mod version_manager;
 
 use std::collections::HashMap;
 use std::fs;
@@ -47,23 +54,26 @@ fn get_boot_context() -> BootContext {
         };
     }
 
-    // 2. Detección inteligente por ruta
-    let current_dir = current_exe.parent().unwrap_or_else(|| Path::new("."));
-    let is_running_from_install_dir = current_dir.starts_with(&default_dir)
-        || current_dir == default_dir.as_path()
-        || current_dir == default_dir.join("bin").as_path();
+    // Auto-asegurar directorios esenciales de usuario
+    let _ = fs::create_dir_all(default_dir.join("mods"));
+    let _ = fs::create_dir_all(default_dir.join("profiles"));
+    let _ = fs::create_dir_all(default_dir.join("bin"));
+    let _ = fs::create_dir_all(default_dir.join("assets"));
+    let _ = fs::create_dir_all(default_dir.join("runtimes"));
+    version_manager::cleanup_installer_artifacts(&default_dir);
 
-    let mode = if is_running_from_install_dir || is_installed {
-        "launcher"
-    } else {
+    // 2. Detección inteligente por ruta o CLI
+    let mode = if args.iter().any(|arg| arg == "--install" || arg == "-i") {
         "install"
+    } else {
+        "launcher"
     };
 
     BootContext {
         mode: mode.to_string(),
         default_install_dir: default_dir.to_string_lossy().to_string(),
         current_exe: current_exe.to_string_lossy().to_string(),
-        is_installed,
+        is_installed: true,
         os: std::env::consts::OS.to_string(),
     }
 }
@@ -163,8 +173,43 @@ fn chrono_now() -> String {
 }
 
 #[tauri::command]
-fn log_frontend(msg: String) {
-    println!("[Launcher Lite] {}", msg);
+fn log_frontend(msg: String, level: Option<String>) {
+    let lvl = level.unwrap_or_else(|| "INFO".to_string());
+    logger::log(&lvl, "Frontend", &msg);
+}
+
+#[tauri::command]
+fn get_launcher_logs(max_lines: Option<usize>) -> Result<String, String> {
+    logger::get_launcher_logs(max_lines)
+}
+
+#[tauri::command]
+fn get_minecraft_logs(max_lines: Option<usize>) -> Result<String, String> {
+    logger::get_minecraft_logs(max_lines)
+}
+
+#[tauri::command]
+fn open_logs_folder() -> Result<(), String> {
+    let dir = logger::get_logs_directory();
+    if !dir.exists() {
+        let _ = std::fs::create_dir_all(&dir);
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(&dir)
+            .spawn()
+            .map_err(|e| format!("Error abriendo carpeta de logs: {}", e))?;
+        Ok(())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&dir)
+            .spawn()
+            .map_err(|e| format!("Error abriendo carpeta de logs: {}", e))?;
+        Ok(())
+    }
 }
 
 #[tauri::command]
@@ -172,17 +217,82 @@ fn get_home_dir() -> Option<String> {
     dirs::home_dir().map(|path| path.to_string_lossy().to_string())
 }
 
+fn validate_safe_file_path(path_str: &str) -> Result<PathBuf, String> {
+    if path_str.contains("..") {
+        return Err("Ruta no permitida: secuencias relativas '..' prohibidas.".to_string());
+    }
+    Ok(PathBuf::from(path_str))
+}
+
 #[tauri::command]
 fn read_text_file(path: String) -> Result<String, String> {
-    std::fs::read_to_string(path).map_err(|e| e.to_string())
+    let safe_path = validate_safe_file_path(&path)?;
+    std::fs::read_to_string(safe_path).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn write_text_file(path: String, content: String) -> Result<(), String> {
-    if let Some(parent) = std::path::Path::new(&path).parent() {
+    let safe_path = validate_safe_file_path(&path)?;
+    if let Some(parent) = safe_path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    std::fs::write(path, content).map_err(|e| e.to_string())
+    std::fs::write(safe_path, content).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn resolve_classpath(
+    game_dir: String,
+    home_dir: String,
+    version_id: String,
+    mc_version: String,
+    lib_rel_paths: Vec<String>,
+) -> String {
+    use std::collections::HashSet;
+    let mut cp_entries: Vec<String> = Vec::new();
+    let mut seen_canonical: HashSet<String> = HashSet::new();
+
+    let game_path = Path::new(&game_dir);
+    let home_path = Path::new(&home_dir);
+    let mc_home_libs = home_path.join("AppData/Roaming/.minecraft/libraries");
+
+    let mut add_if_exists = |candidate: PathBuf| {
+        if candidate.is_file() {
+            let canonical_key = candidate
+                .canonicalize()
+                .map(|p| p.to_string_lossy().to_lowercase())
+                .unwrap_or_else(|_| candidate.to_string_lossy().to_lowercase());
+
+            if !seen_canonical.contains(&canonical_key) {
+                seen_canonical.insert(canonical_key);
+                cp_entries.push(candidate.to_string_lossy().replace('/', "\\"));
+            }
+        }
+    };
+
+    // 1. Mod Loader jar if exists
+    if version_id != mc_version {
+        add_if_exists(game_path.join("versions").join(&version_id).join(format!("{}.jar", version_id)));
+    }
+
+    // 2. Base Vanilla jar
+    add_if_exists(game_path.join("versions").join(&mc_version).join(format!("{}.jar", mc_version)));
+    add_if_exists(home_path.join("AppData/Roaming/.minecraft/versions").join(&mc_version).join(format!("{}.jar", mc_version)));
+
+    // 3. Libraries
+    for rel in lib_rel_paths {
+        let clean_rel = rel.replace('\\', "/");
+        let p1 = game_path.join("libraries").join(Path::new(&clean_rel));
+        if p1.is_file() {
+            add_if_exists(p1);
+        } else {
+            let p2 = mc_home_libs.join(Path::new(&clean_rel));
+            if p2.is_file() {
+                add_if_exists(p2);
+            }
+        }
+    }
+
+    cp_entries.join(";")
 }
 
 #[tauri::command]
@@ -192,6 +302,7 @@ fn launch_minecraft(
     args: Vec<String>,
     game_dir: String,
 ) -> Result<u32, String> {
+    version_manager::cleanup_installer_artifacts(Path::new(&game_dir));
     process_manager::launch_minecraft_process(app_handle, java_path, args, game_dir)
 }
 
@@ -212,10 +323,15 @@ async fn install_java_runtime(
     install_dir: String,
 ) -> Result<String, String> {
     use tauri::Emitter;
-    let path = java_manager::download_and_install_java(version as u8, std::path::Path::new(&install_dir), |progress| {
-        let _ = app_handle.emit("java-install-progress", progress);
-    })?;
-    Ok(path.to_string_lossy().to_string())
+    let install_path = std::path::PathBuf::from(install_dir);
+    tokio::task::spawn_blocking(move || {
+        let path = java_manager::download_and_install_java(version as u8, &install_path, move |progress| {
+            let _ = app_handle.emit("java-install-progress", progress);
+        })?;
+        Ok(path.to_string_lossy().to_string())
+    })
+    .await
+    .map_err(|e| format!("Error en tarea de instalación de Java: {}", e))?
 }
 
 #[tauri::command]
@@ -225,8 +341,12 @@ fn check_java_status(install_dir: String) -> Option<String> {
 }
 
 #[tauri::command]
-async fn http_post(url: String, headers: HashMap<String, String>, body: String) -> Result<String, String> {
-    let client = reqwest::Client::new();
+async fn http_post(
+    client: tauri::State<'_, reqwest::Client>,
+    url: String,
+    headers: HashMap<String, String>,
+    body: String,
+) -> Result<String, String> {
     let mut req = client.post(&url);
     for (key, val) in headers {
         req = req.header(key, val);
@@ -237,8 +357,11 @@ async fn http_post(url: String, headers: HashMap<String, String>, body: String) 
 }
 
 #[tauri::command]
-async fn http_get(url: String, headers: HashMap<String, String>) -> Result<String, String> {
-    let client = reqwest::Client::new();
+async fn http_get(
+    client: tauri::State<'_, reqwest::Client>,
+    url: String,
+    headers: HashMap<String, String>,
+) -> Result<String, String> {
     let mut req = client.get(&url);
     for (key, val) in headers {
         req = req.header(key, val);
@@ -249,8 +372,12 @@ async fn http_get(url: String, headers: HashMap<String, String>) -> Result<Strin
 }
 
 #[tauri::command]
-async fn http_put(url: String, headers: HashMap<String, String>, body: String) -> Result<String, String> {
-    let client = reqwest::Client::new();
+async fn http_put(
+    client: tauri::State<'_, reqwest::Client>,
+    url: String,
+    headers: HashMap<String, String>,
+    body: String,
+) -> Result<String, String> {
     let mut req = client.put(&url);
     for (key, val) in headers {
         req = req.header(key, val);
@@ -261,8 +388,11 @@ async fn http_put(url: String, headers: HashMap<String, String>, body: String) -
 }
 
 #[tauri::command]
-async fn http_delete(url: String, headers: HashMap<String, String>) -> Result<String, String> {
-    let client = reqwest::Client::new();
+async fn http_delete(
+    client: tauri::State<'_, reqwest::Client>,
+    url: String,
+    headers: HashMap<String, String>,
+) -> Result<String, String> {
     let mut req = client.delete(&url);
     for (key, val) in headers {
         req = req.header(key, val);
@@ -270,6 +400,33 @@ async fn http_delete(url: String, headers: HashMap<String, String>) -> Result<St
     let res = req.send().await.map_err(|e| e.to_string())?;
     let text = res.text().await.map_err(|e| e.to_string())?;
     Ok(text)
+}
+
+#[tauri::command]
+fn get_installed_minecraft_versions() -> Vec<String> {
+    version_manager::get_installed_versions()
+}
+
+#[tauri::command]
+async fn prepare_minecraft_version(version_id: String, game_dir: String) -> Result<String, String> {
+    version_manager::cleanup_installer_artifacts(Path::new(&game_dir));
+    version_manager::prepare_version(&version_id, &game_dir).await
+}
+
+#[tauri::command]
+fn cleanup_installer_cache(game_dir: String) {
+    version_manager::cleanup_installer_artifacts(Path::new(&game_dir));
+}
+
+#[tauri::command]
+async fn install_mod_loader(
+    loader_type: String,
+    loader_version: String,
+    mc_version: String,
+    game_dir: String,
+    java_path: String,
+) -> Result<String, String> {
+    version_manager::install_mod_loader(&loader_type, &loader_version, &mc_version, &game_dir, &java_path).await
 }
 
 #[tauri::command]
@@ -343,11 +500,126 @@ async fn open_microsoft_auth_window(app_handle: tauri::AppHandle) -> Result<Stri
     code_res
 }
 
+#[derive(serde::Serialize, Clone, Debug)]
+pub struct AppUpdateInfo {
+    pub available: bool,
+    #[serde(rename = "currentVersion")]
+    pub current_version: String,
+    pub version: Option<String>,
+    pub body: Option<String>,
+    pub date: Option<String>,
+}
+
+#[tauri::command]
+async fn check_app_update(app: tauri::AppHandle) -> Result<AppUpdateInfo, String> {
+    use tauri_plugin_updater::UpdaterExt;
+    let current_version = app.package_info().version.to_string();
+    let updater = match app.updater() {
+        Ok(u) => u,
+        Err(e) => {
+            eprintln!("[AutoUpdater] Updater plugin unavailable: {}", e);
+            return Ok(AppUpdateInfo {
+                available: false,
+                current_version,
+                version: None,
+                body: None,
+                date: None,
+            });
+        }
+    };
+
+    match updater.check().await {
+        Ok(Some(update)) => {
+            logger::log("INFO", "AutoUpdater", &format!("Actualización disponible: v{}", update.version));
+            Ok(AppUpdateInfo {
+                available: true,
+                current_version,
+                version: Some(update.version.clone()),
+                body: update.body.clone(),
+                date: update.date.map(|d| d.to_string()),
+            })
+        }
+        Ok(None) => {
+            logger::log("INFO", "AutoUpdater", "El launcher se encuentra en la versión más reciente.");
+            Ok(AppUpdateInfo {
+                available: false,
+                current_version,
+                version: None,
+                body: None,
+                date: None,
+            })
+        }
+        Err(e) => {
+            logger::log("WARN", "AutoUpdater", &format!("Check de actualización omitido o no disponible: {}", e));
+            Ok(AppUpdateInfo {
+                available: false,
+                current_version,
+                version: None,
+                body: None,
+                date: None,
+            })
+        }
+    }
+}
+
+#[tauri::command]
+async fn apply_app_update(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri_plugin_updater::UpdaterExt;
+    let updater = app.updater().map_err(|e| e.to_string())?;
+    let update = updater.check().await.map_err(|e| e.to_string())?;
+
+    if let Some(update) = update {
+        update.download_and_install(
+            |downloaded, total| {
+                println!("[AutoUpdater] Progress: downloaded {} of {:?}", downloaded, total);
+            },
+            || {
+                println!("[AutoUpdater] Download finished, applying binary...");
+            },
+        ).await.map_err(|e| format!("Error instalando actualización: {}", e))?;
+
+        app.restart();
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn restart_app(app: tauri::AppHandle) {
+    app.restart();
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let http_client = reqwest::Client::builder()
+        .tcp_keepalive(std::time::Duration::from_secs(60))
+        .build()
+        .unwrap_or_default();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(http_client)
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { .. } = event {
+                if window.label() == "main" && process_manager::is_game_running() {
+                    logger::log("WARN", "App", "Cierre del Launcher detectado con Minecraft activo.");
+                }
+            }
+        })
+        .setup(|app| {
+            use tauri::Manager;
+            logger::init();
+            logger::log("INFO", "App", "CrystalTides Launcher backend inicializado.");
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize {
+                    width: 1280.0,
+                    height: 720.0,
+                }));
+                let _ = window.center();
+                let _ = window.unminimize();
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             get_boot_context,
             perform_self_install,
@@ -355,7 +627,13 @@ pub fn run() {
             perform_self_uninstall,
             schedule_self_deletion,
             close_app,
+            restart_app,
+            check_app_update,
+            apply_app_update,
             log_frontend,
+            get_launcher_logs,
+            get_minecraft_logs,
+            open_logs_folder,
             get_home_dir,
             read_text_file,
             write_text_file,
@@ -368,7 +646,27 @@ pub fn run() {
             http_get,
             http_put,
             http_delete,
-            open_microsoft_auth_window
+            open_microsoft_auth_window,
+            get_installed_minecraft_versions,
+            prepare_minecraft_version,
+            install_mod_loader,
+            cleanup_installer_cache,
+            resolve_classpath,
+            hardware::detect_hardware_profile,
+            gpu_preset::detect_gpu_profile,
+            gpu_preset::apply_gpu_options,
+            agent::prepare_crystal_agent,
+            agent::get_agent_jvm_args,
+            agent::get_agent_benchmark_status,
+            mod_sync::download_mods_parallel,
+            mod_sync::sync_mods,
+            mod_sync::list_instance_mods,
+            mod_sync::toggle_instance_mod,
+            mod_sync::delete_instance_mod,
+            mod_sync::open_folder,
+            mod_sync::ensure_servers_dat,
+            discord_rpc::set_discord_presence,
+            discord_rpc::clear_discord_presence
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

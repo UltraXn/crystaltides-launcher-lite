@@ -51,26 +51,40 @@ pub fn fetch_java_download_url(version: u8) -> Result<String, String> {
         version, os, arch
     );
 
-    println!("[Launcher Lite] Fetching Java {} from: {}", version, url);
+    crate::logger::log("INFO", "JavaManager", &format!("Consultando Adoptium API para Java {}: {}", version, url));
 
     let resp = client
         .get(&url)
         .send()
-        .map_err(|e| format!("Error al consultar Adoptium API: {}", e))?;
+        .map_err(|e| {
+            let msg = format!("Error al consultar Adoptium API: {}", e);
+            crate::logger::log("ERROR", "JavaManager", &msg);
+            msg
+        })?;
 
     if !resp.status().is_success() {
-        return Err(format!("Adoptium API Error: {}", resp.status()));
+        let msg = format!("Adoptium API Error: {}", resp.status());
+        crate::logger::log("ERROR", "JavaManager", &msg);
+        return Err(msg);
     }
 
     let releases: Vec<AdoptiumRelease> = resp
         .json()
-        .map_err(|e| format!("Error al deserializar respuesta de Adoptium: {}", e))?;
+        .map_err(|e| {
+            let msg = format!("Error al deserializar respuesta de Adoptium: {}", e);
+            crate::logger::log("ERROR", "JavaManager", &msg);
+            msg
+        })?;
 
     if let Some(release) = releases.first() {
-        return Ok(release.binary.package.link.clone());
+        let link = release.binary.package.link.clone();
+        crate::logger::log("INFO", "JavaManager", &format!("Enlace de descarga resuelto para Java {}: {}", version, link));
+        return Ok(link);
     }
 
-    Err("No se encontraron binarios de Java para esta plataforma".to_string())
+    let not_found_msg = "No se encontraron binarios de Java para esta plataforma".to_string();
+    crate::logger::log("ERROR", "JavaManager", &not_found_msg);
+    Err(not_found_msg)
 }
 
 pub fn download_and_install_java<F>(
@@ -93,8 +107,14 @@ where
     let file_name = download_url.split('/').next_back().unwrap_or("java.zip");
     let zip_path = temp_dir.join(file_name);
 
+    crate::logger::log("INFO", "JavaManager", &format!("Descargando paquete de Java {} ({})", version, file_name));
+
     let mut response = reqwest::blocking::get(&download_url)
-        .map_err(|e| format!("Error al descargar Java: {}", e))?;
+        .map_err(|e| {
+            let msg = format!("Error al descargar Java {}: {}", version, e);
+            crate::logger::log("ERROR", "JavaManager", &msg);
+            msg
+        })?;
     let total_size = response.content_length().unwrap_or(0);
     let mut file = fs::File::create(&zip_path)
         .map_err(|e| format!("Error al crear archivo temporal de Java: {}", e))?;
@@ -126,7 +146,7 @@ where
     fs::create_dir_all(&version_dir)
         .map_err(|e| format!("Error al crear carpeta de Java {}: {}", version, e))?;
 
-    println!("[Launcher Lite] Extracting Java to {:?}", version_dir);
+    crate::logger::log("INFO", "JavaManager", &format!("Descomprimiendo Java {} en {:?}", version, version_dir));
     let zip_file = fs::File::open(&zip_path)
         .map_err(|e| format!("Error al abrir archivo zip de Java: {}", e))?;
     let mut archive =
@@ -160,11 +180,16 @@ where
 
     // 4. Find Java Executable
     let java_exe = find_java_binary(&version_dir)
-        .ok_or_else(|| "No se encontró el ejecutable java/javaw tras la extracción".to_string())?;
+        .ok_or_else(|| {
+            let msg = format!("No se encontró el ejecutable java/javaw tras la extracción de Java {}", version);
+            crate::logger::log("ERROR", "JavaManager", &msg);
+            msg
+        })?;
 
     // Cleanup
     let _ = fs::remove_dir_all(temp_dir);
 
+    crate::logger::log("INFO", "JavaManager", &format!("Java {} configurado con éxito. Ejecutable: {:?}", version, java_exe));
     Ok(java_exe)
 }
 
@@ -172,6 +197,7 @@ pub fn find_java_binary(root: &Path) -> Option<PathBuf> {
     let binary_name = if cfg!(windows) { "javaw.exe" } else { "java" };
 
     for entry in walkdir::WalkDir::new(root)
+        .follow_links(true)
         .into_iter()
         .filter_map(|e| e.ok())
     {

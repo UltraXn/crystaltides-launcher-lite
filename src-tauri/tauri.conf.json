@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "CrystalTides Launcher - Papyrus",
+  "productName": "CrystalTides Launcher Lite",
   "version": "0.1.0",
-  "identifier": "net.crystaltides.launcher.papyrus",
+  "identifier": "net.crystaltides.launcher.lite",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:14300",
@@ -13,38 +13,38 @@
     "windows": [
       {
         "label": "main",
-        "title": "CrystalTides Launcher - Papyrus",
+        "title": "CrystalTides Launcher Lite",
+        "url": "index.html",
         "width": 1280,
         "height": 720,
-        "decorations": false
+        "minWidth": 1024,
+        "minHeight": 640,
+        "resizable": true,
+        "center": true,
+        "focus": true,
+        "decorations": false,
+        "visible": false
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: asset: blob:; media-src 'self' data: https: asset: blob:; font-src 'self' data:; connect-src 'self' https:;"
     }
   },
   "bundle": {
-    "active": true,
-    "targets": ["nsis"],
+    "active": false,
+    "targets": [],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ],
-    "windows": {
-      "nsis": {
-        "installMode": "perMachine",
-        "displayLanguageSelector": true,
-        "languages": ["Spanish", "English"]
-      }
-    }
+    ]
   },
   "plugins": {
     "updater": {
       "endpoints": [
-        "https://github.com/UltraXn/crystal-launcher/releases/latest/download/latest.json"
+        "https://github.com/UltraXn/crystaltides-launcher-lite/releases/latest/download/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IGF1dG91cGRhdGUgcHVibGljIGtleQpSV1N5TWpCa3JvVktGSmJndmRhbWR2bXNzZXZzYm1zZXZzYm1zZXZzYm1zZWQK"
     }
