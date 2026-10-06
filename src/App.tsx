@@ -27,6 +27,7 @@ import { checkForAppUpdates, AppUpdateInfo } from './services/updateService';
 import { loadActiveWallpaper, loadAllButtonMedia } from './utils/wallpaperStorage';
 import { initializeBuiltinModules } from './modules';
 import { ModuleModalRenderer } from './components/modals/ModuleModalRenderer';
+import { GuiHintToast } from './components/GuiHintToast';
 
 interface BootContext {
   mode: 'install' | 'launcher' | 'uninstall';
@@ -231,6 +232,7 @@ export const App: React.FC = () => {
           <HudEditorOverlay />
           <HomeDock />
           <BottomBar />
+          <GuiHintToast />
 
           {/* Modales */}
           <InstancesModal />

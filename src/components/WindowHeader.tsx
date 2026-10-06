@@ -1,11 +1,9 @@
 import React from "react";
-import { Minus, Square, X, Move, Check } from "lucide-react";
+import { Minus, Square, X } from "lucide-react";
 import logoImg from "../assets/logo.png";
-import { useLauncherStore, launcherActions, LauncherState, useT } from "../store/launcherStore";
+import { useT } from "../store/launcherStore";
 
 export const WindowHeader: React.FC = () => {
-  const isEditingHud = useLauncherStore((s: LauncherState) => s.isEditingHud);
-  const currentView = useLauncherStore((s: LauncherState) => s.currentView);
   const t = useT();
 
   const handleMinimize = async () => {
@@ -55,56 +53,6 @@ export const WindowHeader: React.FC = () => {
       </div>
 
       <div style={{ flex: 1 }} data-tauri-drag-region />
-
-      {/* Quick GUI Edit Button (Always accessible anywhere in the launcher) */}
-      {currentView !== "login" && (
-        <button
-          type="button"
-          onClick={() => launcherActions.setEditingHud(!isEditingHud)}
-          title={
-            isEditingHud
-              ? "Guardar y salir del modo edición (F8 o Esc)"
-              : "Mover y personalizar botones de la GUI (F8)"
-          }
-          className="papyrus-header-edit-btn"
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "6px",
-            padding: "4px 10px",
-            borderRadius: "7px",
-            background: isEditingHud
-              ? "rgba(56, 189, 248, 0.22)"
-              : "rgba(255, 255, 255, 0.05)",
-            border: isEditingHud
-              ? "1px solid #38bdf8"
-              : "1px solid rgba(255, 255, 255, 0.1)",
-            color: isEditingHud ? "#38bdf8" : "rgba(248, 250, 252, 0.8)",
-            fontSize: "11px",
-            fontWeight: 700,
-            cursor: "pointer",
-            marginRight: "10px",
-            transition: "all 0.15s ease",
-            boxShadow: isEditingHud
-              ? "0 0 12px rgba(56, 189, 248, 0.35)"
-              : "none",
-          }}
-        >
-          {isEditingHud ? <Check size={13} /> : <Move size={13} />}
-          <span>{isEditingHud ? "Listo (Salir)" : "Editar GUI"}</span>
-          <span
-            style={{
-              fontSize: "9px",
-              opacity: 0.6,
-              background: "rgba(255, 255, 255, 0.1)",
-              padding: "1px 4px",
-              borderRadius: "4px",
-            }}
-          >
-            F8
-          </span>
-        </button>
-      )}
 
       {/* Top-Right Window Controls */}
       <div className="papyrus-window-controls">
