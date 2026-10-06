@@ -22,7 +22,9 @@ export interface UserAccount {
   id: string;
   username: string;
   uuid: string;
-  type: 'microsoft' | 'guest';
+  type: 'microsoft' | 'guest' | 'crystaltides';
+  role?: string;
+  email?: string;
   skinUrl?: string;
   capeUrl?: string;
   accessToken?: string;
@@ -386,7 +388,7 @@ export const isUserAccount = (obj: unknown): obj is UserAccount => {
     typeof a.id === 'string' &&
     typeof a.username === 'string' &&
     typeof a.uuid === 'string' &&
-    (a.type === 'microsoft' || a.type === 'guest') &&
+    (a.type === 'microsoft' || a.type === 'guest' || a.type === 'crystaltides') &&
     typeof a.lastUsed === 'number'
   );
 };

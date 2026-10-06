@@ -18,6 +18,8 @@ import {
   useT,
 } from '../../store/launcherStore';
 import { validateMinecraftUsername, generateOfflineUuid } from '../../services/offlineAuth';
+import logoImg from '../../assets/logo.png';
+import { loginWithCrystalTides } from '../../services/crystalAuthService';
 
 export const AccountsModal: React.FC = () => {
   const t = useT();
@@ -27,14 +29,48 @@ export const AccountsModal: React.FC = () => {
 
   const [newUsername, setNewUsername] = useState('');
   const [newSkinUrl, setNewSkinUrl] = useState<string | undefined>(undefined);
-  const [showAddForm, setShowAddForm] = useState(false);
+  const [addMode, setAddMode] = useState<'none' | 'guest' | 'crystaltides'>('none');
   const [isAddingMs, setIsAddingMs] = useState(false);
+
+  // CrystalTides Web Account state in AccountsModal
+  const [crystalEmail, setCrystalEmail] = useState('');
+  const [crystalPassword, setCrystalPassword] = useState('');
+  const [isAddingCrystal, setIsAddingCrystal] = useState(false);
+  const [crystalError, setCrystalError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editingAccountIdRef = useRef<string | null>(null);
   const rowFileInputRef = useRef<HTMLInputElement>(null);
 
   if (activeModal !== 'accounts') return null;
+
+  const handleCreateCrystal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      setIsAddingCrystal(true);
+      setCrystalError(null);
+      const profile = await loginWithCrystalTides(crystalEmail, crystalPassword);
+      await launcherActions.addAccount({
+        id: profile.id,
+        username: profile.username,
+        uuid: profile.uuid,
+        role: profile.role,
+        email: profile.email,
+        skinUrl: profile.skinUrl,
+        type: 'crystaltides',
+        accessToken: profile.accessToken,
+        refreshToken: profile.refreshToken,
+        lastUsed: Date.now(),
+      });
+      setAddMode('none');
+      setCrystalEmail('');
+      setCrystalPassword('');
+    } catch (err) {
+      setCrystalError(err instanceof Error ? err.message : 'Error al conectar con CrystalTides.');
+    } finally {
+      setIsAddingCrystal(false);
+    }
+  };
 
   const handleAddMicrosoft = async () => {
     try {
@@ -78,7 +114,7 @@ export const AccountsModal: React.FC = () => {
 
     setNewUsername('');
     setNewSkinUrl(undefined);
-    setShowAddForm(false);
+    setAddMode('none');
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, isNewAccount: boolean) => {
@@ -218,6 +254,8 @@ export const AccountsModal: React.FC = () => {
                     <span className="account-type-sub">
                       {acc.type === 'microsoft'
                         ? t.accounts.microsoftAuth
+                        : acc.type === 'crystaltides'
+                        ? 'CrystalTides SMP'
                         : t.accounts.offlineAccount}
                     </span>
                   </div>
@@ -258,7 +296,7 @@ export const AccountsModal: React.FC = () => {
         </div>
 
         {/* Add Account Trigger / Form */}
-        {showAddForm ? (
+        {addMode === 'guest' ? (
           <form
             onSubmit={handleCreateGuest}
             className="account-add-form"
@@ -301,7 +339,7 @@ export const AccountsModal: React.FC = () => {
               <button
                 type="button"
                 onClick={() => {
-                  setShowAddForm(false);
+                  setAddMode('none');
                   setNewSkinUrl(undefined);
                 }}
                 className="settings-action-btn"
@@ -317,15 +355,82 @@ export const AccountsModal: React.FC = () => {
               </button>
             </div>
           </form>
+        ) : addMode === 'crystaltides' ? (
+          <form
+            onSubmit={handleCreateCrystal}
+            className="account-add-form"
+            style={{ flexDirection: 'column', gap: '10px' }}
+          >
+            {crystalError && (
+              <div className="login-error-alert" style={{ fontSize: '11px', padding: '6px' }}>
+                {crystalError}
+              </div>
+            )}
+            <input
+              type="email"
+              placeholder="Correo de crystaltidessmp.net"
+              value={crystalEmail}
+              onChange={(e) => setCrystalEmail(e.target.value)}
+              className="login-text-input"
+              required
+            />
+            <input
+              type="password"
+              placeholder="Contraseña web"
+              value={crystalPassword}
+              onChange={(e) => setCrystalPassword(e.target.value)}
+              className="login-text-input"
+              required
+            />
+            <div style={{ display: 'flex', gap: '8px', width: '100%', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setAddMode('none');
+                  setCrystalError(null);
+                }}
+                className="settings-action-btn"
+              >
+                {t.accounts.cancelBtn}
+              </button>
+              <button
+                type="submit"
+                disabled={isAddingCrystal}
+                className="settings-action-btn"
+                style={{
+                  background: 'linear-gradient(135deg, #00e5ff 0%, #0284c7 100%)',
+                  color: '#ffffff',
+                  borderColor: '#00e5ff',
+                }}
+              >
+                {isAddingCrystal ? 'Conectando...' : 'Conectar Cuenta'}
+              </button>
+            </div>
+          </form>
         ) : (
           <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
             <button
-              onClick={() => setShowAddForm(true)}
+              onClick={() => setAddMode('guest')}
               className="account-add-btn"
               style={{ flex: 1 }}
             >
               <Plus style={{ width: '15px', height: '15px', color: '#22c55e' }} />{' '}
               {t.accounts.btnOffline}
+            </button>
+            <button
+              onClick={() => {
+                setAddMode('crystaltides');
+                setCrystalError(null);
+              }}
+              className="account-add-btn"
+              style={{ flex: 1, borderColor: 'rgba(0, 229, 255, 0.35)' }}
+            >
+              <img
+                src={logoImg}
+                alt="Octopus"
+                style={{ width: '14px', height: '14px', objectFit: 'contain' }}
+              />{' '}
+              <span style={{ color: '#00e5ff' }}>CrystalTides</span>
             </button>
             <button
               onClick={handleAddMicrosoft}
