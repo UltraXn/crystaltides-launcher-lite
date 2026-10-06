@@ -186,9 +186,17 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
                     key={opt.value}
                     role="option"
                     aria-selected={isSelected}
+                    tabIndex={0}
                     onClick={() => {
                       onChange(opt.value);
                       setIsOpen(false);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        onChange(opt.value);
+                        setIsOpen(false);
+                      }
                     }}
                     style={{
                       display: 'flex',

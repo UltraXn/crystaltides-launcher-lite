@@ -243,8 +243,9 @@ export const getActiveObstacles = (
     }
   } else {
     // 2. Individual buttons (if in free_buttons mode)
+    const visibleButtonsSet = new Set(dockConfig.visibleButtons);
     const activeButtons = dockConfig.buttonOrder.filter((id) =>
-      dockConfig.visibleButtons.includes(id),
+      visibleButtonsSet.has(id),
     );
 
     for (const btnId of activeButtons) {
@@ -463,7 +464,7 @@ export const sanitizeAllPositions = (
   winW: number = typeof window !== 'undefined' && window.innerWidth ? window.innerWidth : 1280,
   winH: number = typeof window !== 'undefined' && window.innerHeight ? window.innerHeight : 720,
 ): DockConfig => {
-  const newConfig: DockConfig = JSON.parse(JSON.stringify(config));
+  const newConfig: DockConfig = structuredClone(config);
   const placedBoxes: Box[] = [];
 
   // Top window branding zone (top left: Logo + CrystalTidesSMP Launcher + LITE badge)
@@ -495,8 +496,9 @@ export const sanitizeAllPositions = (
 
   // 1. Process dock or buttons
   if (newConfig.layoutMode === 'free_buttons') {
+    const visibleButtonsSet = new Set(newConfig.visibleButtons);
     const activeButtons = newConfig.buttonOrder.filter((id) =>
-      newConfig.visibleButtons.includes(id),
+      visibleButtonsSet.has(id),
     );
 
     for (const btnId of activeButtons) {

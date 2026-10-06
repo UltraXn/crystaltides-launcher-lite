@@ -13,7 +13,7 @@ export const InstallerView: React.FC<InstallerViewProps> = ({
   onLaunchMain,
 }) => {
   const [step, setStep] = useState<'welcome' | 'installing' | 'finish'>('welcome');
-  const [installPath, setInstallPath] = useState(defaultInstallDir.replace(/\\/g, '/'));
+  const [installPath, setInstallPath] = useState(() => defaultInstallDir.replace(/\\/g, '/'));
   const [createDesktopShortcut, setCreateDesktopShortcut] = useState(true);
   const [progress, setProgress] = useState(0);
   const [statusText, setStatusText] = useState('Preparando instalación...');

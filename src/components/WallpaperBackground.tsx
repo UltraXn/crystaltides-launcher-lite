@@ -67,7 +67,9 @@ export const WallpaperBackground: React.FC = () => {
             transition: 'filter 0.3s ease',
             pointerEvents: 'none',
           }}
-        />
+        >
+          <track kind="captions" />
+        </video>
       ) : (
         <div
           className="wallpaper-img"

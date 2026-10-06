@@ -23,6 +23,10 @@ const YoutubeIcon: React.FC<{ style?: React.CSSProperties }> = ({ style }) => (
   </svg>
 );
 
+const DEFAULT_USER_POS = { x: 8, y: 93 };
+const DEFAULT_SOCIALS_POS = { x: 50, y: 93 };
+const DEFAULT_SERVER_STATUS_POS = { x: 92, y: 93 };
+
 export const BottomBar: React.FC = () => {
   const accounts = useLauncherStore((s: LauncherState) => s.accounts);
   const activeAccountId = useLauncherStore((s: LauncherState) => s.activeAccountId);
@@ -98,14 +102,10 @@ export const BottomBar: React.FC = () => {
       const winW = typeof window !== 'undefined' ? window.innerWidth : 1280;
       const winH = typeof window !== 'undefined' ? window.innerHeight : 720;
       const effectiveHudSide = getEffectiveHudSide(dockConfig, hudManualSide);
-      const obstacles = getActiveObstacles(
-        currentBoxId,
-        dockConfig,
-        winW,
-        winH,
-        undefined,
-        { isEditing: isEditingHud, side: effectiveHudSide },
-      );
+      const obstacles = getActiveObstacles(currentBoxId, dockConfig, winW, winH, undefined, {
+        isEditing: isEditingHud,
+        side: effectiveHudSide,
+      });
 
       const proposedCenterPxX = e.clientX - dragStartRef.current.grabOffsetX;
       const proposedCenterPxY = e.clientY - dragStartRef.current.grabOffsetY;
@@ -163,14 +163,10 @@ export const BottomBar: React.FC = () => {
       const winW = typeof window !== 'undefined' ? window.innerWidth : 1280;
       const winH = typeof window !== 'undefined' ? window.innerHeight : 720;
       const effectiveHudSide = getEffectiveHudSide(dockConfig, hudManualSide);
-      const obstacles = getActiveObstacles(
-        currentBoxId,
-        dockConfig,
-        winW,
-        winH,
-        undefined,
-        { isEditing: isEditingHud, side: effectiveHudSide },
-      );
+      const obstacles = getActiveObstacles(currentBoxId, dockConfig, winW, winH, undefined, {
+        isEditing: isEditingHud,
+        side: effectiveHudSide,
+      });
 
       const proposedCenterPxX = e.clientX - dragInfo.grabOffsetX;
       const proposedCenterPxY = e.clientY - dragInfo.grabOffsetY;
@@ -198,20 +194,23 @@ export const BottomBar: React.FC = () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [draggingWidget, dockConfig]);
+  }, [draggingWidget, dockConfig, isEditingHud, hudManualSide]);
 
   // Coordinates
-  const userPos = tempPositions.userPill || dockConfig.widgetPositions?.userPill || { x: 8, y: 93 };
-  const socPos = tempPositions.socials || dockConfig.widgetPositions?.socials || { x: 50, y: 93 };
-  const statPos = tempPositions.serverStatus ||
-    dockConfig.widgetPositions?.serverStatus || { x: 92, y: 93 };
+  const userPos =
+    tempPositions.userPill || dockConfig.widgetPositions?.userPill || DEFAULT_USER_POS;
+  const socPos =
+    tempPositions.socials || dockConfig.widgetPositions?.socials || DEFAULT_SOCIALS_POS;
+  const statPos =
+    tempPositions.serverStatus ||
+    dockConfig.widgetPositions?.serverStatus ||
+    DEFAULT_SERVER_STATUS_POS;
 
   // Dynamic auto-reaccommodation: Detect if Unified Dock or free buttons collide with Socials capsule
-  const effectiveSocPos = React.useMemo(() => {
-    if (draggingWidget === 'socials') {
-      return tempPositions.socials || socPos;
-    }
-
+  let effectiveSocPos = socPos;
+  if (draggingWidget === 'socials') {
+    effectiveSocPos = tempPositions.socials || socPos;
+  } else {
     const winW = typeof window !== 'undefined' ? window.innerWidth : 1280;
     const winH = typeof window !== 'undefined' ? window.innerHeight : 720;
     const socDims = getElementDimensions('widget:socials', dockConfig);
@@ -237,13 +236,12 @@ export const BottomBar: React.FC = () => {
           96,
           Math.max(94, Math.round(((dockBottomPx + halfSocH + 10) / winH) * 100 * 10) / 10),
         );
-        return { x: socPos.x, y: safeY };
+        effectiveSocPos = { x: socPos.x, y: safeY };
       }
     } else {
       // In free buttons mode, check if any button overlaps socials
-      const activeButtons = dockConfig.buttonOrder.filter((id) =>
-        dockConfig.visibleButtons.includes(id),
-      );
+      const visibleSet = new Set(dockConfig.visibleButtons);
+      const activeButtons = dockConfig.buttonOrder.filter((id) => visibleSet.has(id));
       for (const btnId of activeButtons) {
         const bPos = dockConfig.buttonPositions?.[btnId] || { x: 50, y: 50 };
         const bDims = getElementDimensions(`btn:${btnId}`, dockConfig);
@@ -252,19 +250,19 @@ export const BottomBar: React.FC = () => {
         const bRightPx = (bPos.x / 100) * winW + bDims.width / 2;
 
         if (bBottomPx > socTopPx - 4 && socCenterXPx >= bLeftPx && socCenterXPx <= bRightPx) {
-          return { x: socPos.x, y: 96 };
+          effectiveSocPos = { x: socPos.x, y: 96 };
+          break;
         }
       }
     }
-
-    return socPos;
-  }, [draggingWidget, tempPositions.socials, socPos, dockConfig]);
+  }
 
   return (
     <>
       {/* 1. Player Info Chip Widget */}
       <div
         ref={userPillRef}
+        role="presentation"
         style={{
           position: 'absolute',
           left: `${userPos.x}%`,
@@ -341,51 +339,57 @@ export const BottomBar: React.FC = () => {
             )}
           </div>
         )}
-        <div
-          role="button"
-          tabIndex={0}
-          aria-label={t.bottomBar.openAccounts}
-          className="papyrus-player-pill"
-          onClick={() => {
-            if (!isEditingHud) launcherActions.openModal('accounts');
-          }}
-          onKeyDown={(e) => {
-            if (!isEditingHud && (e.key === 'Enter' || e.key === ' ')) {
-              e.preventDefault();
-              launcherActions.openModal('accounts');
-            }
-          }}
-        >
-          {isEditingHud && (
-            <GripHorizontal size={14} color="#38bdf8" style={{ marginRight: '4px' }} />
-          )}
-
-          <div className="player-avatar-box">
-            {activeAccount.skinUrl ? (
-              <img
-                src={activeAccount.skinUrl}
-                alt={activeAccount.username}
-                className="player-avatar-img"
-              />
-            ) : activeAccount.uuid &&
-              activeAccount.uuid !== '00000000-0000-0000-0000-000000000000' ? (
-              <img
-                src={`https://mc-heads.net/avatar/${activeAccount.uuid}/32`}
-                alt={activeAccount.username}
-                className="player-avatar-img"
-                onError={(e) => {
-                  (e.target as HTMLElement).style.display = 'none';
-                }}
-              />
-            ) : (
-              <User style={{ width: '16px', height: '16px', color: '#94a3b8' }} />
+        <div className="papyrus-player-pill">
+          <button
+            type="button"
+            className="player-account-btn"
+            onClick={() => {
+              if (!isEditingHud) launcherActions.openModal('accounts');
+            }}
+            aria-label={t.bottomBar.openAccounts}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              background: 'transparent',
+              border: 'none',
+              padding: 0,
+              cursor: isEditingHud ? 'grab' : 'pointer',
+              color: 'inherit',
+            }}
+          >
+            {isEditingHud && (
+              <GripHorizontal size={14} color="#38bdf8" style={{ marginRight: '4px' }} />
             )}
-          </div>
 
-          <span className="player-name-text">{activeAccount.username}</span>
+            <div className="player-avatar-box">
+              {activeAccount.skinUrl ? (
+                <img
+                  src={activeAccount.skinUrl}
+                  alt={activeAccount.username}
+                  className="player-avatar-img"
+                />
+              ) : activeAccount.uuid &&
+                activeAccount.uuid !== '00000000-0000-0000-0000-000000000000' ? (
+                <img
+                  src={`https://mc-heads.net/avatar/${activeAccount.uuid}/32`}
+                  alt={activeAccount.username}
+                  className="player-avatar-img"
+                  onError={(e) => {
+                    (e.target as HTMLElement).style.display = 'none';
+                  }}
+                />
+              ) : (
+                <User style={{ width: '16px', height: '16px', color: '#94a3b8' }} />
+              )}
+            </div>
+
+            <span className="player-name-text">{activeAccount.username}</span>
+          </button>
 
           {/* Red Logout/Power Button */}
           <button
+            type="button"
             onClick={(e) => {
               if (isEditingHud) return;
               e.stopPropagation();
@@ -393,6 +397,7 @@ export const BottomBar: React.FC = () => {
             }}
             className="player-power-btn"
             title="Cerrar sesión / Ir a Login"
+            aria-label="Cerrar sesión / Ir a Login"
           >
             <Power style={{ width: '12px', height: '12px' }} />
           </button>
@@ -402,6 +407,7 @@ export const BottomBar: React.FC = () => {
       {/* 2. Social Icons Capsule Widget */}
       <div
         ref={socialsRef}
+        role="presentation"
         style={{
           position: 'absolute',
           left: `${effectiveSocPos.x}%`,
@@ -518,6 +524,7 @@ export const BottomBar: React.FC = () => {
       {/* 3. Server Status Widget */}
       <div
         ref={serverStatusRef}
+        role="presentation"
         style={{
           position: 'absolute',
           left: `${statPos.x}%`,
@@ -606,7 +613,11 @@ export const BottomBar: React.FC = () => {
           title={`${t.bottomBar.officialServer} • Ping: ${serverStatus.ping}ms`}
         >
           {isEditingHud && (
-            <GripHorizontal size={14} color="#38bdf8" style={{ marginRight: '2px', flexShrink: 0 }} />
+            <GripHorizontal
+              size={14}
+              color="#38bdf8"
+              style={{ marginRight: '2px', flexShrink: 0 }}
+            />
           )}
           <span
             style={{

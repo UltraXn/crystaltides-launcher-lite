@@ -8,10 +8,22 @@ interface CustomColorPickerProps {
 }
 
 const PRESET_SWATCHES = [
-  '#00e5ff', '#38bdf8', '#3b82f6', '#6366f1',
-  '#8b5cf6', '#a855f7', '#d946ef', '#ec4899',
-  '#f43f5e', '#ef4444', '#f97316', '#f59e0b',
-  '#eab308', '#84cc16', '#22c55e', '#10b981',
+  '#00e5ff',
+  '#38bdf8',
+  '#3b82f6',
+  '#6366f1',
+  '#8b5cf6',
+  '#a855f7',
+  '#d946ef',
+  '#ec4899',
+  '#f43f5e',
+  '#ef4444',
+  '#f97316',
+  '#f59e0b',
+  '#eab308',
+  '#84cc16',
+  '#22c55e',
+  '#10b981',
 ];
 
 export const CustomColorPicker: React.FC<CustomColorPickerProps> = ({
@@ -20,12 +32,14 @@ export const CustomColorPicker: React.FC<CustomColorPickerProps> = ({
   label = 'Personalizado',
 }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [inputHex, setInputHex] = useState(color.toUpperCase());
+  const [prevColor, setPrevColor] = useState(color);
+  const [inputHex, setInputHex] = useState(() => color.toUpperCase());
   const popoverRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
+  if (color !== prevColor) {
+    setPrevColor(color);
     setInputHex(color.toUpperCase());
-  }, [color]);
+  }
 
   // Close when clicking outside
   useEffect(() => {
@@ -76,7 +90,9 @@ export const CustomColorPicker: React.FC<CustomColorPickerProps> = ({
           }}
         />
         <Pipette size={13} style={{ color }} />
-        <span>{label} ({color.toUpperCase()})</span>
+        <span>
+          {label} ({color.toUpperCase()})
+        </span>
       </button>
 
       {/* Fully Custom In-App Dark Popover (Zero OS dialogs) */}
@@ -112,6 +128,7 @@ export const CustomColorPicker: React.FC<CustomColorPickerProps> = ({
             <button
               type="button"
               onClick={() => setIsOpen(false)}
+              aria-label="Cerrar selector de color"
               style={{
                 background: 'transparent',
                 border: 'none',
@@ -140,6 +157,7 @@ export const CustomColorPicker: React.FC<CustomColorPickerProps> = ({
                   key={swatch}
                   type="button"
                   onClick={() => handleSelectSwatch(swatch)}
+                  aria-label={`Seleccionar color ${swatch}`}
                   style={{
                     height: '28px',
                     borderRadius: '6px',
@@ -181,6 +199,7 @@ export const CustomColorPicker: React.FC<CustomColorPickerProps> = ({
               value={inputHex}
               onChange={(e) => handleHexChange(e.target.value)}
               placeholder="#00E5FF"
+              aria-label="Código hexadecimal de color"
               style={{
                 flex: 1,
                 background: 'transparent',

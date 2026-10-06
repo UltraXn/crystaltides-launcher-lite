@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import {
   Terminal,
@@ -31,7 +31,7 @@ export const LogViewerModal: React.FC<LogViewerModalProps> = ({
   const [autoScroll, setAutoScroll] = useState<boolean>(true);
   const logContainerRef = useRef<HTMLDivElement>(null);
 
-  const fetchLogs = async () => {
+  const fetchLogs = React.useCallback(async () => {
     setLoading(true);
     try {
       if (activeTab === 'launcher') {
@@ -46,19 +46,32 @@ export const LogViewerModal: React.FC<LogViewerModalProps> = ({
     } finally {
       setLoading(false);
     }
-  };
+  }, [activeTab]);
 
   useEffect(() => {
     if (isOpen) {
       fetchLogs();
     }
-  }, [isOpen, activeTab]);
+  }, [isOpen, fetchLogs]);
 
   useEffect(() => {
     if (autoScroll && logContainerRef.current) {
       logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
     }
   }, [logs, autoScroll]);
+
+  const filteredLines = useMemo(() => {
+    return logs
+      .split('\n')
+      .filter((line) => {
+        if (!searchFilter.trim()) return true;
+        return line.toLowerCase().includes(searchFilter.toLowerCase());
+      })
+      .map((line, offset) => ({
+        id: `entry-${offset}-${line.slice(0, 24)}`,
+        text: line,
+      }));
+  }, [logs, searchFilter]);
 
   if (!isOpen) return null;
 
@@ -80,15 +93,10 @@ export const LogViewerModal: React.FC<LogViewerModalProps> = ({
     }
   };
 
-  const filteredLines = logs.split('\n').filter((line) => {
-    if (!searchFilter.trim()) return true;
-    return line.toLowerCase().includes(searchFilter.toLowerCase());
-  });
-
-  const renderColoredLine = (line: string, index: number) => {
-    const isError = /error|fatal|exception|crash|failed/i.test(line);
-    const isWarn = /warn|warning/i.test(line);
-    const isInfo = /info/i.test(line);
+  const renderColoredLine = (item: { id: string; text: string }) => {
+    const isError = /error|fatal|exception|crash|failed/i.test(item.text);
+    const isWarn = /warn|warning/i.test(item.text);
+    const isInfo = /info/i.test(item.text);
 
     let textColor = '#e2e8f0';
     if (isError) textColor = '#f87171';
@@ -97,7 +105,7 @@ export const LogViewerModal: React.FC<LogViewerModalProps> = ({
 
     return (
       <div
-        key={index}
+        key={item.id}
         style={{
           color: textColor,
           lineHeight: '1.45',
@@ -105,16 +113,19 @@ export const LogViewerModal: React.FC<LogViewerModalProps> = ({
           wordBreak: 'break-all',
         }}
       >
-        {line}
+        {item.text}
       </div>
     );
   };
 
   return (
     <div
+      role="presentation"
       onClick={(e) => {
-        e.stopPropagation();
-        onClose();
+        if (e.target === e.currentTarget) onClose();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') onClose();
       }}
       style={{
         position: 'fixed',
@@ -129,7 +140,9 @@ export const LogViewerModal: React.FC<LogViewerModalProps> = ({
       }}
     >
       <div
-        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Log Viewer"
         style={{
           width: '100%',
           maxWidth: '880px',
@@ -243,6 +256,7 @@ export const LogViewerModal: React.FC<LogViewerModalProps> = ({
             <button
               type="button"
               onClick={onClose}
+              aria-label="Cerrar visor de registros"
               style={{
                 background: 'transparent',
                 border: 'none',
@@ -342,6 +356,7 @@ export const LogViewerModal: React.FC<LogViewerModalProps> = ({
                 value={searchFilter}
                 onChange={(e) => setSearchFilter(e.target.value)}
                 placeholder="Filtrar por texto..."
+                aria-label="Filtrar registros por texto"
                 style={{
                   background: 'transparent',
                   border: 'none',
@@ -355,6 +370,7 @@ export const LogViewerModal: React.FC<LogViewerModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setSearchFilter('')}
+                  aria-label="Limpiar filtro de búsqueda"
                   style={{
                     background: 'transparent',
                     border: 'none',
@@ -391,9 +407,7 @@ export const LogViewerModal: React.FC<LogViewerModalProps> = ({
                   : '1px solid rgba(255, 255, 255, 0.1)',
                 borderRadius: '6px',
                 padding: '4px 10px',
-                color: autoScroll
-                  ? 'var(--accent-primary, #38bdf8)'
-                  : 'rgba(248, 250, 252, 0.55)',
+                color: autoScroll ? 'var(--accent-primary, #38bdf8)' : 'rgba(248, 250, 252, 0.55)',
                 fontSize: '11px',
                 fontWeight: 600,
                 cursor: 'pointer',
@@ -496,7 +510,7 @@ export const LogViewerModal: React.FC<LogViewerModalProps> = ({
               No se encontraron coincidencias para "{searchFilter}".
             </div>
           ) : (
-            filteredLines.map((line, idx) => renderColoredLine(line, idx))
+            filteredLines.map((item) => renderColoredLine(item))
           )}
         </div>
 

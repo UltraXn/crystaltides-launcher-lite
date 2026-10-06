@@ -68,6 +68,7 @@ export const App: React.FC = () => {
 
   // 1. Detección inicial de modo (Bootstrapping) con SplashScreen suave
   useEffect(() => {
+    let timerId: ReturnType<typeof setTimeout> | undefined;
     const initBoot = async () => {
       const startTime = Date.now();
       try {
@@ -86,10 +87,13 @@ export const App: React.FC = () => {
         const elapsed = Date.now() - startTime;
         const minDisplayTime = 1200;
         const remaining = Math.max(0, minDisplayTime - elapsed);
-        setTimeout(() => setBootLoading(false), remaining);
+        timerId = setTimeout(() => setBootLoading(false), remaining);
       }
     };
     initBoot();
+    return () => {
+      if (timerId) clearTimeout(timerId);
+    };
   }, []);
 
   // 2. Cargar cuentas, listeners y verificación autónoma de actualizaciones en modo Launcher

@@ -120,16 +120,17 @@ export const LoginView: React.FC = () => {
             <input
               type="text"
               placeholder="Tu Apodo / Nickname (No-Premium)"
+              aria-label="Tu Apodo o Nickname (No-Premium)"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               className="login-text-input"
               maxLength={16}
-              autoFocus
             />
 
             <input
               type="password"
               placeholder="Contraseña (Opcional)"
+              aria-label="Contraseña (Opcional)"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="login-text-input"
@@ -141,8 +142,9 @@ export const LoginView: React.FC = () => {
           </div>
 
           {/* Remember Account Checkbox */}
-          <label className="login-checkbox-label">
+          <label htmlFor="login-remember-account" className="login-checkbox-label">
             <input
+              id="login-remember-account"
               type="checkbox"
               checked={rememberAccount}
               onChange={(e) => setRememberAccount(e.target.checked)}

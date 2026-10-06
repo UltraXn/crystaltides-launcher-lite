@@ -19,6 +19,7 @@ import {
   launcherActions,
   LauncherState,
   useT,
+  LoaderType,
 } from '../../store/launcherStore';
 import { GameInstance, resolveInstanceGameDir } from '../../services/instanceService';
 import { openInstanceDirectory } from '../../services/modService';
@@ -56,7 +57,7 @@ export const InstancesModal: React.FC = () => {
   // Form State for Creating Instance
   const [formName, setFormName] = useState('');
   const [formMcVersion, setFormMcVersion] = useState('1.21.1');
-  const [formLoader, setFormLoader] = useState<'vanilla' | 'fabric' | 'neoforge' | 'forge' | 'quilt'>('neoforge');
+  const [formLoader, setFormLoader] = useState<LoaderType>('neoforge');
   const [formIcon, setFormIcon] = useState<'cube' | 'sword' | 'feather' | 'flame' | 'shield'>('cube');
 
   useEffect(() => {
@@ -419,10 +420,11 @@ export const InstancesModal: React.FC = () => {
             }}
           >
             <div>
-              <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#e2e8f0', marginBottom: '6px' }}>
+              <label htmlFor="create-instance-name" style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#e2e8f0', marginBottom: '6px' }}>
                 {t.instances.formNameLabel}
               </label>
               <input
+                id="create-instance-name"
                 type="text"
                 placeholder={t.instances.formNamePlaceholder}
                 value={formName}
@@ -441,9 +443,9 @@ export const InstancesModal: React.FC = () => {
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#e2e8f0', marginBottom: '6px' }}>
+                <span style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#e2e8f0', marginBottom: '6px' }}>
                   {t.instances.formVersionLabel}
-                </label>
+                </span>
                 <CustomSelect
                   value={formMcVersion}
                   onChange={(v) => setFormMcVersion(v)}
@@ -453,12 +455,12 @@ export const InstancesModal: React.FC = () => {
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#e2e8f0', marginBottom: '6px' }}>
+                <span style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#e2e8f0', marginBottom: '6px' }}>
                   {t.instances.formLoaderLabel}
-                </label>
+                </span>
                 <CustomSelect
                   value={formLoader}
-                  onChange={(v) => setFormLoader(v as any)}
+                  onChange={(v) => setFormLoader(v as LoaderType)}
                   options={instanceLoaderOptions}
                   height={38}
                 />
@@ -466,9 +468,9 @@ export const InstancesModal: React.FC = () => {
             </div>
 
             <div>
-              <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#e2e8f0', marginBottom: '6px' }}>
+              <span style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#e2e8f0', marginBottom: '6px' }}>
                 {t.instances.formIconLabel}
-              </label>
+              </span>
               <div style={{ display: 'flex', gap: '10px' }}>
                 {(['cube', 'sword', 'feather', 'flame', 'shield'] as const).map((ico) => {
                   const isSelected = formIcon === ico;

@@ -42,6 +42,7 @@ import {
   AccentColorPreset,
   DockButtonId,
   useT,
+  LoaderType,
 } from '../../store/launcherStore';
 import {
   saveWallpaperFile,
@@ -171,26 +172,22 @@ export const SettingsModal: React.FC = () => {
       fetchFabricLoaderVersions(mcVersion).then((loaders) => {
         if (isMounted && loaders.length > 0) {
           setAvailableLoaderVersions(loaders);
-          if (!loaders.includes(loaderVersion)) {
-            setLoaderVersion(loaders[0]);
-          }
+          setLoaderVersion((current) => (!loaders.includes(current) ? loaders[0] : current));
         }
       });
     } else if (loaderType === 'quilt') {
       fetchQuiltLoaderVersions(mcVersion).then((loaders) => {
         if (isMounted && loaders.length > 0) {
           setAvailableLoaderVersions(loaders);
-          if (!loaders.includes(loaderVersion)) {
-            setLoaderVersion(loaders[0]);
-          }
+          setLoaderVersion((current) => (!loaders.includes(current) ? loaders[0] : current));
         }
       });
     } else if (loaderType === 'neoforge') {
       fetchNeoForgeVersions(mcVersion).then((versions) => {
         if (isMounted) {
           setAvailableLoaderVersions(versions);
-          if (versions.length > 0 && !versions.includes(loaderVersion)) {
-            setLoaderVersion(versions[0]);
+          if (versions.length > 0) {
+            setLoaderVersion((current) => (!versions.includes(current) ? versions[0] : current));
           }
         }
       });
@@ -198,8 +195,8 @@ export const SettingsModal: React.FC = () => {
       fetchForgeVersions(mcVersion).then((versions) => {
         if (isMounted) {
           setAvailableLoaderVersions(versions);
-          if (versions.length > 0 && !versions.includes(loaderVersion)) {
-            setLoaderVersion(versions[0]);
+          if (versions.length > 0) {
+            setLoaderVersion((current) => (!versions.includes(current) ? versions[0] : current));
           }
         }
       });
@@ -455,8 +452,22 @@ export const SettingsModal: React.FC = () => {
 
   return (
     <>
-      <div className="papyrus-modal-overlay" onClick={launcherActions.closeModal}>
-        <div className="papyrus-settings-card" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="papyrus-modal-overlay"
+        role="presentation"
+        onClick={(e) => {
+          if (e.target === e.currentTarget) launcherActions.closeModal();
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') launcherActions.closeModal();
+        }}
+      >
+        <div
+          className="papyrus-settings-card"
+          role="dialog"
+          aria-modal="true"
+          aria-label={t.settings.title}
+        >
           {/* Close Button on Top Right */}
           <button
             onClick={launcherActions.closeModal}
@@ -519,7 +530,8 @@ export const SettingsModal: React.FC = () => {
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: '6px',
-                  transition: 'all 0.15s ease',
+                  transition:
+                    'background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease',
                 }}
               >
                 {language === 'es' && <Check size={13} color="#38bdf8" />}
@@ -544,7 +556,8 @@ export const SettingsModal: React.FC = () => {
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: '6px',
-                  transition: 'all 0.15s ease',
+                  transition:
+                    'background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease',
                 }}
               >
                 {language === 'en' && <Check size={13} color="#38bdf8" />}
@@ -576,6 +589,7 @@ export const SettingsModal: React.FC = () => {
                   value={mcVersion}
                   onChange={(e) => setMcVersion(e.target.value.trim())}
                   placeholder="Escribe versión (ej. 26.2, 1.21.4, 25w10a, 1.16.5...)"
+                  aria-label="Versión personalizada de Minecraft"
                   className="login-text-input"
                   style={{
                     flex: 1,
@@ -715,7 +729,7 @@ export const SettingsModal: React.FC = () => {
             >
               {/* Loader Type Select */}
               <div>
-                <label
+                <span
                   style={{
                     fontSize: '11px',
                     color: 'rgba(248, 250, 252, 0.5)',
@@ -724,10 +738,10 @@ export const SettingsModal: React.FC = () => {
                   }}
                 >
                   Tipo de Loader:
-                </label>
+                </span>
                 <CustomSelect
                   value={loaderType}
-                  onChange={(v) => setLoaderType(v as any)}
+                  onChange={(v) => setLoaderType(v as LoaderType)}
                   options={loaderTypeOptions}
                   height={36}
                 />
@@ -743,14 +757,14 @@ export const SettingsModal: React.FC = () => {
                     marginBottom: '4px',
                   }}
                 >
-                  <label
+                  <span
                     style={{
                       fontSize: '11px',
                       color: 'rgba(248, 250, 252, 0.5)',
                     }}
                   >
                     Versión del Loader:
-                  </label>
+                  </span>
                   {loaderType !== 'vanilla' && (
                     <button
                       type="button"
@@ -773,6 +787,7 @@ export const SettingsModal: React.FC = () => {
                     type="text"
                     value="N/A (Vanilla Puro)"
                     disabled
+                    aria-label="Versión del loader no aplicable"
                     className="login-text-input"
                     style={{
                       width: '100%',
@@ -791,6 +806,7 @@ export const SettingsModal: React.FC = () => {
                     value={loaderVersion}
                     onChange={(e) => setLoaderVersion(e.target.value.trim())}
                     placeholder="Ej. 21.1.252, 0.16.10, 47.3.0..."
+                    aria-label="Versión personalizada del loader"
                     className="login-text-input"
                     style={{
                       width: '100%',
@@ -823,6 +839,7 @@ export const SettingsModal: React.FC = () => {
                     value={loaderVersion}
                     onChange={(e) => setLoaderVersion(e.target.value.trim())}
                     placeholder="Ej. 21.1.252, 0.16.10 o versión custom"
+                    aria-label="Versión del loader"
                     className="login-text-input"
                     style={{
                       width: '100%',
@@ -860,7 +877,8 @@ export const SettingsModal: React.FC = () => {
                     fontWeight: 600,
                     padding: '6px 12px',
                     cursor: loaderInstallStatus.loading ? 'not-allowed' : 'pointer',
-                    transition: 'all 0.15s ease',
+                    transition:
+                      'background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease',
                   }}
                 >
                   {loaderInstallStatus.loading ? (
@@ -920,6 +938,7 @@ export const SettingsModal: React.FC = () => {
                 step="512"
                 value={ramMb}
                 onChange={(e) => setRamMb(Number(e.target.value))}
+                aria-label="Asignación de memoria RAM"
                 className="papyrus-range-slider"
               />
             </div>
@@ -936,6 +955,7 @@ export const SettingsModal: React.FC = () => {
                   value={width}
                   disabled={useDesktopRes}
                   onChange={(e) => setWidth(e.target.value)}
+                  aria-label="Ancho de resolución"
                   className="settings-text-input"
                 />
               </div>
@@ -946,13 +966,15 @@ export const SettingsModal: React.FC = () => {
                   value={height}
                   disabled={useDesktopRes}
                   onChange={(e) => setHeight(e.target.value)}
+                  aria-label="Alto de resolución"
                   className="settings-text-input"
                 />
               </div>
             </div>
             <div className="settings-res-checkbox">
-              <label className="settings-checkbox-item">
+              <label htmlFor="settings-res-desktop" className="settings-checkbox-item">
                 <input
+                  id="settings-res-desktop"
                   type="checkbox"
                   checked={useDesktopRes}
                   onChange={(e) => setUseDesktopRes(e.target.checked)}
@@ -1003,7 +1025,15 @@ export const SettingsModal: React.FC = () => {
                 return (
                   <div
                     key={wp.id}
+                    role="button"
+                    tabIndex={0}
                     onClick={() => handleSelectPreset(wp.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        handleSelectPreset(wp.id);
+                      }
+                    }}
                     className={`wallpaper-preset-card ${isSelected ? 'active' : ''}`}
                     style={{ backgroundImage: `url(${wp.url})` }}
                   >
@@ -1117,7 +1147,8 @@ export const SettingsModal: React.FC = () => {
                         color: wallpaperMuted ? '#f87171' : '#38bdf8',
                         fontSize: '11px',
                         cursor: 'pointer',
-                        transition: 'all 0.15s ease',
+                        transition:
+                          'background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease',
                       }}
                     >
                       {wallpaperMuted ? <VolumeX size={12} /> : <Volume2 size={12} />}
@@ -1136,6 +1167,7 @@ export const SettingsModal: React.FC = () => {
                         if (wallpaperMuted) launcherActions.setWallpaperMuted(false);
                         launcherActions.setWallpaperVolume(parseFloat(e.target.value));
                       }}
+                      aria-label="Volumen del fondo de pantalla"
                       style={{ flex: 1, accentColor: '#00e5ff', cursor: 'pointer' }}
                     />
                     <span
@@ -1158,6 +1190,7 @@ export const SettingsModal: React.FC = () => {
                 <input
                   type="text"
                   placeholder="O pega un enlace directo (ej: https://.../fondo.gif)"
+                  aria-label="URL directa del fondo de pantalla"
                   value={customUrlInput}
                   onChange={(e) => setCustomUrlInput(e.target.value)}
                   onKeyDown={(e) => {
@@ -1658,83 +1691,86 @@ export const SettingsModal: React.FC = () => {
               </p>
 
               <div className="dock-buttons-reorder-list">
-                {dockConfig.buttonOrder.map((btnId: DockButtonId, index: number) => {
-                  const isVisible = dockConfig.visibleButtons.includes(btnId);
-                  const buttonLabels: Record<
-                    DockButtonId,
-                    { name: string; icon: React.ReactNode }
-                  > = {
-                    instances: {
-                      name: 'Instancias (Instances)',
-                      icon: <Layers size={14} color="#38bdf8" />,
-                    },
-                    about: {
-                      name: 'Acerca de (About)',
-                      icon: <Info size={14} color="#94a3b8" />,
-                    },
-                    accounts: {
-                      name: 'Cuentas (Accounts)',
-                      icon: <User size={14} color="#a855f7" />,
-                    },
-                    settings: {
-                      name: 'Ajustes (Settings)',
-                      icon: <SettingsIcon size={14} color="#cbd5e1" />,
-                    },
-                    launch: {
-                      name: 'Iniciar Juego (Start Game)',
-                      icon: <Rocket size={14} color="#22c55e" />,
-                    },
-                  };
-                  const itemInfo = buttonLabels[btnId] || { name: btnId, icon: null };
+                {(() => {
+                  const visibleButtonsSet = new Set(dockConfig.visibleButtons);
+                  return dockConfig.buttonOrder.map((btnId: DockButtonId, index: number) => {
+                    const isVisible = visibleButtonsSet.has(btnId);
+                    const buttonLabels: Record<
+                      DockButtonId,
+                      { name: string; icon: React.ReactNode }
+                    > = {
+                      instances: {
+                        name: 'Instancias (Instances)',
+                        icon: <Layers size={14} color="#38bdf8" />,
+                      },
+                      about: {
+                        name: 'Acerca de (About)',
+                        icon: <Info size={14} color="#94a3b8" />,
+                      },
+                      accounts: {
+                        name: 'Cuentas (Accounts)',
+                        icon: <User size={14} color="#a855f7" />,
+                      },
+                      settings: {
+                        name: 'Ajustes (Settings)',
+                        icon: <SettingsIcon size={14} color="#cbd5e1" />,
+                      },
+                      launch: {
+                        name: 'Iniciar Juego (Start Game)',
+                        icon: <Rocket size={14} color="#22c55e" />,
+                      },
+                    };
+                    const itemInfo = buttonLabels[btnId] || { name: btnId, icon: null };
 
-                  return (
-                    <div
-                      key={btnId}
-                      className={`dock-reorder-item ${!isVisible ? 'disabled' : ''}`}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        {itemInfo.icon}
-                        <span style={{ fontSize: '11.5px', fontWeight: 500, color: '#f8fafc' }}>
-                          {itemInfo.name}
-                        </span>
+                    return (
+                      <div
+                        key={btnId}
+                        className={`dock-reorder-item ${!isVisible ? 'disabled' : ''}`}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          {itemInfo.icon}
+                          <span style={{ fontSize: '11.5px', fontWeight: 500, color: '#f8fafc' }}>
+                            {itemInfo.name}
+                          </span>
+                        </div>
+
+                        <div className="dock-reorder-actions">
+                          {/* Move Left / Up */}
+                          <button
+                            type="button"
+                            onClick={() => launcherActions.moveDockButton(btnId, 'left')}
+                            disabled={index === 0}
+                            className="dock-action-icon-btn"
+                            title="Mover a la izquierda / antes"
+                          >
+                            <ChevronUp size={14} />
+                          </button>
+
+                          {/* Move Right / Down */}
+                          <button
+                            type="button"
+                            onClick={() => launcherActions.moveDockButton(btnId, 'right')}
+                            disabled={index === dockConfig.buttonOrder.length - 1}
+                            className="dock-action-icon-btn"
+                            title="Mover a la derecha / después"
+                          >
+                            <ChevronDown size={14} />
+                          </button>
+
+                          {/* Toggle Visibility */}
+                          <button
+                            type="button"
+                            onClick={() => launcherActions.toggleDockButton(btnId)}
+                            className={`dock-action-icon-btn ${isVisible ? 'active-eye' : ''}`}
+                            title={isVisible ? 'Ocultar botón del dock' : 'Mostrar botón en el dock'}
+                          >
+                            {isVisible ? <Eye size={13} /> : <EyeOff size={13} />}
+                          </button>
+                        </div>
                       </div>
-
-                      <div className="dock-reorder-actions">
-                        {/* Move Left / Up */}
-                        <button
-                          type="button"
-                          onClick={() => launcherActions.moveDockButton(btnId, 'left')}
-                          disabled={index === 0}
-                          className="dock-action-icon-btn"
-                          title="Mover a la izquierda / antes"
-                        >
-                          <ChevronUp size={14} />
-                        </button>
-
-                        {/* Move Right / Down */}
-                        <button
-                          type="button"
-                          onClick={() => launcherActions.moveDockButton(btnId, 'right')}
-                          disabled={index === dockConfig.buttonOrder.length - 1}
-                          className="dock-action-icon-btn"
-                          title="Mover a la derecha / después"
-                        >
-                          <ChevronDown size={14} />
-                        </button>
-
-                        {/* Toggle Visibility */}
-                        <button
-                          type="button"
-                          onClick={() => launcherActions.toggleDockButton(btnId)}
-                          className={`dock-action-icon-btn ${isVisible ? 'active-eye' : ''}`}
-                          title={isVisible ? 'Ocultar botón del dock' : 'Mostrar botón en el dock'}
-                        >
-                          {isVisible ? <Eye size={13} /> : <EyeOff size={13} />}
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
+                    );
+                  });
+                })()}
               </div>
             </div>
           </div>
@@ -1744,8 +1780,9 @@ export const SettingsModal: React.FC = () => {
             <span className="settings-label-title">Advanced Options</span>
             <div className="settings-grid-checkboxes">
               <div className="settings-col-checkboxes">
-                <label className="settings-checkbox-item">
+                <label htmlFor="settings-keep-launcher" className="settings-checkbox-item">
                   <input
+                    id="settings-keep-launcher"
                     type="checkbox"
                     checked={keepLauncher}
                     onChange={(e) => setKeepLauncher(e.target.checked)}
@@ -1754,8 +1791,9 @@ export const SettingsModal: React.FC = () => {
                   <span className="checkbox-text">Keep launcher after launch.</span>
                 </label>
 
-                <label className="settings-checkbox-item">
+                <label htmlFor="settings-disable-bg-anim" className="settings-checkbox-item">
                   <input
+                    id="settings-disable-bg-anim"
                     type="checkbox"
                     checked={disableBgAnim}
                     onChange={(e) => setDisableBgAnim(e.target.checked)}
@@ -1766,8 +1804,9 @@ export const SettingsModal: React.FC = () => {
               </div>
 
               <div className="settings-col-checkboxes">
-                <label className="settings-checkbox-item">
+                <label htmlFor="settings-disable-animations" className="settings-checkbox-item">
                   <input
+                    id="settings-disable-animations"
                     type="checkbox"
                     checked={disableAnimations}
                     onChange={(e) => setDisableAnimations(e.target.checked)}
@@ -1776,8 +1815,13 @@ export const SettingsModal: React.FC = () => {
                   <span className="checkbox-text">Disable animations.</span>
                 </label>
 
-                <label className="settings-checkbox-item">
+                <label
+                  htmlFor="settings-disable-hw-accel"
+                  className="settings-checkbox-item"
+                  aria-label="Disable hardware acceleration (Require restart)"
+                >
                   <input
+                    id="settings-disable-hw-accel"
                     type="checkbox"
                     checked={disableHardwareAccel}
                     onChange={(e) => {
@@ -1786,10 +1830,10 @@ export const SettingsModal: React.FC = () => {
                     }}
                     className="papyrus-checkbox"
                   />
-                  <div className="checkbox-multi-line">
+                  <span className="checkbox-multi-line">
                     <span className="checkbox-text">Disable hardware acceleration.</span>
                     <span className="checkbox-subtext">(Require restart)</span>
-                  </div>
+                  </span>
                 </label>
               </div>
             </div>
@@ -1803,6 +1847,7 @@ export const SettingsModal: React.FC = () => {
                 type="text"
                 value={launcherDir}
                 readOnly
+                aria-label="Ruta del directorio del launcher"
                 className="settings-dir-input"
                 style={{ flex: 1 }}
               />
@@ -1843,7 +1888,8 @@ export const SettingsModal: React.FC = () => {
                   fontWeight: 600,
                   padding: '8px 14px',
                   cursor: 'pointer',
-                  transition: 'all 0.15s ease',
+                  transition:
+                    'background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease',
                 }}
               >
                 <FileText size={14} />
@@ -1865,7 +1911,8 @@ export const SettingsModal: React.FC = () => {
                   fontWeight: 600,
                   padding: '8px 14px',
                   cursor: 'pointer',
-                  transition: 'all 0.15s ease',
+                  transition:
+                    'background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease',
                 }}
               >
                 <FolderOpen size={14} />
@@ -1928,21 +1975,32 @@ export const SettingsModal: React.FC = () => {
       {showHwRestartModal && (
         <div
           className="papyrus-modal-overlay"
+          role="presentation"
           style={{ zIndex: 100, background: 'rgba(0, 0, 0, 0.75)' }}
-          onClick={() => {
-            setShowHwRestartModal(false);
-            setPendingHwAccel(null);
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowHwRestartModal(false);
+              setPendingHwAccel(null);
+            }
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              setShowHwRestartModal(false);
+              setPendingHwAccel(null);
+            }
           }}
         >
           <div
             className="papyrus-settings-card"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Confirm Restart"
             style={{
               width: '420px',
               padding: '24px 26px',
               border: '1px solid rgba(0, 229, 255, 0.25)',
               boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 30px rgba(0, 229, 255, 0.15)',
             }}
-            onClick={(e) => e.stopPropagation()}
           >
             <div
               style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}
@@ -1975,9 +2033,7 @@ export const SettingsModal: React.FC = () => {
                 margin: '8px 0 16px 0',
               }}
             >
-              {pendingHwAccel
-                ? t.settings.hwRestartDisableDesc
-                : t.settings.hwRestartEnableDesc}
+              {pendingHwAccel ? t.settings.hwRestartDisableDesc : t.settings.hwRestartEnableDesc}
             </p>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>

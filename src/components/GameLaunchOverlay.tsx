@@ -17,6 +17,8 @@ export const GameLaunchOverlay: React.FC = () => {
   if (isMinimized) {
     return (
       <div
+        role="button"
+        tabIndex={0}
         style={{
           position: "fixed",
           bottom: "70px",
@@ -34,6 +36,12 @@ export const GameLaunchOverlay: React.FC = () => {
           cursor: "pointer",
         }}
         onClick={() => setIsMinimized(false)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setIsMinimized(false);
+          }
+        }}
         title="Click para expandir pantalla de carga"
       >
         <Loader2 size={16} color="#38bdf8" style={{ animation: "spin 1s linear infinite" }} />

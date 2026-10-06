@@ -92,7 +92,6 @@ export const HomeDock: React.FC = () => {
 
       const winW = typeof window !== 'undefined' ? window.innerWidth : 1280;
       const winH = typeof window !== 'undefined' ? window.innerHeight : 720;
-      const effectiveHudSide = getEffectiveHudSide(dockConfig, hudManualSide);
       const obstacles = getActiveObstacles(currentBoxId, dockConfig, winW, winH, undefined, {
         isEditing: isEditingHud,
         side: effectiveHudSide,
@@ -145,7 +144,6 @@ export const HomeDock: React.FC = () => {
 
       const winW = typeof window !== 'undefined' ? window.innerWidth : 1280;
       const winH = typeof window !== 'undefined' ? window.innerHeight : 720;
-      const effectiveHudSide = getEffectiveHudSide(dockConfig, hudManualSide);
       const obstacles = getActiveObstacles(currentBoxId, dockConfig, winW, winH, undefined, {
         isEditing: isEditingHud,
         side: effectiveHudSide,
@@ -185,7 +183,7 @@ export const HomeDock: React.FC = () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [draggingTarget, dockConfig, isEditingHud, hudManualSide]);
+  }, [draggingTarget, dockConfig, isEditingHud, effectiveHudSide]);
 
   // Dimension measurements
   const isCompact = dockConfig.scale === 'compact';
@@ -222,9 +220,8 @@ export const HomeDock: React.FC = () => {
   const startSubtleBg = `rgba(${r}, ${g}, ${b}, 0.16)`;
   const startHoverBg = `rgba(${r}, ${g}, ${b}, 0.28)`;
 
-  const activeButtons = dockConfig.buttonOrder.filter((id) =>
-    dockConfig.visibleButtons.includes(id),
-  );
+  const visibleButtonsSet = new Set(dockConfig.visibleButtons);
+  const activeButtons = dockConfig.buttonOrder.filter((id) => visibleButtonsSet.has(id));
 
   // Render individual button content
   const renderButtonContent = (btnId: DockButtonId) => {
@@ -605,6 +602,7 @@ export const HomeDock: React.FC = () => {
       {/* Main Unified Dock Container */}
       <div
         ref={dockRef}
+        role="presentation"
         className="home-unified-dock"
         onMouseDown={(e) => {
           if (isEditingHud) {

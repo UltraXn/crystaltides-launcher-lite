@@ -10,6 +10,17 @@ const ACTIVE_KEY = 'active_wallpaper';
 
 let currentCreatedBlobUrl: string | null = null;
 
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', () => {
+    if (currentCreatedBlobUrl) {
+      try {
+        URL.revokeObjectURL(currentCreatedBlobUrl);
+      } catch {}
+      currentCreatedBlobUrl = null;
+    }
+  });
+}
+
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     if (typeof indexedDB === 'undefined') {
@@ -18,15 +29,15 @@ function openDB(): Promise<IDBDatabase> {
 
     const request = indexedDB.open(DB_NAME, DB_VERSION);
 
-    request.onupgradeneeded = (e) => {
+    request.addEventListener('upgradeneeded', (e) => {
       const db = (e.target as IDBOpenDBRequest).result;
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME, { keyPath: 'id' });
       }
-    };
+    });
 
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+    request.addEventListener('success', () => resolve(request.result));
+    request.addEventListener('error', () => reject(request.error));
   });
 }
 
@@ -41,6 +52,7 @@ export interface StoredWallpaperMeta {
   url: string;
   isVideo: boolean;
   name: string;
+  revoke?: () => void;
 }
 
 export async function loadActiveWallpaper(): Promise<StoredWallpaperMeta | null> {
@@ -51,7 +63,7 @@ export async function loadActiveWallpaper(): Promise<StoredWallpaperMeta | null>
       const store = transaction.objectStore(STORE_NAME);
       const request = store.get(ACTIVE_KEY);
 
-      request.onsuccess = () => {
+      request.addEventListener('success', () => {
         const record = request.result;
         if (record && record.blob) {
           if (currentCreatedBlobUrl) {
@@ -60,17 +72,23 @@ export async function loadActiveWallpaper(): Promise<StoredWallpaperMeta | null>
             } catch {}
           }
           currentCreatedBlobUrl = URL.createObjectURL(record.blob);
+          const activeUrl = currentCreatedBlobUrl;
           resolve({
-            url: currentCreatedBlobUrl,
+            url: activeUrl,
             isVideo: !!record.isVideo,
             name: record.name || 'custom_wallpaper',
+            revoke: () => {
+              try {
+                URL.revokeObjectURL(activeUrl);
+              } catch {}
+            },
           });
         } else {
           resolve(null);
         }
-      };
+      });
 
-      request.onerror = () => resolve(null);
+      request.addEventListener('error', () => resolve(null));
     });
   } catch (err) {
     console.warn('Error loading custom wallpaper from IndexedDB:', err);
@@ -98,7 +116,7 @@ export async function saveWallpaperFile(file: File): Promise<StoredWallpaperMeta
 
     const request = store.put(record);
 
-    request.onsuccess = () => {
+    request.addEventListener('success', () => {
       if (currentCreatedBlobUrl) {
         try {
           URL.revokeObjectURL(currentCreatedBlobUrl);
@@ -110,19 +128,23 @@ export async function saveWallpaperFile(file: File): Promise<StoredWallpaperMeta
         isVideo,
         name: file.name,
       });
-    };
+    });
 
-    request.onerror = () => reject(request.error);
+    request.addEventListener('error', () => reject(request.error));
   });
 }
 
-export async function clearCustomWallpaper(): Promise<void> {
+export function revokeCurrentWallpaperUrl(): void {
   if (currentCreatedBlobUrl) {
     try {
       URL.revokeObjectURL(currentCreatedBlobUrl);
     } catch {}
     currentCreatedBlobUrl = null;
   }
+}
+
+export async function clearCustomWallpaper(): Promise<void> {
+  revokeCurrentWallpaperUrl();
 
   try {
     const db = await openDB();
@@ -130,8 +152,8 @@ export async function clearCustomWallpaper(): Promise<void> {
       const transaction = db.transaction(STORE_NAME, 'readwrite');
       const store = transaction.objectStore(STORE_NAME);
       const request = store.delete(ACTIVE_KEY);
-      request.onsuccess = () => resolve();
-      request.onerror = () => resolve();
+      request.addEventListener('success', () => resolve());
+      request.addEventListener('error', () => resolve());
     });
   } catch (err) {
     console.warn('Failed to clear wallpaper from IndexedDB:', err);

@@ -121,11 +121,16 @@ export const pollMicrosoftToken = async (
 ): Promise<MicrosoftAuthResult> => {
   const body = `client_id=${CLIENT_ID}&grant_type=urn:ietf:params:oauth:grant-type:device_code&device_code=${deviceCode}`;
   const deadline = Date.now() + expiresIn * 1000;
-  const pollIntervalMs = interval * 1000;
+  // RFC 8628 §3.4: Default minimum interval is 5 seconds to prevent rate-limiting and IP bans
+  let currentIntervalMs = Math.max(interval || 5, 5) * 1000;
 
-  while (Date.now() < deadline) {
+  const pollStep = async (): Promise<MicrosoftAuthResult> => {
+    if (Date.now() >= deadline) {
+      throw new Error("Tiempo de espera agotado para la autenticación.");
+    }
+
     onStatus?.("Esperando autorización en Microsoft...");
-    await new Promise((r) => setTimeout(r, pollIntervalMs));
+    await new Promise((resolve) => setTimeout(resolve, currentIntervalMs));
 
     const res = await proxyPost<OAuthTokenResponse>(
       "https://login.microsoftonline.com/consumers/oauth2/v2.0/token",
@@ -139,19 +144,24 @@ export const pollMicrosoftToken = async (
     }
 
     if (res.error) {
-      if (res.error === "authorization_pending") continue;
+      if (res.error === "authorization_pending") {
+        return pollStep();
+      }
       if (res.error === "slow_down") {
-        await new Promise((r) => setTimeout(r, 5000));
-        continue;
+        // RFC 8628 §3.5: interval MUST be increased by 5 seconds for all subsequent requests
+        currentIntervalMs += 5000;
+        return pollStep();
       }
       if (res.error === "expired_token") {
         throw new Error("El código de verificación expiró. Inténtalo de nuevo.");
       }
       throw new Error(res.error_description || res.error);
     }
-  }
 
-  throw new Error("Tiempo de espera agotado para la autenticación.");
+    return pollStep();
+  };
+
+  return pollStep();
 };
 
 export const refreshMicrosoftSession = async (
@@ -205,7 +215,7 @@ export const completeMinecraftAuth = async (
         SiteName: "user.auth.xboxlive.com",
         RpsTicket: `d=${msAccessToken}`,
       },
-      RelyingParty: "http:" + "//auth.xboxlive.com",
+      RelyingParty: "http://auth.xboxlive.com",
       TokenType: "JWT",
     })
   );

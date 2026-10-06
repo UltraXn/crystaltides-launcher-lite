@@ -65,7 +65,9 @@ export const CrashReportModal: React.FC<CrashReportModalProps> = ({
       >
         {/* Botón cerrar */}
         <button
+          type="button"
           onClick={onClose}
+          aria-label="Cerrar reporte de error"
           style={{
             position: 'absolute',
             top: '16px',
@@ -123,16 +125,18 @@ export const CrashReportModal: React.FC<CrashReportModalProps> = ({
 
         {/* Consola resumida de error */}
         <div style={{ marginBottom: '20px' }}>
-          <label
+          <span
             style={{
               fontSize: '11px',
               fontWeight: 600,
               color: 'rgba(248, 250, 252, 0.5)',
               textTransform: 'uppercase',
+              display: 'block',
+              marginBottom: '4px',
             }}
           >
             Detalle del error:
-          </label>
+          </span>
           <pre
             style={{
               background: 'rgba(0, 0, 0, 0.5)',

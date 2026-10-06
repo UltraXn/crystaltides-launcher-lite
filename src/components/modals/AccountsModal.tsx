@@ -31,7 +31,7 @@ export const AccountsModal: React.FC = () => {
   const [isAddingMs, setIsAddingMs] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
+  const editingAccountIdRef = useRef<string | null>(null);
   const rowFileInputRef = useRef<HTMLInputElement>(null);
 
   if (activeModal !== 'accounts') return null;
@@ -86,23 +86,25 @@ export const AccountsModal: React.FC = () => {
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    const handleLoad = (event: ProgressEvent<FileReader>) => {
+      reader.removeEventListener('load', handleLoad);
       const dataUrl = event.target?.result as string;
       if (!dataUrl) return;
 
       if (isNewAccount) {
         setNewSkinUrl(dataUrl);
-      } else if (editingAccountId) {
-        launcherActions.updateAccount(editingAccountId, { skinUrl: dataUrl });
-        setEditingAccountId(null);
+      } else if (editingAccountIdRef.current) {
+        launcherActions.updateAccount(editingAccountIdRef.current, { skinUrl: dataUrl });
+        editingAccountIdRef.current = null;
       }
     };
+    reader.addEventListener('load', handleLoad, { once: true });
     reader.readAsDataURL(file);
     e.target.value = '';
   };
 
   const triggerRowSkinUpload = (accId: string) => {
-    setEditingAccountId(accId);
+    editingAccountIdRef.current = accId;
     rowFileInputRef.current?.click();
   };
 
@@ -172,20 +174,27 @@ export const AccountsModal: React.FC = () => {
             const isActive = acc.id === activeAccountId;
             return (
               <div
-                role="button"
-                tabIndex={0}
-                aria-label={`${t.accounts.select} ${acc.username}`}
                 key={acc.id}
-                onClick={() => launcherActions.setActiveAccount(acc.id)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    launcherActions.setActiveAccount(acc.id);
-                  }
-                }}
                 className={`account-row-item ${isActive ? 'active' : ''}`}
               >
-                <div className="account-row-left">
+                <button
+                  type="button"
+                  className="account-row-left"
+                  onClick={() => launcherActions.setActiveAccount(acc.id)}
+                  aria-label={`${t.accounts.select} ${acc.username}`}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    flex: 1,
+                    background: 'transparent',
+                    border: 'none',
+                    padding: 0,
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    color: 'inherit',
+                  }}
+                >
                   <div className="account-skin-head" title={t.accounts.uploadSkinTitle}>
                     {acc.skinUrl ? (
                       <img src={acc.skinUrl} alt="Skin" className="skin-head-img" />
@@ -212,18 +221,17 @@ export const AccountsModal: React.FC = () => {
                         : t.accounts.offlineAccount}
                     </span>
                   </div>
-                </div>
+                </button>
 
                 <div className="account-row-actions">
                   {/* Skin upload / change button */}
                   <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      triggerRowSkinUpload(acc.id);
-                    }}
+                    type="button"
+                    onClick={() => triggerRowSkinUpload(acc.id)}
                     className="account-delete-btn"
                     style={{ color: '#22c55e', borderColor: 'rgba(34, 197, 94, 0.25)' }}
                     title={t.accounts.uploadSkinTitle}
+                    aria-label={t.accounts.uploadSkinTitle}
                   >
                     <Upload style={{ width: '13px', height: '13px' }} />
                   </button>
@@ -234,12 +242,11 @@ export const AccountsModal: React.FC = () => {
 
                   {accounts.length > 1 && (
                     <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        launcherActions.removeAccount(acc.id);
-                      }}
+                      type="button"
+                      onClick={() => launcherActions.removeAccount(acc.id)}
                       className="account-delete-btn"
                       title={t.accounts.deleteProfileTitle}
+                      aria-label={t.accounts.deleteProfileTitle}
                     >
                       <Trash2 style={{ width: '14px', height: '14px' }} />
                     </button>

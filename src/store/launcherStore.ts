@@ -30,6 +30,8 @@ export interface UserAccount {
   lastUsed: number;
 }
 
+export type LoaderType = 'vanilla' | 'neoforge' | 'forge' | 'fabric' | 'quilt';
+
 export interface LauncherSettings {
   minRamGb: number;
   maxRamGb: number;
@@ -39,7 +41,7 @@ export interface LauncherSettings {
   discordRpc: boolean;
   fullscreen: boolean;
   mcVersion: string;
-  loaderType: 'vanilla' | 'neoforge' | 'forge' | 'fabric' | 'quilt';
+  loaderType: LoaderType;
   loaderVersion?: string;
 }
 
@@ -217,11 +219,11 @@ export const loadInitialDockConfig = (): DockConfig => {
         ...parsed,
         buttonPositions: {
           ...DEFAULT_DOCK_CONFIG.buttonPositions,
-          ...(parsed.buttonPositions || {}),
+          ...parsed.buttonPositions,
         },
         widgetPositions: {
           ...DEFAULT_DOCK_CONFIG.widgetPositions,
-          ...(parsed.widgetPositions || {}),
+          ...parsed.widgetPositions,
         },
         visibleButtons: Array.isArray(parsed.visibleButtons)
           ? parsed.visibleButtons
@@ -611,7 +613,7 @@ export const launcherActions = {
       if (decrypted && Array.isArray(decrypted) && decrypted.length > 0) {
         const validAccounts = decrypted.filter(isUserAccount);
         if (validAccounts.length > 0) {
-          const sorted = [...validAccounts].sort(
+          const sorted = validAccounts.toSorted(
             (a: UserAccount, b: UserAccount) => b.lastUsed - a.lastUsed,
           );
           setStoreState(() => ({
