@@ -74,6 +74,18 @@ export const getElementDimensions = (
       }
     }
 
+    const btnCustom = dockConfig.buttonCustomizations?.[btnId];
+    if (btnCustom?.customWidth) {
+      width = btnCustom.customWidth;
+    }
+    if (btnCustom?.customHeight) {
+      height = btnCustom.customHeight;
+    }
+    if (btnCustom?.scale && btnCustom.scale > 0) {
+      width = Math.round(width * btnCustom.scale);
+      height = Math.round(height * btnCustom.scale);
+    }
+
     return { width, height };
   }
 

@@ -2068,3 +2068,153 @@ body {
   background: var(--accent-subtle, rgba(0, 229, 255, 0.12));
   border-color: var(--accent-primary, #00e5ff);
 }
+
+.dock-action-icon-btn.protected-btn {
+  opacity: 0.6;
+  cursor: not-allowed;
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.06);
+}
+
+/* ═════════════════════════════════════════════
+   DOCK BUTTON ULTRA-CUSTOMIZATION & SPECIAL FX
+   ═════════════════════════════════════════════ */
+.dock-button-video-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 0;
+}
+
+@keyframes rgbBorderSweep {
+  0% {
+    border-color: #ff0055 !important;
+    box-shadow: 0 0 16px rgba(255, 0, 85, 0.6), inset 0 0 8px rgba(255, 0, 85, 0.3) !important;
+  }
+  25% {
+    border-color: #00e5ff !important;
+    box-shadow: 0 0 16px rgba(0, 229, 255, 0.6), inset 0 0 8px rgba(0, 229, 255, 0.3) !important;
+  }
+  50% {
+    border-color: #22c55e !important;
+    box-shadow: 0 0 16px rgba(34, 197, 94, 0.6), inset 0 0 8px rgba(34, 197, 94, 0.3) !important;
+  }
+  75% {
+    border-color: #eab308 !important;
+    box-shadow: 0 0 16px rgba(234, 179, 8, 0.6), inset 0 0 8px rgba(234, 179, 8, 0.3) !important;
+  }
+  100% {
+    border-color: #ff0055 !important;
+    box-shadow: 0 0 16px rgba(255, 0, 85, 0.6), inset 0 0 8px rgba(255, 0, 85, 0.3) !important;
+  }
+}
+
+.btn-fx-rainbow-rgb {
+  animation: rgbBorderSweep 3.5s linear infinite !important;
+}
+
+@keyframes neonPulseGlow {
+  0%, 100% {
+    box-shadow: 0 0 12px var(--accent-primary, #00e5ff), 0 0 28px rgba(0, 229, 255, 0.45) !important;
+    border-color: var(--accent-primary, #00e5ff) !important;
+  }
+  50% {
+    box-shadow: 0 0 4px var(--accent-primary, #00e5ff), 0 0 10px rgba(0, 229, 255, 0.2) !important;
+    border-color: rgba(0, 229, 255, 0.4) !important;
+  }
+}
+
+.btn-fx-neon-pulse {
+  animation: neonPulseGlow 2s ease-in-out infinite !important;
+}
+
+@keyframes cyberGlitch {
+  0%, 100% {
+    transform: translate(0, 0);
+  }
+  15% {
+    transform: translate(-2px, 1px);
+    filter: drop-shadow(2px 0 #ff0055);
+  }
+  30% {
+    transform: translate(2px, -1px);
+    filter: drop-shadow(-2px 0 #00e5ff);
+  }
+  45% {
+    transform: translate(-1px, -1px);
+  }
+  60% {
+    transform: translate(1px, 2px);
+  }
+}
+
+.btn-fx-glitch {
+  animation: cyberGlitch 2.2s steps(2, start) infinite;
+}
+
+@keyframes holoScanline {
+  0% {
+    background-position: 0 0;
+  }
+  100% {
+    background-position: 0 200%;
+  }
+}
+
+.btn-fx-hologram {
+  background-image: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 3px,
+    rgba(0, 229, 255, 0.12) 3px,
+    rgba(0, 229, 255, 0.12) 6px
+  ) !important;
+  box-shadow: inset 0 0 14px rgba(0, 229, 255, 0.35), 0 0 16px rgba(0, 229, 255, 0.25) !important;
+  animation: holoScanline 10s linear infinite;
+}
+
+@keyframes fireAuraGlow {
+  0%, 100% {
+    box-shadow: 0 0 14px #f97316, 0 0 32px #ef4444 !important;
+    border-color: #f97316 !important;
+  }
+  50% {
+    box-shadow: 0 0 24px #ea580c, 0 0 46px #dc2626 !important;
+    border-color: #fb923c !important;
+  }
+}
+
+.btn-fx-fire {
+  animation: fireAuraGlow 1.6s ease-in-out infinite !important;
+}
+
+.dock-edit-badge {
+  position: absolute;
+  top: -10px;
+  right: -8px;
+  background: rgba(10, 14, 22, 0.95);
+  border: 1px solid #38bdf8;
+  border-radius: 6px;
+  padding: 2px 5px;
+  font-size: 8.5px;
+  font-weight: 700;
+  color: #38bdf8;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.8), 0 0 8px rgba(56, 189, 248, 0.4);
+  pointer-events: none;
+  z-index: 10;
+  transition: transform 0.15s ease;
+}
+
+.dock-segment:hover .dock-edit-badge {
+  transform: scale(1.1);
+  border-color: #00e5ff;
+  color: #00e5ff;
+}
+

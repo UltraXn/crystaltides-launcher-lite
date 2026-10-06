@@ -33,6 +33,7 @@ import {
   Globe,
   Type,
   Puzzle,
+  Lock,
 } from 'lucide-react';
 import {
   useLauncherStore,
@@ -43,6 +44,7 @@ import {
   ACCENT_PRESETS,
   AccentColorPreset,
   DockButtonId,
+  PROTECTED_DOCK_BUTTONS,
   useT,
   LoaderType,
   GuiFontFamily,
@@ -388,7 +390,8 @@ export const SettingsModal: React.FC = () => {
       launcherActions.setCustomWallpaper(result.url, result.isVideo);
       let feedbackMsg = 'Imagen de fondo aplicada exitosamente.';
       if (result.isVideo) {
-        feedbackMsg = 'Vídeo de fondo configurado exitosamente (reproducción con audio habilitada).';
+        feedbackMsg =
+          'Vídeo de fondo configurado exitosamente (reproducción con audio habilitada).';
       } else if (file.type === 'image/gif' || file.name.toLowerCase().endsWith('.gif')) {
         feedbackMsg = 'GIF animado aplicado exitosamente.';
       }
@@ -1149,9 +1152,7 @@ export const SettingsModal: React.FC = () => {
                     ) : (
                       <CheckCircle2 size={12} />
                     )}
-                    <span>
-                      {getCustomWallpaperLabel(customWallpaperUrl, isVideoWallpaper)}
-                    </span>
+                    <span>{getCustomWallpaperLabel(customWallpaperUrl, isVideoWallpaper)}</span>
                   </div>
                 )}
               </div>
@@ -1391,7 +1392,8 @@ export const SettingsModal: React.FC = () => {
                 margin: '2px 0 12px 0',
               }}
             >
-              Personaliza la tipografía de la interfaz, los colores de fondo de las ventanas y los bordes:
+              Personaliza la tipografía de la interfaz, los colores de fondo de las ventanas y los
+              bordes:
             </p>
 
             {/* 1. Fuente / Tipografía */}
@@ -2020,12 +2022,12 @@ export const SettingsModal: React.FC = () => {
                         </div>
 
                         <div className="dock-reorder-actions" style={{ gap: '6px' }}>
-                          {/* Advanced Customizer (Background, SVG, Icon, Content Color) */}
+                          {/* Advanced Customizer (Background, Video, SVG, Sizing, FX, Color) */}
                           <button
                             type="button"
-                            onClick={() => setSelectedCustomizerBtn(btnId)}
+                            onClick={() => launcherActions.openButtonCustomizer(btnId)}
                             className="dock-action-icon-btn"
-                            title="Personalizar fondo, color, SVG o imagen del botón"
+                            title="Personalizar fondo, vídeo, tamaño libre, SVG o efectos especiales"
                             style={{
                               display: 'inline-flex',
                               alignItems: 'center',
@@ -2090,15 +2092,26 @@ export const SettingsModal: React.FC = () => {
                             <ChevronDown size={14} />
                           </button>
 
-                          {/* Toggle Visibility */}
-                          <button
-                            type="button"
-                            onClick={() => launcherActions.toggleDockButton(btnId)}
-                            className={`dock-action-icon-btn ${isVisible ? 'active-eye' : ''}`}
-                            title={isVisible ? 'Ocultar botón del dock' : 'Mostrar botón en el dock'}
-                          >
-                            {isVisible ? <Eye size={13} /> : <EyeOff size={13} />}
-                          </button>
+                          {/* Toggle Visibility (Protected buttons cannot be hidden) */}
+                          {PROTECTED_DOCK_BUTTONS.includes(btnId) ? (
+                            <span
+                              className="dock-action-icon-btn protected-btn"
+                              title="Botón protegido del sistema (no se puede ocultar para garantizar el funcionamiento del launcher)"
+                            >
+                              <Lock size={12} color="#94a3b8" />
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => launcherActions.toggleDockButton(btnId)}
+                              className={`dock-action-icon-btn ${isVisible ? 'active-eye' : ''}`}
+                              title={
+                                isVisible ? 'Ocultar botón del dock' : 'Mostrar botón en el dock'
+                              }
+                            >
+                              {isVisible ? <Eye size={13} /> : <EyeOff size={13} />}
+                            </button>
+                          )}
                         </div>
                       </div>
                     );
@@ -2140,13 +2153,15 @@ export const SettingsModal: React.FC = () => {
                 lineHeight: 1.45,
               }}
             >
-              Arquitectura extensible SDK. Activa o desactiva herramientas modulares integradas (calculadoras, hubs, widgets) con integración viva en el Dock y el Launcher:
+              Arquitectura extensible SDK. Activa o desactiva herramientas modulares integradas
+              (calculadoras, hubs, widgets) con integración viva en el Dock y el Launcher:
             </p>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               {modules.map((mod) => {
                 const enabled = isModuleEnabled(mod.id);
-                const modAccent = mod.accentColor || mod.slots.dockButton?.defaultColor || '#38bdf8';
+                const modAccent =
+                  mod.accentColor || mod.slots.dockButton?.defaultColor || '#38bdf8';
                 const hasModal = Boolean(mod.slots.modal);
 
                 return (
@@ -2158,8 +2173,12 @@ export const SettingsModal: React.FC = () => {
                       gap: '8px',
                       padding: '12px 14px',
                       borderRadius: '10px',
-                      background: enabled ? 'rgba(255, 255, 255, 0.035)' : 'rgba(255, 255, 255, 0.015)',
-                      border: enabled ? `1px solid ${modAccent}44` : '1px solid rgba(255, 255, 255, 0.06)',
+                      background: enabled
+                        ? 'rgba(255, 255, 255, 0.035)'
+                        : 'rgba(255, 255, 255, 0.015)',
+                      border: enabled
+                        ? `1px solid ${modAccent}44`
+                        : '1px solid rgba(255, 255, 255, 0.06)',
                       transition: 'border-color 0.2s ease, background-color 0.2s ease',
                     }}
                   >
@@ -2171,7 +2190,9 @@ export const SettingsModal: React.FC = () => {
                         gap: '12px',
                       }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+                      <div
+                        style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}
+                      >
                         <div
                           style={{
                             width: '32px',
@@ -2235,7 +2256,9 @@ export const SettingsModal: React.FC = () => {
                         </div>
                       </div>
 
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                      <div
+                        style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}
+                      >
                         {hasModal && enabled && (
                           <button
                             type="button"

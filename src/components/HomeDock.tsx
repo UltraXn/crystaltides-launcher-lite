@@ -11,6 +11,7 @@ import {
   GripHorizontal,
   Sliders,
   AlertTriangle,
+  Sparkles,
 } from 'lucide-react';
 import {
   useLauncherStore,
@@ -136,6 +137,9 @@ export const HomeDock: React.FC = () => {
 
       // If user simply clicked without intentional dragging, NEVER displace the element!
       if (!dragInfo || !dragInfo.hasMoved) {
+        if (isEditingHud && draggingTarget && draggingTarget !== 'dock') {
+          launcherActions.openButtonCustomizer(draggingTarget);
+        }
         setDraggingTarget(null);
         setTempPos(null);
         setIsColliding(false);
@@ -256,6 +260,9 @@ export const HomeDock: React.FC = () => {
     if (btnCustom?.iconType === 'none') {
       return null;
     }
+    const scale = btnCustom?.iconScale ?? 1;
+    const effectiveSize = Math.round(iconSize * scale);
+
     if (btnCustom?.iconType === 'custom_svg' && btnCustom.customSvg) {
       const sanitized = DOMPurify.sanitize(btnCustom.customSvg, {
         USE_PROFILES: { svg: true, svgFilters: true },
@@ -264,8 +271,8 @@ export const HomeDock: React.FC = () => {
         <div
           className="dock-icon-wrapper dock-custom-svg"
           style={{
-            width: `${iconSize}px`,
-            height: `${iconSize}px`,
+            width: `${effectiveSize}px`,
+            height: `${effectiveSize}px`,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -281,12 +288,31 @@ export const HomeDock: React.FC = () => {
           <img
             src={btnCustom.customIconUrl}
             alt=""
-            style={{ width: `${iconSize}px`, height: `${iconSize}px`, objectFit: 'contain' }}
+            style={{ width: `${effectiveSize}px`, height: `${effectiveSize}px`, objectFit: 'contain' }}
           />
         </div>
       );
     }
+    if (scale !== 1) {
+      return (
+        <div
+          className="dock-icon-wrapper"
+          style={{ transform: `scale(${scale})`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        >
+          {defaultIcon}
+        </div>
+      );
+    }
     return <div className="dock-icon-wrapper">{defaultIcon}</div>;
+  };
+
+  const getEffectClassName = (effect?: string) => {
+    if (effect === 'rainbow_rgb') return 'btn-fx-rainbow-rgb';
+    if (effect === 'neon_pulse') return 'btn-fx-neon-pulse';
+    if (effect === 'glitch') return 'btn-fx-glitch';
+    if (effect === 'hologram') return 'btn-fx-hologram';
+    if (effect === 'fire') return 'btn-fx-fire';
+    return '';
   };
 
   // Render individual button content
@@ -471,7 +497,10 @@ export const HomeDock: React.FC = () => {
   };
 
   const handleButtonClick = (btnId: DockButtonId) => {
-    if (isEditingHud) return; // In edit mode, clicking doesn't trigger actions
+    if (isEditingHud) {
+      launcherActions.openButtonCustomizer(btnId);
+      return;
+    }
     if (btnId === 'instances') launcherActions.openModal('instances');
     else if (btnId === 'about') launcherActions.openModal('about');
     else if (btnId === 'accounts') launcherActions.openModal('accounts');
@@ -504,9 +533,17 @@ export const HomeDock: React.FC = () => {
           }
 
           const isLaunch = btnId === 'launch';
+          const btnCustom = dockConfig.buttonCustomizations?.[btnId];
           const customBtnColor = getButtonCustomColor(btnId);
-          const btnW = isLaunch ? startSegmentWidth : segmentWidth;
-          const btnH = segmentHeight;
+
+          const defaultBtnW = isLaunch ? startSegmentWidth : segmentWidth;
+          const defaultBtnH = segmentHeight;
+          const btnW = btnCustom?.customWidth ? `${btnCustom.customWidth}px` : defaultBtnW;
+          const btnH = btnCustom?.customHeight ? `${btnCustom.customHeight}px` : defaultBtnH;
+          const scale = btnCustom?.scale ?? 1;
+          const rotation = btnCustom?.rotation ?? 0;
+          const radius = btnCustom?.borderRadius !== undefined ? `${btnCustom.borderRadius}px` : `${dockConfig.borderRadius}px`;
+          const effectClass = getEffectClassName(btnCustom?.specialEffect);
 
           return (
             <div
@@ -515,11 +552,12 @@ export const HomeDock: React.FC = () => {
                 position: 'absolute',
                 left: `${pos.x}%`,
                 top: `${pos.y}%`,
-                transform: 'translate(-50%, -50%)',
+                transform: `translate(-50%, -50%) scale(${scale}) rotate(${rotation}deg)`,
+                transformOrigin: 'center center',
                 zIndex: isDraggingThis ? 960 : isEditingHud ? 940 : 25,
                 transition: isDraggingThis
                   ? 'none'
-                  : 'top 0.35s cubic-bezier(0.16, 1, 0.3, 1), left 0.35s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease',
+                  : 'top 0.35s cubic-bezier(0.16, 1, 0.3, 1), left 0.35s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease, transform 0.2s ease',
               }}
             >
               <button
@@ -546,13 +584,12 @@ export const HomeDock: React.FC = () => {
                 }}
                 className={`dock-segment ${isLaunch ? 'start-game' : ''} ${
                   isRunning ? 'running' : isLaunching ? 'launching' : ''
-                }`}
+                } ${effectClass}`}
                 style={{
                   width: btnW,
                   height: btnH,
-                  borderRadius: `${dockConfig.borderRadius}px`,
+                  borderRadius: radius,
                   background: (() => {
-                    const btnCustom = dockConfig.buttonCustomizations?.[btnId];
                     if (btnCustom?.bgType === 'color' && btnCustom.bgColor) return btnCustom.bgColor;
                     if (btnCustom?.bgType === 'image' && btnCustom.bgImage)
                       return `url(${btnCustom.bgImage}) center / cover no-repeat`;
@@ -565,7 +602,6 @@ export const HomeDock: React.FC = () => {
                         : `rgba(12, 17, 24, ${dockConfig.bgOpacity})`;
                   })(),
                   color: (() => {
-                    const btnCustom = dockConfig.buttonCustomizations?.[btnId];
                     if (btnCustom?.contentColor) return btnCustom.contentColor;
                     return isLaunch ? startColor : customBtnColor || '#cbd5e1';
                   })(),
@@ -574,7 +610,6 @@ export const HomeDock: React.FC = () => {
                       ? '2px dashed #ef4444'
                       : '2px dashed #38bdf8'
                     : (() => {
-                        const btnCustom = dockConfig.buttonCustomizations?.[btnId];
                         if (btnCustom?.bgType === 'color' && btnCustom.bgColor)
                           return `1px solid ${btnCustom.bgColor}80`;
                         if (btnCustom?.bgType === 'image' && btnCustom.bgImage)
@@ -595,8 +630,29 @@ export const HomeDock: React.FC = () => {
                   backdropFilter: 'blur(20px)',
                   cursor: isEditingHud ? (isDraggingThis ? 'grabbing' : 'grab') : 'pointer',
                   position: 'relative',
+                  overflow: 'hidden',
                 }}
               >
+                {/* Video background */}
+                {btnCustom?.bgType === 'video' && btnCustom.bgVideo && (
+                  <video
+                    src={btnCustom.bgVideo}
+                    autoPlay
+                    loop
+                    muted
+                    playsInline
+                    className="dock-button-video-bg"
+                    style={{ opacity: btnCustom.bgVideoOpacity ?? 0.85 }}
+                  />
+                )}
+
+                {isEditingHud && (
+                  <div className="dock-edit-badge">
+                    <Sparkles size={8} />
+                    <span>Editar</span>
+                  </div>
+                )}
+
                 {isEditingHud && (
                   <div
                     style={{
@@ -633,7 +689,21 @@ export const HomeDock: React.FC = () => {
                     )}
                   </div>
                 )}
-                {renderButtonContent(btnId)}
+
+                <div
+                  style={{
+                    position: 'relative',
+                    zIndex: 2,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '4px',
+                    width: '100%',
+                    pointerEvents: 'none',
+                  }}
+                >
+                  {renderButtonContent(btnId)}
+                </div>
               </button>
             </div>
           );
@@ -785,11 +855,19 @@ export const HomeDock: React.FC = () => {
       >
         {activeButtons.map((btnId, idx) => {
           const isLaunch = btnId === 'launch';
+          const btnCustom = dockConfig.buttonCustomizations?.[btnId];
           const customBtnColor = getButtonCustomColor(btnId);
           const isLast = idx === activeButtons.length - 1 && activeModuleButtons.length === 0;
           const borderRightStyle = isLast ? 'none' : '1px solid rgba(255, 255, 255, 0.06)';
-          const btnW = isLaunch ? startSegmentWidth : segmentWidth;
-          const btnH = segmentHeight;
+
+          const defaultBtnW = isLaunch ? startSegmentWidth : segmentWidth;
+          const defaultBtnH = segmentHeight;
+          const btnW = btnCustom?.customWidth ? `${btnCustom.customWidth}px` : defaultBtnW;
+          const btnH = btnCustom?.customHeight ? `${btnCustom.customHeight}px` : defaultBtnH;
+          const scale = btnCustom?.scale ?? 1;
+          const rotation = btnCustom?.rotation ?? 0;
+          const radius = btnCustom?.borderRadius !== undefined ? `${btnCustom.borderRadius}px` : undefined;
+          const effectClass = getEffectClassName(btnCustom?.specialEffect);
 
           return (
             <button
@@ -798,13 +876,15 @@ export const HomeDock: React.FC = () => {
               onClick={() => handleButtonClick(btnId)}
               className={`dock-segment ${isLaunch ? 'start-game' : ''} ${
                 isRunning ? 'running' : isLaunching ? 'launching' : ''
-              }`}
+              } ${effectClass}`}
               style={{
                 width: btnW,
                 height: btnH,
                 borderRight: borderRightStyle,
+                borderRadius: radius,
+                transform: scale !== 1 || rotation !== 0 ? `scale(${scale}) rotate(${rotation}deg)` : undefined,
+                transformOrigin: 'center center',
                 background: (() => {
-                  const btnCustom = dockConfig.buttonCustomizations?.[btnId];
                   if (btnCustom?.bgType === 'color' && btnCustom.bgColor) return btnCustom.bgColor;
                   if (btnCustom?.bgType === 'image' && btnCustom.bgImage)
                     return `url(${btnCustom.bgImage}) center / cover no-repeat`;
@@ -817,18 +897,52 @@ export const HomeDock: React.FC = () => {
                       : 'transparent';
                 })(),
                 color: (() => {
-                  const btnCustom = dockConfig.buttonCustomizations?.[btnId];
                   if (btnCustom?.contentColor) return btnCustom.contentColor;
                   return isLaunch ? startColor : customBtnColor || '#cbd5e1';
                 })(),
                 cursor: isEditingHud
                   ? draggingTarget === 'dock'
                     ? 'grabbing'
-                    : 'grab'
+                    : 'pointer'
                   : 'pointer',
+                position: 'relative',
+                overflow: 'hidden',
               }}
             >
-              {renderButtonContent(btnId)}
+              {/* Video background */}
+              {btnCustom?.bgType === 'video' && btnCustom.bgVideo && (
+                <video
+                  src={btnCustom.bgVideo}
+                  autoPlay
+                  loop
+                  muted
+                  playsInline
+                  className="dock-button-video-bg"
+                  style={{ opacity: btnCustom.bgVideoOpacity ?? 0.85 }}
+                />
+              )}
+
+              {isEditingHud && (
+                <div className="dock-edit-badge">
+                  <Sparkles size={8} />
+                  <span>Editar</span>
+                </div>
+              )}
+
+              <div
+                style={{
+                  position: 'relative',
+                  zIndex: 2,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '4px',
+                  width: '100%',
+                  pointerEvents: 'none',
+                }}
+              >
+                {renderButtonContent(btnId)}
+              </div>
             </button>
           );
         })}

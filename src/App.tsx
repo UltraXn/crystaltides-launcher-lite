@@ -22,6 +22,7 @@ import { checkForAppUpdates, AppUpdateInfo } from './services/updateService';
 import { loadActiveWallpaper } from './utils/wallpaperStorage';
 import { initializeBuiltinModules } from './modules';
 import { ModuleModalRenderer } from './components/modals/ModuleModalRenderer';
+import { ButtonCustomizerModal } from './components/modals/ButtonCustomizerModal';
 
 interface BootContext {
   mode: 'install' | 'launcher' | 'uninstall';
@@ -44,6 +45,7 @@ export const App: React.FC = () => {
 
   const currentView = useLauncherStore((s: LauncherState) => s.currentView);
   const activeModal = useLauncherStore((s: LauncherState) => s.activeModal);
+  const customizingButtonId = useLauncherStore((s: LauncherState) => s.customizingButtonId);
 
   // Revelar la ventana de forma fluida una vez montado el DOM (Zero White Flash)
   useEffect(() => {
@@ -155,13 +157,17 @@ export const App: React.FC = () => {
   // 3. Listener global de teclado (Escape cierra modales)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && activeModal !== 'none') {
-        launcherActions.closeModal();
+      if (e.key === 'Escape') {
+        if (customizingButtonId) {
+          launcherActions.closeButtonCustomizer();
+        } else if (activeModal !== 'none') {
+          launcherActions.closeModal();
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeModal]);
+  }, [activeModal, customizingButtonId]);
 
   if (bootLoading) {
     return <SplashScreen />;
@@ -205,6 +211,7 @@ export const App: React.FC = () => {
           <SettingsModal />
           <AccountsModal />
           <AboutModal />
+          <ButtonCustomizerModal />
           <ModuleModalRenderer />
           <CrashReportModal
             isOpen={crashModalOpen}

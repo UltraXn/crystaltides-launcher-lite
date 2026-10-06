@@ -178,15 +178,38 @@ export type DockPositionPreset = 'center' | 'bottom' | 'top' | 'free';
 export type DockButtonId = 'instances' | 'about' | 'accounts' | 'settings' | 'launch';
 export type DockLayoutMode = 'dock' | 'free_buttons';
 
+export type DockButtonEffect =
+  | 'none'
+  | 'rainbow_rgb'
+  | 'neon_pulse'
+  | 'glitch'
+  | 'hologram'
+  | 'fire';
+
 export interface DockButtonCustomization {
   contentColor?: string;
-  bgType?: 'default' | 'color' | 'image';
+  bgType?: 'default' | 'color' | 'image' | 'video';
   bgColor?: string;
   bgImage?: string;
+  bgVideo?: string;
+  bgVideoOpacity?: number;
   iconType?: 'default' | 'custom_svg' | 'custom_image' | 'none';
   customSvg?: string;
   customIconUrl?: string;
+  iconScale?: number;
+  customWidth?: number;
+  customHeight?: number;
+  scale?: number;
+  borderRadius?: number;
+  rotation?: number;
+  specialEffect?: DockButtonEffect;
 }
+
+export const PROTECTED_DOCK_BUTTONS: readonly DockButtonId[] = [
+  'settings',
+  'launch',
+  'about',
+] as const;
 
 export const ORIGINAL_BUTTON_SVGS: Record<DockButtonId, string> = {
   instances:
@@ -272,6 +295,7 @@ export interface LauncherState {
   isEditingHud: boolean;
   hudManualSide: 'auto' | 'left' | 'center' | 'right';
   activeModal: ModalType;
+  customizingButtonId: DockButtonId | null;
   instances: GameInstance[];
   activeInstanceId: string;
   launch: LaunchProgress;
@@ -301,6 +325,14 @@ export const loadInitialDockConfig = (): DockConfig => {
     const raw = localStorage.getItem(DOCK_CONFIG_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
+      const rawVisible = Array.isArray(parsed.visibleButtons)
+        ? (parsed.visibleButtons as DockButtonId[])
+        : DEFAULT_DOCK_CONFIG.visibleButtons;
+      const visibleSet = new Set(rawVisible);
+      for (const p of PROTECTED_DOCK_BUTTONS) {
+        visibleSet.add(p);
+      }
+
       return {
         ...DEFAULT_DOCK_CONFIG,
         ...parsed,
@@ -312,9 +344,7 @@ export const loadInitialDockConfig = (): DockConfig => {
           ...DEFAULT_DOCK_CONFIG.widgetPositions,
           ...parsed.widgetPositions,
         },
-        visibleButtons: Array.isArray(parsed.visibleButtons)
-          ? parsed.visibleButtons
-          : DEFAULT_DOCK_CONFIG.visibleButtons,
+        visibleButtons: Array.from(visibleSet),
         buttonOrder: Array.isArray(parsed.buttonOrder)
           ? parsed.buttonOrder
           : DEFAULT_DOCK_CONFIG.buttonOrder,
@@ -456,6 +486,7 @@ let state: LauncherState = {
   isEditingHud: false,
   hudManualSide: 'auto',
   activeModal: 'none',
+  customizingButtonId: null,
   instances: getSavedInstances(),
   activeInstanceId: getActiveInstanceId(),
   launch: {
@@ -584,6 +615,10 @@ export const launcherActions = {
 
   toggleDockButton: (id: DockButtonId) => {
     setStoreState((prev) => {
+      // Essential core buttons can never be hidden
+      if (PROTECTED_DOCK_BUTTONS.includes(id)) {
+        return {};
+      }
       const current = prev.dockConfig.visibleButtons;
       const next = current.includes(id)
         ? current.length > 1
@@ -726,6 +761,14 @@ export const launcherActions = {
       } catch {}
       return { dockConfig: nextDockConfig };
     });
+  },
+
+  openButtonCustomizer: (id: DockButtonId) => {
+    setStoreState(() => ({ customizingButtonId: id }));
+  },
+
+  closeButtonCustomizer: () => {
+    setStoreState(() => ({ customizingButtonId: null }));
   },
 
   setGuiTheme: (updates: Partial<GuiThemeConfig>) => {

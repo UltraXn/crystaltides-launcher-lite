@@ -9,6 +9,7 @@ import {
   ArrowDownToLine,
   Minus,
   ArrowLeftRight,
+  Sparkles,
 } from 'lucide-react';
 import { useLauncherStore, launcherActions, LauncherState, useT } from '../store/launcherStore';
 import { getEffectiveHudSide } from '../utils/collisionSystem';
@@ -376,6 +377,39 @@ export const HudEditorOverlay: React.FC = () => {
               </div>
             )}
 
+            {/* Customization Tip */}
+            <div
+              style={{
+                background: 'rgba(56, 189, 248, 0.08)',
+                border: '1px solid rgba(56, 189, 248, 0.22)',
+                borderRadius: '8px',
+                padding: '8px 10px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '4px',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  color: '#38bdf8',
+                  fontSize: '10.5px',
+                  fontWeight: 700,
+                }}
+              >
+                <Sparkles size={12} />
+                <span>Personalizar Botón</span>
+              </div>
+              <span
+                style={{ fontSize: '9.5px', color: 'rgba(255, 255, 255, 0.65)', lineHeight: 1.35 }}
+              >
+                Haz clic en cualquier botón del Dock para editar su fondo, vídeo, tamaño, SVG y
+                efectos.
+              </span>
+            </div>
+
             {/* Actions: Reset & Done */}
             <div
               style={{
@@ -451,7 +485,9 @@ export const HudEditorOverlay: React.FC = () => {
               title={t.hudEditor.togglePosTitle}
               style={{
                 background:
-                  hudManualSide !== 'auto' ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                  hudManualSide !== 'auto'
+                    ? 'rgba(56, 189, 248, 0.2)'
+                    : 'rgba(255, 255, 255, 0.05)',
                 border:
                   hudManualSide !== 'auto'
                     ? '1px solid #38bdf8'
@@ -645,6 +681,25 @@ export const HudEditorOverlay: React.FC = () => {
                 </button>
               </div>
             )}
+
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '5px',
+                background: 'rgba(56, 189, 248, 0.08)',
+                border: '1px solid rgba(56, 189, 248, 0.2)',
+                borderRadius: '6px',
+                padding: '4px 8px',
+                fontSize: '10.5px',
+                color: '#38bdf8',
+                fontWeight: 600,
+              }}
+              title="Haz clic en cualquier botón del Dock para personalizarlo a fondo"
+            >
+              <Sparkles size={12} />
+              <span>Clic en botón para personalizar</span>
+            </div>
 
             <div
               style={{ width: '1px', height: '18px', background: 'rgba(255, 255, 255, 0.12)' }}
