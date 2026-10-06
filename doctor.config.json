@@ -1,5 +1,4 @@
 {
-  "$schema": "https://react.doctor/config-schema.json",
   "rules": {
     "react-doctor/no-giant-component": "off",
     "react-doctor/no-high-complexity-react-function": "off",
