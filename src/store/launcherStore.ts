@@ -115,6 +115,65 @@ export const applyAccentColorToDom = (hex: string) => {
   }
 };
 
+export type GuiFontFamily = 'jost' | 'inter' | 'outfit' | 'fira-code' | 'pixel';
+export type GuiBgPreset = 'obsidian' | 'midnight' | 'amethyst' | 'emerald' | 'crimson' | 'custom';
+export type GuiBorderPreset = 'subtle' | 'accent' | 'cyan' | 'amber' | 'custom';
+
+export interface GuiThemeConfig {
+  fontFamily: GuiFontFamily;
+  bgMode: GuiBgPreset;
+  customBgColor?: string;
+  borderMode: GuiBorderPreset;
+  customBorderColor?: string;
+  borderRadius: number;
+}
+
+export const DEFAULT_GUI_THEME: GuiThemeConfig = {
+  fontFamily: 'jost',
+  bgMode: 'obsidian',
+  customBgColor: '#0a0f18',
+  borderMode: 'subtle',
+  customBorderColor: '#00e5ff',
+  borderRadius: 16,
+};
+
+export const applyGuiThemeToDom = (theme: GuiThemeConfig, accentHex: string) => {
+  if (typeof document === 'undefined') return;
+  const root = document.documentElement;
+
+  const fontMap: Record<GuiFontFamily, string> = {
+    jost: 'var(--font-jost)',
+    inter: 'var(--font-inter)',
+    outfit: 'var(--font-outfit)',
+    'fira-code': 'var(--font-fira)',
+    pixel: 'var(--font-pixel)',
+  };
+  root.style.setProperty('--app-font-family', fontMap[theme.fontFamily] || fontMap.jost);
+
+  const bgMap: Record<GuiBgPreset, string> = {
+    obsidian: 'rgba(10, 15, 24, 0.94)',
+    midnight: 'rgba(8, 18, 36, 0.95)',
+    amethyst: 'rgba(22, 10, 36, 0.95)',
+    emerald: 'rgba(6, 26, 18, 0.95)',
+    crimson: 'rgba(32, 8, 14, 0.95)',
+    custom: theme.customBgColor || 'rgba(10, 15, 24, 0.94)',
+  };
+  root.style.setProperty('--gui-bg', bgMap[theme.bgMode] || bgMap.obsidian);
+
+  let borderColor = 'rgba(255, 255, 255, 0.1)';
+  if (theme.borderMode === 'accent') {
+    borderColor = `var(--border-accent, ${accentHex}66)`;
+  } else if (theme.borderMode === 'cyan') {
+    borderColor = 'rgba(0, 229, 255, 0.45)';
+  } else if (theme.borderMode === 'amber') {
+    borderColor = 'rgba(245, 158, 11, 0.45)';
+  } else if (theme.borderMode === 'custom') {
+    borderColor = theme.customBorderColor || 'rgba(255, 255, 255, 0.1)';
+  }
+  root.style.setProperty('--gui-border', borderColor);
+  root.style.setProperty('--gui-radius', `${theme.borderRadius || 16}px`);
+};
+
 export type DockPositionPreset = 'center' | 'bottom' | 'top' | 'free';
 export type DockButtonId = 'instances' | 'about' | 'accounts' | 'settings' | 'launch';
 export type DockLayoutMode = 'dock' | 'free_buttons';
@@ -140,6 +199,7 @@ export interface DockConfig {
   dockBorderColorMode: 'subtle' | 'accent';
   visibleButtons: DockButtonId[];
   buttonOrder: DockButtonId[];
+  customButtonColors?: Partial<Record<DockButtonId, string>>;
 }
 
 export const DEFAULT_DOCK_CONFIG: DockConfig = {
@@ -167,6 +227,7 @@ export const DEFAULT_DOCK_CONFIG: DockConfig = {
   dockBorderColorMode: 'subtle',
   visibleButtons: ['instances', 'about', 'accounts', 'settings', 'launch'],
   buttonOrder: ['instances', 'about', 'accounts', 'settings', 'launch'],
+  customButtonColors: {},
 };
 
 export interface LauncherState {
@@ -182,6 +243,7 @@ export interface LauncherState {
   wallpaperVolume: number;
   language: Language;
   accentColor: string;
+  guiTheme: GuiThemeConfig;
   dockConfig: DockConfig;
   isEditingHud: boolean;
   hudManualSide: 'auto' | 'left' | 'center' | 'right';
@@ -206,6 +268,7 @@ const WALLPAPER_VOLUME_STORAGE_KEY = 'crystaltides_lite_wallpaper_volume_v1';
 const LANGUAGE_STORAGE_KEY = 'crystaltides_lite_language_v1';
 const ACCENT_STORAGE_KEY = 'crystaltides_lite_accent_v1';
 const DOCK_CONFIG_STORAGE_KEY = 'crystaltides_lite_dock_config_v1';
+const GUI_THEME_STORAGE_KEY = 'crystaltides_lite_gui_theme_v1';
 const ACCOUNTS_VAULT_KEY = 'crystaltides_lite_vault_accounts';
 
 export const loadInitialDockConfig = (): DockConfig => {
@@ -231,6 +294,7 @@ export const loadInitialDockConfig = (): DockConfig => {
         buttonOrder: Array.isArray(parsed.buttonOrder)
           ? parsed.buttonOrder
           : DEFAULT_DOCK_CONFIG.buttonOrder,
+        customButtonColors: parsed.customButtonColors || {},
       };
     }
   } catch (e) {
@@ -351,6 +415,18 @@ let state: LauncherState = {
     const saved = localStorage.getItem(ACCENT_STORAGE_KEY) || '#00e5ff';
     applyAccentColorToDom(saved);
     return saved;
+  })(),
+  guiTheme: (() => {
+    let theme = DEFAULT_GUI_THEME;
+    try {
+      const raw = localStorage.getItem(GUI_THEME_STORAGE_KEY);
+      if (raw) theme = { ...DEFAULT_GUI_THEME, ...JSON.parse(raw) };
+    } catch {
+      // fallback
+    }
+    const accent = localStorage.getItem(ACCENT_STORAGE_KEY) || '#00e5ff';
+    applyGuiThemeToDom(theme, accent);
+    return theme;
   })(),
   dockConfig: loadInitialDockConfig(),
   isEditingHud: false,
@@ -563,7 +639,52 @@ export const launcherActions = {
       // ignore quota
     }
     applyAccentColorToDom(hex);
-    setStoreState(() => ({ accentColor: hex }));
+    setStoreState((prev) => {
+      applyGuiThemeToDom(prev.guiTheme, hex);
+      return { accentColor: hex };
+    });
+  },
+
+  setButtonColor: (id: DockButtonId, color: string | null) => {
+    setStoreState((prev) => {
+      const nextColors = { ...prev.dockConfig.customButtonColors };
+      if (!color) {
+        delete nextColors[id];
+      } else {
+        nextColors[id] = color;
+      }
+      const nextDockConfig = {
+        ...prev.dockConfig,
+        customButtonColors: nextColors,
+      };
+      try {
+        localStorage.setItem(DOCK_CONFIG_STORAGE_KEY, JSON.stringify(nextDockConfig));
+      } catch {}
+      return { dockConfig: nextDockConfig };
+    });
+  },
+
+  setGuiTheme: (updates: Partial<GuiThemeConfig>) => {
+    setStoreState((prev) => {
+      const nextTheme: GuiThemeConfig = { ...prev.guiTheme, ...updates };
+      try {
+        localStorage.setItem(GUI_THEME_STORAGE_KEY, JSON.stringify(nextTheme));
+      } catch (e) {
+        console.warn('Failed to persist GUI theme:', e);
+      }
+      applyGuiThemeToDom(nextTheme, prev.accentColor);
+      return { guiTheme: nextTheme };
+    });
+  },
+
+  resetGuiTheme: () => {
+    try {
+      localStorage.removeItem(GUI_THEME_STORAGE_KEY);
+    } catch {}
+    setStoreState((prev) => {
+      applyGuiThemeToDom(DEFAULT_GUI_THEME, prev.accentColor);
+      return { guiTheme: DEFAULT_GUI_THEME };
+    });
   },
 
   selectInstance: (id: string) => {

@@ -31,6 +31,7 @@ import {
   VolumeX,
   Film,
   Globe,
+  Type,
 } from 'lucide-react';
 import {
   useLauncherStore,
@@ -43,6 +44,9 @@ import {
   DockButtonId,
   useT,
   LoaderType,
+  GuiFontFamily,
+  GuiBgPreset,
+  GuiBorderPreset,
 } from '../../store/launcherStore';
 import {
   saveWallpaperFile,
@@ -73,6 +77,7 @@ export const SettingsModal: React.FC = () => {
   const wallpaperMuted = useLauncherStore((s: LauncherState) => s.wallpaperMuted);
   const wallpaperVolume = useLauncherStore((s: LauncherState) => s.wallpaperVolume);
   const accentColor = useLauncherStore((s: LauncherState) => s.accentColor);
+  const guiTheme = useLauncherStore((s: LauncherState) => s.guiTheme);
   const dockConfig = useLauncherStore((s: LauncherState) => s.dockConfig);
   const language = useLauncherStore((s: LauncherState) => s.language);
   const t = useT();
@@ -1296,6 +1301,212 @@ export const SettingsModal: React.FC = () => {
             </div>
           </div>
 
+          {/* Section: GUI Theme & Typography Customization */}
+          <div
+            className="settings-section"
+            style={{ borderTop: '1px solid rgba(255, 255, 255, 0.06)', paddingTop: '16px' }}
+          >
+            <div className="settings-section-header">
+              <span
+                className="settings-label-title"
+                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <Type size={14} style={{ color: accentColor }} />
+                Personalización de la GUI (Tema & Tipografía)
+              </span>
+              {(guiTheme.fontFamily !== 'jost' ||
+                guiTheme.bgMode !== 'obsidian' ||
+                guiTheme.borderMode !== 'subtle' ||
+                guiTheme.borderRadius !== 16) && (
+                <button
+                  type="button"
+                  onClick={() => launcherActions.resetGuiTheme()}
+                  className="wallpaper-reset-btn"
+                  title="Restablecer tema de la GUI a valores predeterminados"
+                >
+                  <RotateCcw size={12} />
+                  Restablecer GUI
+                </button>
+              )}
+            </div>
+            <p
+              style={{
+                fontSize: '11px',
+                color: 'rgba(248, 250, 252, 0.5)',
+                margin: '2px 0 12px 0',
+              }}
+            >
+              Personaliza la tipografía de la interfaz, los colores de fondo de las ventanas y los bordes:
+            </p>
+
+            {/* 1. Fuente / Tipografía */}
+            <div style={{ marginBottom: '14px' }}>
+              <span
+                style={{
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  color: '#e2e8f0',
+                  display: 'block',
+                  marginBottom: '6px',
+                }}
+              >
+                Fuente de la Interfaz:
+              </span>
+              <div className="dock-preset-group" style={{ margin: 0, flexWrap: 'wrap' }}>
+                {[
+                  { id: 'jost', label: 'Jost (Elegante)' },
+                  { id: 'inter', label: 'Inter (Limpia)' },
+                  { id: 'outfit', label: 'Outfit (Gaming)' },
+                  { id: 'fira-code', label: 'Fira Code (Mono)' },
+                  { id: 'pixel', label: 'Pixel (VT323)' },
+                ].map((font) => (
+                  <button
+                    key={font.id}
+                    type="button"
+                    onClick={() =>
+                      launcherActions.setGuiTheme({ fontFamily: font.id as GuiFontFamily })
+                    }
+                    className={`dock-preset-pill ${guiTheme.fontFamily === font.id ? 'active' : ''}`}
+                  >
+                    {guiTheme.fontFamily === font.id && <Check size={12} color="#38bdf8" />}
+                    <span>{font.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 2. Color de Fondo de la GUI / Modales */}
+            <div style={{ marginBottom: '14px' }}>
+              <span
+                style={{
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  color: '#e2e8f0',
+                  display: 'block',
+                  marginBottom: '6px',
+                }}
+              >
+                Color de Fondo de la GUI (Ventanas y Modales):
+              </span>
+              <div className="dock-preset-group" style={{ margin: 0, flexWrap: 'wrap' }}>
+                {[
+                  { id: 'obsidian', label: 'Obsidiana Profunda', hex: '#0a0f18' },
+                  { id: 'midnight', label: 'Medianoche Azul', hex: '#081224' },
+                  { id: 'amethyst', label: 'Amatista Cyber', hex: '#160a24' },
+                  { id: 'emerald', label: 'Esmeralda Abisal', hex: '#061a12' },
+                  { id: 'crimson', label: 'Carmesí Nether', hex: '#20080e' },
+                ].map((bg) => (
+                  <button
+                    key={bg.id}
+                    type="button"
+                    onClick={() => launcherActions.setGuiTheme({ bgMode: bg.id as GuiBgPreset })}
+                    className={`dock-preset-pill ${guiTheme.bgMode === bg.id ? 'active' : ''}`}
+                  >
+                    <div
+                      style={{
+                        width: '10px',
+                        height: '10px',
+                        borderRadius: '2px',
+                        backgroundColor: bg.hex,
+                        border: '1px solid rgba(255,255,255,0.2)',
+                      }}
+                    />
+                    <span>{bg.label}</span>
+                  </button>
+                ))}
+
+                <CustomColorPicker
+                  color={guiTheme.customBgColor || '#0a0f18'}
+                  onChange={(hex) =>
+                    launcherActions.setGuiTheme({
+                      bgMode: 'custom',
+                      customBgColor: hex,
+                    })
+                  }
+                  label="Color Propio"
+                />
+              </div>
+            </div>
+
+            {/* 3. Color de Bordes de la GUI */}
+            <div style={{ marginBottom: '14px' }}>
+              <span
+                style={{
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  color: '#e2e8f0',
+                  display: 'block',
+                  marginBottom: '6px',
+                }}
+              >
+                Color de Bordes de la GUI:
+              </span>
+              <div className="dock-preset-group" style={{ margin: 0, flexWrap: 'wrap' }}>
+                {[
+                  { id: 'subtle', label: 'Sutil (Translúcido)' },
+                  { id: 'accent', label: `Acento Dinámico (${accentColor.toUpperCase()})` },
+                  { id: 'cyan', label: 'Cian Cristalino' },
+                  { id: 'amber', label: 'Oro Solar' },
+                ].map((b) => (
+                  <button
+                    key={b.id}
+                    type="button"
+                    onClick={() =>
+                      launcherActions.setGuiTheme({ borderMode: b.id as GuiBorderPreset })
+                    }
+                    className={`dock-preset-pill ${guiTheme.borderMode === b.id ? 'active' : ''}`}
+                  >
+                    {guiTheme.borderMode === b.id && <Check size={12} color="#38bdf8" />}
+                    <span>{b.label}</span>
+                  </button>
+                ))}
+
+                <CustomColorPicker
+                  color={guiTheme.customBorderColor || '#00e5ff'}
+                  onChange={(hex) =>
+                    launcherActions.setGuiTheme({
+                      borderMode: 'custom',
+                      customBorderColor: hex,
+                    })
+                  }
+                  label="Borde Propio"
+                />
+              </div>
+            </div>
+
+            {/* 4. Curvatura de Bordes (Border Radius) */}
+            <div>
+              <span
+                style={{
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  color: '#e2e8f0',
+                  display: 'block',
+                  marginBottom: '6px',
+                }}
+              >
+                Curvatura de Bordes (Radio):
+              </span>
+              <div className="dock-preset-group" style={{ margin: 0 }}>
+                {[
+                  { radius: 8, label: '8px (Angular)' },
+                  { radius: 12, label: '12px (Suave)' },
+                  { radius: 16, label: '16px (Estándar)' },
+                  { radius: 22, label: '22px (Cápsula)' },
+                ].map((r) => (
+                  <button
+                    key={r.radius}
+                    type="button"
+                    onClick={() => launcherActions.setGuiTheme({ borderRadius: r.radius })}
+                    className={`dock-preset-pill ${guiTheme.borderRadius === r.radius ? 'active' : ''}`}
+                  >
+                    <span>{r.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
           {/* Section: Dock & Main Menu Customization */}
           <div
             className="settings-section"
@@ -1722,19 +1933,56 @@ export const SettingsModal: React.FC = () => {
                     };
                     const itemInfo = buttonLabels[btnId] || { name: btnId, icon: null };
 
+                    const isCustomColor = Boolean(dockConfig.customButtonColors?.[btnId]);
+                    const activeBtnColor =
+                      dockConfig.customButtonColors?.[btnId] ||
+                      (btnId === 'launch'
+                        ? dockConfig.startBtnColorMode === 'custom' && dockConfig.customStartBtnColor
+                          ? dockConfig.customStartBtnColor
+                          : '#22c55e'
+                        : accentColor);
+
                     return (
                       <div
                         key={btnId}
                         className={`dock-reorder-item ${!isVisible ? 'disabled' : ''}`}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <div
+                            style={{
+                              width: '8px',
+                              height: '8px',
+                              borderRadius: '50%',
+                              backgroundColor: activeBtnColor,
+                              boxShadow: `0 0 6px ${activeBtnColor}`,
+                              flexShrink: 0,
+                            }}
+                          />
                           {itemInfo.icon}
                           <span style={{ fontSize: '11.5px', fontWeight: 500, color: '#f8fafc' }}>
                             {itemInfo.name}
                           </span>
                         </div>
 
-                        <div className="dock-reorder-actions">
+                        <div className="dock-reorder-actions" style={{ gap: '6px' }}>
+                          {/* Individual Color Picker */}
+                          <CustomColorPicker
+                            color={activeBtnColor}
+                            onChange={(hex) => launcherActions.setButtonColor(btnId, hex)}
+                            label="Pintar"
+                          />
+                          {isCustomColor && (
+                            <button
+                              type="button"
+                              onClick={() => launcherActions.setButtonColor(btnId, null)}
+                              className="dock-action-icon-btn"
+                              title="Restablecer color al tema predeterminado"
+                              style={{ color: '#94a3b8' }}
+                            >
+                              <RotateCcw size={12} />
+                            </button>
+                          )}
+
                           {/* Move Left / Up */}
                           <button
                             type="button"

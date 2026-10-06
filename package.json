@@ -10,7 +10,7 @@
     "build": "tsc && vite build",
     "build:tauri": "tauri build",
     "preview": "vite preview",
-    "lint": "tsc --noEmit",
+    "lint": "node --max-old-space-size=4096 ./node_modules/typescript/bin/tsc --noEmit",
     "lint:fast": "oxlint --threads 8 --no-ignore src",
     "doctor": "react-doctor",
     "doctor:score": "react-doctor --score",

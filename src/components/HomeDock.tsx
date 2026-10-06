@@ -201,8 +201,16 @@ export const HomeDock: React.FC = () => {
     startSegmentWidth = isCompact ? '58px' : '68px';
   }
 
+  // Helper to get custom button color if configured
+  const getButtonCustomColor = (btnId: DockButtonId): string | null => {
+    return dockConfig.customButtonColors?.[btnId] || null;
+  };
+
   // Start button color
   const getStartButtonColor = () => {
+    if (dockConfig.customButtonColors?.launch) {
+      return dockConfig.customButtonColors.launch;
+    }
     if (dockConfig.startBtnColorMode === 'accent') {
       return accentColor;
     }
@@ -225,19 +233,29 @@ export const HomeDock: React.FC = () => {
 
   // Render individual button content
   const renderButtonContent = (btnId: DockButtonId) => {
+    const customColor = getButtonCustomColor(btnId);
+
     if (btnId === 'instances') {
+      const iconColor = customColor || (activeInstance?.isOfficial ? accentColor : '#22c55e');
       return (
         <>
           <div className="dock-icon-wrapper">
             <Layers
               size={iconSize}
               style={{
-                color: activeInstance?.isOfficial ? accentColor : '#22c55e',
+                color: iconColor,
+                filter: customColor ? `drop-shadow(0 0 6px ${customColor}80)` : 'none',
               }}
             />
           </div>
           {showLabels && (
-            <span className="dock-label" style={{ fontSize: labelFontSize }}>
+            <span
+              className="dock-label"
+              style={{
+                fontSize: labelFontSize,
+                color: customColor || undefined,
+              }}
+            >
               {t.dock.instances}
             </span>
           )}
@@ -249,10 +267,22 @@ export const HomeDock: React.FC = () => {
       return (
         <>
           <div className="dock-icon-wrapper">
-            <Info size={iconSize} />
+            <Info
+              size={iconSize}
+              style={{
+                color: customColor || undefined,
+                filter: customColor ? `drop-shadow(0 0 6px ${customColor}80)` : 'none',
+              }}
+            />
           </div>
           {showLabels && (
-            <span className="dock-label" style={{ fontSize: labelFontSize }}>
+            <span
+              className="dock-label"
+              style={{
+                fontSize: labelFontSize,
+                color: customColor || undefined,
+              }}
+            >
               {t.dock.about}
             </span>
           )}
@@ -265,7 +295,12 @@ export const HomeDock: React.FC = () => {
         <>
           <div
             className="dock-icon-wrapper avatar-box"
-            style={{ width: `${iconSize + 4}px`, height: `${iconSize + 4}px` }}
+            style={{
+              width: `${iconSize + 4}px`,
+              height: `${iconSize + 4}px`,
+              borderColor: customColor || undefined,
+              boxShadow: customColor ? `0 0 10px ${customColor}66` : undefined,
+            }}
           >
             {activeAccount?.skinUrl ? (
               <img src={activeAccount.skinUrl} alt="Skin" className="dock-player-head" />
@@ -277,11 +312,17 @@ export const HomeDock: React.FC = () => {
                 className="dock-player-head"
               />
             ) : (
-              <User size={iconSize - 2} />
+              <User size={iconSize - 2} style={{ color: customColor || undefined }} />
             )}
           </div>
           {showLabels && (
-            <span className="dock-label" style={{ fontSize: labelFontSize }}>
+            <span
+              className="dock-label"
+              style={{
+                fontSize: labelFontSize,
+                color: customColor || undefined,
+              }}
+            >
               {t.dock.accounts}
             </span>
           )}
@@ -293,10 +334,22 @@ export const HomeDock: React.FC = () => {
       return (
         <>
           <div className="dock-icon-wrapper">
-            <Settings size={iconSize} />
+            <Settings
+              size={iconSize}
+              style={{
+                color: customColor || undefined,
+                filter: customColor ? `drop-shadow(0 0 6px ${customColor}80)` : 'none',
+              }}
+            />
           </div>
           {showLabels && (
-            <span className="dock-label" style={{ fontSize: labelFontSize }}>
+            <span
+              className="dock-label"
+              style={{
+                fontSize: labelFontSize,
+                color: customColor || undefined,
+              }}
+            >
               {t.dock.settings}
             </span>
           )}
@@ -381,6 +434,7 @@ export const HomeDock: React.FC = () => {
           }
 
           const isLaunch = btnId === 'launch';
+          const customBtnColor = getButtonCustomColor(btnId);
           const btnW = isLaunch ? startSegmentWidth : segmentWidth;
           const btnH = segmentHeight;
 
@@ -431,20 +485,26 @@ export const HomeDock: React.FC = () => {
                     ? isRunning || isLaunching
                       ? startHoverBg
                       : startSubtleBg
-                    : `rgba(12, 17, 24, ${dockConfig.bgOpacity})`,
-                  color: isLaunch ? startColor : '#cbd5e1',
+                    : customBtnColor
+                      ? `${customBtnColor}18`
+                      : `rgba(12, 17, 24, ${dockConfig.bgOpacity})`,
+                  color: isLaunch ? startColor : customBtnColor || '#cbd5e1',
                   border: isEditingHud
                     ? isDraggingThis && isColliding
                       ? '2px dashed #ef4444'
                       : '2px dashed #38bdf8'
-                    : dockConfig.dockBorderColorMode === 'accent'
-                      ? '1px solid var(--border-accent, rgba(0, 229, 255, 0.4))'
-                      : '1px solid rgba(255, 255, 255, 0.1)',
+                    : customBtnColor
+                      ? `1px solid ${customBtnColor}80`
+                      : dockConfig.dockBorderColorMode === 'accent'
+                        ? '1px solid var(--border-accent, rgba(0, 229, 255, 0.4))'
+                        : '1px solid rgba(255, 255, 255, 0.1)',
                   boxShadow: isEditingHud
                     ? isDraggingThis && isColliding
                       ? '0 0 20px rgba(239, 68, 68, 0.65)'
                       : '0 0 16px rgba(56, 189, 248, 0.4)'
-                    : '0 20px 50px rgba(0, 0, 0, 0.8)',
+                    : customBtnColor
+                      ? `0 20px 50px rgba(0, 0, 0, 0.8), 0 0 20px ${customBtnColor}33`
+                      : '0 20px 50px rgba(0, 0, 0, 0.8)',
                   backdropFilter: 'blur(20px)',
                   cursor: isEditingHud ? (isDraggingThis ? 'grabbing' : 'grab') : 'pointer',
                   position: 'relative',
@@ -638,6 +698,7 @@ export const HomeDock: React.FC = () => {
       >
         {activeButtons.map((btnId, idx) => {
           const isLaunch = btnId === 'launch';
+          const customBtnColor = getButtonCustomColor(btnId);
           const isLast = idx === activeButtons.length - 1;
           const borderRightStyle = isLast ? 'none' : '1px solid rgba(255, 255, 255, 0.06)';
           const btnW = isLaunch ? startSegmentWidth : segmentWidth;
@@ -659,8 +720,10 @@ export const HomeDock: React.FC = () => {
                   ? isRunning || isLaunching
                     ? startHoverBg
                     : startSubtleBg
-                  : 'transparent',
-                color: isLaunch ? startColor : '#cbd5e1',
+                  : customBtnColor
+                    ? `${customBtnColor}14`
+                    : 'transparent',
+                color: isLaunch ? startColor : customBtnColor || '#cbd5e1',
                 cursor: isEditingHud
                   ? draggingTarget === 'dock'
                     ? 'grabbing'
