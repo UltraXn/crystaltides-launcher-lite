@@ -46,6 +46,7 @@ export const App: React.FC = () => {
   const currentView = useLauncherStore((s: LauncherState) => s.currentView);
   const activeModal = useLauncherStore((s: LauncherState) => s.activeModal);
   const customizingButtonId = useLauncherStore((s: LauncherState) => s.customizingButtonId);
+  const isEditingHud = useLauncherStore((s: LauncherState) => s.isEditingHud);
 
   // Revelar la ventana de forma fluida una vez montado el DOM (Zero White Flash)
   useEffect(() => {
@@ -154,9 +155,14 @@ export const App: React.FC = () => {
     };
   }, []);
 
-  // 3. Listener global de teclado (Escape cierra modales)
+  // 3. Listener global de teclado (Escape cierra modales, F8 alterna edición GUI)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'F8') {
+        e.preventDefault();
+        launcherActions.setEditingHud(!isEditingHud);
+        return;
+      }
       if (e.key === 'Escape') {
         if (customizingButtonId) {
           launcherActions.closeButtonCustomizer();
@@ -167,7 +173,7 @@ export const App: React.FC = () => {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeModal, customizingButtonId]);
+  }, [activeModal, customizingButtonId, isEditingHud]);
 
   if (bootLoading) {
     return <SplashScreen />;
