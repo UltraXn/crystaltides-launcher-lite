@@ -1,7 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
-import { useLauncherStore, launcherActions, LauncherState } from './store/launcherStore';
+import {
+  useLauncherStore,
+  launcherActions,
+  LauncherState,
+  DockButtonId,
+} from './store/launcherStore';
 import { WallpaperBackground } from './components/WallpaperBackground';
 import { WindowHeader } from './components/WindowHeader';
 import { BottomBar } from './components/BottomBar';
@@ -19,10 +24,9 @@ import { UpdaterModal } from './components/modals/UpdaterModal';
 import { SplashScreen } from './components/SplashScreen';
 import { GameLaunchOverlay } from './components/GameLaunchOverlay';
 import { checkForAppUpdates, AppUpdateInfo } from './services/updateService';
-import { loadActiveWallpaper } from './utils/wallpaperStorage';
+import { loadActiveWallpaper, loadAllButtonMedia } from './utils/wallpaperStorage';
 import { initializeBuiltinModules } from './modules';
 import { ModuleModalRenderer } from './components/modals/ModuleModalRenderer';
-import { ButtonCustomizerModal } from './components/modals/ButtonCustomizerModal';
 
 interface BootContext {
   mode: 'install' | 'launcher' | 'uninstall';
@@ -63,12 +67,28 @@ export const App: React.FC = () => {
     revealWindow();
   }, []);
 
-  // Cargar fondo personalizado persistente desde IndexedDB (sin límites de localStorage)
+  // Cargar fondo personalizado y medias de botones persistentes desde IndexedDB
   useEffect(() => {
     loadActiveWallpaper().then((meta) => {
       if (meta) {
         launcherActions.setCustomWallpaper(meta.url, meta.isVideo);
       }
+    });
+
+    loadAllButtonMedia().then(({ backgrounds, icons }) => {
+      Object.entries(backgrounds).forEach(([btnId, meta]) => {
+        launcherActions.setDockButtonCustomization(btnId as DockButtonId, {
+          bgType: meta.isVideo ? 'video' : 'image',
+          bgVideo: meta.isVideo ? meta.url : undefined,
+          bgImage: !meta.isVideo ? meta.url : undefined,
+        });
+      });
+      Object.entries(icons).forEach(([btnId, url]) => {
+        launcherActions.setDockButtonCustomization(btnId as DockButtonId, {
+          iconType: 'custom_image',
+          customIconUrl: url,
+        });
+      });
     });
   }, []);
 
@@ -217,7 +237,6 @@ export const App: React.FC = () => {
           <SettingsModal />
           <AccountsModal />
           <AboutModal />
-          <ButtonCustomizerModal />
           <ModuleModalRenderer />
           <CrashReportModal
             isOpen={crashModalOpen}

@@ -11,7 +11,13 @@ import {
   ArrowLeftRight,
   Sparkles,
 } from 'lucide-react';
-import { useLauncherStore, launcherActions, LauncherState, useT } from '../store/launcherStore';
+import {
+  useLauncherStore,
+  launcherActions,
+  LauncherState,
+  getLauncherState,
+  useT,
+} from '../store/launcherStore';
 import { getEffectiveHudSide } from '../utils/collisionSystem';
 
 export const HudEditorOverlay: React.FC = () => {
@@ -21,18 +27,42 @@ export const HudEditorOverlay: React.FC = () => {
   const accentColor = useLauncherStore((s: LauncherState) => s.accentColor);
   const t = useT();
 
-  // Exit on ESC key
+  // Exit on ESC key or deselect active button
   useEffect(() => {
     if (!isEditingHud) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        launcherActions.setEditingHud(false);
+        const selected = getLauncherState().selectedDockButtonId;
+        if (selected) {
+          launcherActions.setSelectedDockButtonId(null);
+        } else {
+          launcherActions.setEditingHud(false);
+        }
+      }
+    };
+
+    const handleWindowMouseDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      if (
+        target.closest('.dock-segment') ||
+        target.closest('.home-unified-dock') ||
+        target.closest('[data-inspector]')
+      ) {
+        return;
+      }
+      if (getLauncherState().selectedDockButtonId) {
+        launcherActions.setSelectedDockButtonId(null);
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('mousedown', handleWindowMouseDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('mousedown', handleWindowMouseDown);
+    };
   }, [isEditingHud]);
 
   if (!isEditingHud) return null;

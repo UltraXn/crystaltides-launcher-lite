@@ -296,6 +296,7 @@ export interface LauncherState {
   hudManualSide: 'auto' | 'left' | 'center' | 'right';
   activeModal: ModalType;
   customizingButtonId: DockButtonId | null;
+  selectedDockButtonId: DockButtonId | null;
   instances: GameInstance[];
   activeInstanceId: string;
   launch: LaunchProgress;
@@ -487,6 +488,7 @@ let state: LauncherState = {
   hudManualSide: 'auto',
   activeModal: 'none',
   customizingButtonId: null,
+  selectedDockButtonId: null,
   instances: getSavedInstances(),
   activeInstanceId: getActiveInstanceId(),
   launch: {
@@ -519,6 +521,10 @@ export const launcherActions = {
     setStoreState(() => ({ currentView: view }));
   },
 
+  setSelectedDockButtonId: (id: DockButtonId | null) => {
+    setStoreState(() => ({ selectedDockButtonId: id }));
+  },
+
   setEditingHud: (editing: boolean) => {
     setStoreState((prev) => {
       let nextDockConfig = prev.dockConfig;
@@ -528,7 +534,13 @@ export const launcherActions = {
           localStorage.setItem(DOCK_CONFIG_STORAGE_KEY, JSON.stringify(nextDockConfig));
         } catch {}
       }
-      return { isEditingHud: editing, activeModal: 'none', dockConfig: nextDockConfig };
+      return {
+        isEditingHud: editing,
+        selectedDockButtonId: null,
+        customizingButtonId: null,
+        activeModal: 'none',
+        dockConfig: nextDockConfig,
+      };
     });
   },
 
@@ -1126,6 +1138,7 @@ export function useLauncherStore<T>(selector: (state: LauncherState) => T): T {
 
 // Function to read current launcher state outside of React components
 export const getLauncherState = (): LauncherState => state;
+useLauncherStore.getState = getLauncherState;
 
 // React hook to access current active translations
 export function useT(): TranslationDictionary {

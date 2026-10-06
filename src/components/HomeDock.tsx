@@ -30,6 +30,7 @@ import {
   getEffectiveHudSide,
   getSafeYBelowHudBar,
 } from '../utils/collisionSystem';
+import { DockButtonInspector } from './DockButtonInspector';
 
 export const HomeDock: React.FC = () => {
   const accounts = useLauncherStore((s: LauncherState) => s.accounts);
@@ -41,6 +42,7 @@ export const HomeDock: React.FC = () => {
   const accentColor = useLauncherStore((s: LauncherState) => s.accentColor);
   const isEditingHud = useLauncherStore((s: LauncherState) => s.isEditingHud);
   const hudManualSide = useLauncherStore((s: LauncherState) => s.hudManualSide);
+  const selectedDockButtonId = useLauncherStore((s: LauncherState) => s.selectedDockButtonId);
   const t = useT();
   const effectiveHudSide = getEffectiveHudSide(dockConfig, hudManualSide);
 
@@ -61,6 +63,18 @@ export const HomeDock: React.FC = () => {
   const [tempPos, setTempPos] = useState<{ x: number; y: number } | null>(null);
   const [isColliding, setIsColliding] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
+
+  // In-canvas button resize state (WYSIWYG corner dragging)
+  const [resizing, setResizing] = useState<{
+    btnId: DockButtonId;
+    startX: number;
+    startY: number;
+    startWidth: number;
+    startHeight: number;
+    direction: 'se' | 's' | 'e';
+  } | null>(null);
+  const [liveResizeDims, setLiveResizeDims] = useState<{ width: number; height: number } | null>(null);
+  const [inspectorTab, setInspectorTab] = useState<'bg' | 'icon' | 'fx' | 'shape'>('bg');
 
   const dockRef = useRef<HTMLDivElement>(null);
   const buttonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
@@ -138,7 +152,8 @@ export const HomeDock: React.FC = () => {
       // If user simply clicked without intentional dragging, NEVER displace the element!
       if (!dragInfo || !dragInfo.hasMoved) {
         if (isEditingHud && draggingTarget && draggingTarget !== 'dock') {
-          launcherActions.openButtonCustomizer(draggingTarget);
+          launcherActions.setSelectedDockButtonId(draggingTarget);
+          setInspectorTab('bg');
         }
         setDraggingTarget(null);
         setTempPos(null);
@@ -204,6 +219,67 @@ export const HomeDock: React.FC = () => {
     };
   }, [draggingTarget, dockConfig, isEditingHud, effectiveHudSide]);
 
+  // Interactive corner resizing (WYSIWYG on-canvas drag)
+  useEffect(() => {
+    if (!resizing) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const deltaX = e.clientX - resizing.startX;
+      const deltaY = e.clientY - resizing.startY;
+
+      let newW = resizing.startWidth;
+      let newH = resizing.startHeight;
+
+      if (resizing.direction === 'se' || resizing.direction === 'e') {
+        newW = Math.max(50, Math.min(420, Math.round(resizing.startWidth + deltaX)));
+      }
+      if (resizing.direction === 'se' || resizing.direction === 's') {
+        newH = Math.max(46, Math.min(280, Math.round(resizing.startHeight + deltaY)));
+      }
+
+      setLiveResizeDims({ width: newW, height: newH });
+      launcherActions.setDockButtonCustomization(resizing.btnId, {
+        customWidth: newW,
+        customHeight: newH,
+      });
+    };
+
+    const handleMouseUp = () => {
+      setResizing(null);
+      setLiveResizeDims(null);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [resizing]);
+
+  const handleStartResize = (
+    e: React.MouseEvent,
+    btnId: DockButtonId,
+    direction: 'se' | 's' | 'e',
+  ) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const btnEl = buttonRefs.current[btnId];
+    const rect = btnEl?.getBoundingClientRect();
+    const curW = rect ? rect.width : (dockConfig.buttonCustomizations?.[btnId]?.customWidth ?? 120);
+    const curH = rect ? rect.height : (dockConfig.buttonCustomizations?.[btnId]?.customHeight ?? 80);
+
+    setResizing({
+      btnId,
+      startX: e.clientX,
+      startY: e.clientY,
+      startWidth: curW,
+      startHeight: curH,
+      direction,
+    });
+    setLiveResizeDims({ width: curW, height: curH });
+  };
+
   // Dimension measurements
   const isCompact = dockConfig.scale === 'compact';
   const showLabels = dockConfig.showLabels;
@@ -263,12 +339,21 @@ export const HomeDock: React.FC = () => {
     const scale = btnCustom?.iconScale ?? 1;
     const effectiveSize = Math.round(iconSize * scale);
 
+    const handleIconLayerClick = isEditingHud
+      ? (e: React.MouseEvent) => {
+          e.stopPropagation();
+          launcherActions.setSelectedDockButtonId(btnId);
+          setInspectorTab('icon');
+        }
+      : undefined;
+
     if (btnCustom?.iconType === 'custom_svg' && btnCustom.customSvg) {
       const sanitized = DOMPurify.sanitize(btnCustom.customSvg, {
         USE_PROFILES: { svg: true, svgFilters: true },
       });
       return (
         <div
+          onClick={handleIconLayerClick}
           className="dock-icon-wrapper dock-custom-svg"
           style={{
             width: `${effectiveSize}px`,
@@ -277,6 +362,8 @@ export const HomeDock: React.FC = () => {
             alignItems: 'center',
             justifyContent: 'center',
             color: effectiveColor,
+            cursor: isEditingHud ? 'pointer' : undefined,
+            pointerEvents: isEditingHud ? 'auto' : undefined,
           }}
           dangerouslySetInnerHTML={{ __html: sanitized }}
         />
@@ -284,7 +371,14 @@ export const HomeDock: React.FC = () => {
     }
     if (btnCustom?.iconType === 'custom_image' && btnCustom.customIconUrl) {
       return (
-        <div className="dock-icon-wrapper">
+        <div
+          onClick={handleIconLayerClick}
+          className="dock-icon-wrapper"
+          style={{
+            cursor: isEditingHud ? 'pointer' : undefined,
+            pointerEvents: isEditingHud ? 'auto' : undefined,
+          }}
+        >
           <img
             src={btnCustom.customIconUrl}
             alt=""
@@ -293,17 +387,22 @@ export const HomeDock: React.FC = () => {
         </div>
       );
     }
-    if (scale !== 1) {
-      return (
-        <div
-          className="dock-icon-wrapper"
-          style={{ transform: `scale(${scale})`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-        >
-          {defaultIcon}
-        </div>
-      );
-    }
-    return <div className="dock-icon-wrapper">{defaultIcon}</div>;
+    return (
+      <div
+        onClick={handleIconLayerClick}
+        className="dock-icon-wrapper"
+        style={{
+          transform: scale !== 1 ? `scale(${scale})` : undefined,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: isEditingHud ? 'pointer' : undefined,
+          pointerEvents: isEditingHud ? 'auto' : undefined,
+        }}
+      >
+        {defaultIcon}
+      </div>
+    );
   };
 
   const getEffectClassName = (effect?: string) => {
@@ -313,6 +412,113 @@ export const HomeDock: React.FC = () => {
     if (effect === 'hologram') return 'btn-fx-hologram';
     if (effect === 'fire') return 'btn-fx-fire';
     return '';
+  };
+
+  // Helper to render interactive corner resize handles and selection frame
+  const renderResizeHandles = (btnId: DockButtonId) => {
+    if (!isEditingHud || selectedDockButtonId !== btnId) return null;
+
+    const isCurrentResizing = resizing?.btnId === btnId;
+    const currentDims = isCurrentResizing && liveResizeDims ? liveResizeDims : null;
+
+    return (
+      <>
+        {/* Selection Bounding Frame */}
+        <div
+          style={{
+            position: 'absolute',
+            inset: '-3px',
+            border: '2px solid #00e5ff',
+            borderRadius: 'inherit',
+            boxShadow: '0 0 14px rgba(0, 229, 255, 0.5)',
+            pointerEvents: 'none',
+            zIndex: 40,
+          }}
+        />
+
+        {/* Live Size Pill Tooltip while dragging */}
+        {currentDims && (
+          <div
+            style={{
+              position: 'absolute',
+              bottom: '-30px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              background: 'rgba(10, 14, 23, 0.95)',
+              border: '1px solid #00e5ff',
+              borderRadius: '6px',
+              padding: '2px 8px',
+              fontSize: '11px',
+              fontWeight: 800,
+              color: '#00e5ff',
+              whiteSpace: 'nowrap',
+              boxShadow: '0 4px 15px rgba(0, 0, 0, 0.85)',
+              pointerEvents: 'none',
+              zIndex: 60,
+            }}
+          >
+            {currentDims.width} × {currentDims.height} px
+          </div>
+        )}
+
+        {/* Corner Handle: Bottom-Right (SE) */}
+        <div
+          title="Pescar esquina: arrastra para cambiar ancho y alto libremente"
+          onMouseDown={(e) => handleStartResize(e, btnId, 'se')}
+          style={{
+            position: 'absolute',
+            right: '-6px',
+            bottom: '-6px',
+            width: '14px',
+            height: '14px',
+            background: '#00e5ff',
+            border: '2px solid #0a0f18',
+            borderRadius: '3px',
+            cursor: 'nwse-resize',
+            zIndex: 50,
+            boxShadow: '0 0 8px #00e5ff',
+          }}
+        />
+
+        {/* Edge Handle: Right (E) */}
+        <div
+          title="Arrastra para cambiar ancho"
+          onMouseDown={(e) => handleStartResize(e, btnId, 'e')}
+          style={{
+            position: 'absolute',
+            right: '-5px',
+            top: '50%',
+            transform: 'translateY(-50%)',
+            width: '10px',
+            height: '22px',
+            background: 'rgba(0, 229, 255, 0.9)',
+            border: '2px solid #0a0f18',
+            borderRadius: '3px',
+            cursor: 'ew-resize',
+            zIndex: 49,
+          }}
+        />
+
+        {/* Edge Handle: Bottom (S) */}
+        <div
+          title="Arrastra para cambiar alto"
+          onMouseDown={(e) => handleStartResize(e, btnId, 's')}
+          style={{
+            position: 'absolute',
+            bottom: '-5px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            width: '22px',
+            height: '10px',
+            background: 'rgba(0, 229, 255, 0.9)',
+            border: '2px solid #0a0f18',
+            borderRadius: '3px',
+            cursor: 'ns-resize',
+            zIndex: 49,
+          }}
+        />
+      </>
+    );
   };
 
   // Render individual button content
@@ -498,7 +704,8 @@ export const HomeDock: React.FC = () => {
 
   const handleButtonClick = (btnId: DockButtonId) => {
     if (isEditingHud) {
-      launcherActions.openButtonCustomizer(btnId);
+      launcherActions.setSelectedDockButtonId(btnId);
+      setInspectorTab('bg');
       return;
     }
     if (btnId === 'instances') launcherActions.openModal('instances');
@@ -699,12 +906,35 @@ export const HomeDock: React.FC = () => {
                     alignItems: 'center',
                     gap: '4px',
                     width: '100%',
-                    pointerEvents: 'none',
+                    pointerEvents: isEditingHud ? 'auto' : 'none',
                   }}
                 >
                   {renderButtonContent(btnId)}
                 </div>
               </button>
+
+              {/* Corner Resize Handles for WYSIWYG button resizing */}
+              {renderResizeHandles(btnId)}
+
+              {/* In-Canvas Floating Inspector */}
+              {isEditingHud && selectedDockButtonId === btnId && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    bottom: pos.y > 55 ? 'calc(100% + 14px)' : 'auto',
+                    top: pos.y <= 55 ? 'calc(100% + 14px)' : 'auto',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    zIndex: 1000,
+                  }}
+                >
+                  <DockButtonInspector
+                    buttonId={btnId}
+                    initialTab={inspectorTab}
+                    onClose={() => launcherActions.setSelectedDockButtonId(null)}
+                  />
+                </div>
+              )}
             </div>
           );
         })}
@@ -816,6 +1046,25 @@ export const HomeDock: React.FC = () => {
         </div>
       )}
 
+      {/* Floating In-Place Inspector for Selected Button in Unified Dock */}
+      {isEditingHud && selectedDockButtonId && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 'calc(100% + 14px)',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 1000,
+          }}
+        >
+          <DockButtonInspector
+            buttonId={selectedDockButtonId}
+            initialTab={inspectorTab}
+            onClose={() => launcherActions.setSelectedDockButtonId(null)}
+          />
+        </div>
+      )}
+
       {/* Main Unified Dock Container */}
       <div
         ref={dockRef}
@@ -870,80 +1119,93 @@ export const HomeDock: React.FC = () => {
           const effectClass = getEffectClassName(btnCustom?.specialEffect);
 
           return (
-            <button
+            <div
               key={btnId}
-              type="button"
-              onClick={() => handleButtonClick(btnId)}
-              className={`dock-segment ${isLaunch ? 'start-game' : ''} ${
-                isRunning ? 'running' : isLaunching ? 'launching' : ''
-              } ${effectClass}`}
               style={{
-                width: btnW,
-                height: btnH,
-                borderRight: borderRightStyle,
-                borderRadius: radius,
-                transform: scale !== 1 || rotation !== 0 ? `scale(${scale}) rotate(${rotation}deg)` : undefined,
-                transformOrigin: 'center center',
-                background: (() => {
-                  if (btnCustom?.bgType === 'color' && btnCustom.bgColor) return btnCustom.bgColor;
-                  if (btnCustom?.bgType === 'image' && btnCustom.bgImage)
-                    return `url(${btnCustom.bgImage}) center / cover no-repeat`;
-                  return isLaunch
-                    ? isRunning || isLaunching
-                      ? startHoverBg
-                      : startSubtleBg
-                    : customBtnColor
-                      ? `${customBtnColor}14`
-                      : 'transparent';
-                })(),
-                color: (() => {
-                  if (btnCustom?.contentColor) return btnCustom.contentColor;
-                  return isLaunch ? startColor : customBtnColor || '#cbd5e1';
-                })(),
-                cursor: isEditingHud
-                  ? draggingTarget === 'dock'
-                    ? 'grabbing'
-                    : 'pointer'
-                  : 'pointer',
                 position: 'relative',
-                overflow: 'hidden',
+                display: 'inline-flex',
               }}
             >
-              {/* Video background */}
-              {btnCustom?.bgType === 'video' && btnCustom.bgVideo && (
-                <video
-                  src={btnCustom.bgVideo}
-                  autoPlay
-                  loop
-                  muted
-                  playsInline
-                  className="dock-button-video-bg"
-                  style={{ opacity: btnCustom.bgVideoOpacity ?? 0.85 }}
-                />
-              )}
-
-              {isEditingHud && (
-                <div className="dock-edit-badge">
-                  <Sparkles size={8} />
-                  <span>Editar</span>
-                </div>
-              )}
-
-              <div
+              <button
+                ref={(el) => {
+                  buttonRefs.current[btnId] = el;
+                }}
+                type="button"
+                onClick={() => handleButtonClick(btnId)}
+                className={`dock-segment ${isLaunch ? 'start-game' : ''} ${
+                  isRunning ? 'running' : isLaunching ? 'launching' : ''
+                } ${effectClass}`}
                 style={{
+                  width: btnW,
+                  height: btnH,
+                  borderRight: borderRightStyle,
+                  borderRadius: radius,
+                  transform: scale !== 1 || rotation !== 0 ? `scale(${scale}) rotate(${rotation}deg)` : undefined,
+                  transformOrigin: 'center center',
+                  background: (() => {
+                    if (btnCustom?.bgType === 'color' && btnCustom.bgColor) return btnCustom.bgColor;
+                    if (btnCustom?.bgType === 'image' && btnCustom.bgImage)
+                      return `url(${btnCustom.bgImage}) center / cover no-repeat`;
+                    return isLaunch
+                      ? isRunning || isLaunching
+                        ? startHoverBg
+                        : startSubtleBg
+                      : customBtnColor
+                        ? `${customBtnColor}14`
+                        : 'transparent';
+                  })(),
+                  color: (() => {
+                    if (btnCustom?.contentColor) return btnCustom.contentColor;
+                    return isLaunch ? startColor : customBtnColor || '#cbd5e1';
+                  })(),
+                  cursor: isEditingHud
+                    ? draggingTarget === 'dock'
+                      ? 'grabbing'
+                      : 'pointer'
+                    : 'pointer',
                   position: 'relative',
-                  zIndex: 2,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: '4px',
-                  width: '100%',
-                  pointerEvents: 'none',
+                  overflow: 'hidden',
                 }}
               >
-                {renderButtonContent(btnId)}
-              </div>
-            </button>
+                {/* Video background */}
+                {btnCustom?.bgType === 'video' && btnCustom.bgVideo && (
+                  <video
+                    src={btnCustom.bgVideo}
+                    autoPlay
+                    loop
+                    muted
+                    playsInline
+                    className="dock-button-video-bg"
+                    style={{ opacity: btnCustom.bgVideoOpacity ?? 0.85 }}
+                  />
+                )}
+
+                {isEditingHud && (
+                  <div className="dock-edit-badge">
+                    <Sparkles size={8} />
+                    <span>Editar</span>
+                  </div>
+                )}
+
+                <div
+                  style={{
+                    position: 'relative',
+                    zIndex: 2,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '4px',
+                    width: '100%',
+                    pointerEvents: isEditingHud ? 'auto' : 'none',
+                  }}
+                >
+                  {renderButtonContent(btnId)}
+                </div>
+              </button>
+
+              {/* Corner Resize Handles for Mode B */}
+              {renderResizeHandles(btnId)}
+            </div>
           );
         })}
 

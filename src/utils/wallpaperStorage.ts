@@ -159,3 +159,136 @@ export async function clearCustomWallpaper(): Promise<void> {
     console.warn('Failed to clear wallpaper from IndexedDB:', err);
   }
 }
+
+// ═══════════════════════════════════════════════════════════════
+// BUTTON MEDIA STORAGE (VIDEOS, GIFS, IMAGES, ICONS)
+// ═══════════════════════════════════════════════════════════════
+
+const BUTTON_MEDIA_PREFIX = 'btn_media_';
+const BUTTON_ICON_PREFIX = 'btn_icon_';
+const buttonBlobUrls = new Map<string, string>();
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', () => {
+    buttonBlobUrls.forEach((url) => {
+      try {
+        URL.revokeObjectURL(url);
+      } catch {}
+    });
+    buttonBlobUrls.clear();
+  });
+}
+
+export async function saveButtonMediaFile(
+  btnId: string,
+  file: File,
+  isIcon: boolean = false
+): Promise<{ url: string; isVideo: boolean; name: string }> {
+  const isVideo = !isIcon && (file.type.startsWith('video/') || isVideoSource(file.name));
+  const db = await openDB();
+  const id = `${isIcon ? BUTTON_ICON_PREFIX : BUTTON_MEDIA_PREFIX}${btnId}`;
+
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(STORE_NAME, 'readwrite');
+    const store = transaction.objectStore(STORE_NAME);
+
+    const record = {
+      id,
+      blob: file,
+      name: file.name,
+      type: file.type,
+      size: file.size,
+      isVideo,
+      updatedAt: Date.now(),
+    };
+
+    const request = store.put(record);
+
+    request.addEventListener('success', () => {
+      const prevUrl = buttonBlobUrls.get(id);
+      if (prevUrl) {
+        try {
+          URL.revokeObjectURL(prevUrl);
+        } catch {}
+      }
+      const newUrl = URL.createObjectURL(file);
+      buttonBlobUrls.set(id, newUrl);
+      resolve({
+        url: newUrl,
+        isVideo,
+        name: file.name,
+      });
+    });
+
+    request.addEventListener('error', () => reject(request.error));
+  });
+}
+
+export async function loadAllButtonMedia(): Promise<{
+  backgrounds: Record<string, { url: string; isVideo: boolean }>;
+  icons: Record<string, string>;
+}> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const transaction = db.transaction(STORE_NAME, 'readonly');
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.getAll();
+
+      request.addEventListener('success', () => {
+        const records = request.result || [];
+        const backgrounds: Record<string, { url: string; isVideo: boolean }> = {};
+        const icons: Record<string, string> = {};
+
+        for (const record of records) {
+          if (!record.id || !record.blob) continue;
+          if (record.id.startsWith(BUTTON_MEDIA_PREFIX)) {
+            const btnId = record.id.slice(BUTTON_MEDIA_PREFIX.length);
+            const url = URL.createObjectURL(record.blob);
+            buttonBlobUrls.set(record.id, url);
+            backgrounds[btnId] = {
+              url,
+              isVideo: Boolean(record.isVideo),
+            };
+          } else if (record.id.startsWith(BUTTON_ICON_PREFIX)) {
+            const btnId = record.id.slice(BUTTON_ICON_PREFIX.length);
+            const url = URL.createObjectURL(record.blob);
+            buttonBlobUrls.set(record.id, url);
+            icons[btnId] = url;
+          }
+        }
+
+        resolve({ backgrounds, icons });
+      });
+
+      request.addEventListener('error', () => resolve({ backgrounds: {}, icons: {} }));
+    });
+  } catch (err) {
+    console.warn('Error loading button media from IndexedDB:', err);
+    return { backgrounds: {}, icons: {} };
+  }
+}
+
+export async function clearButtonMedia(btnId: string, isIcon: boolean = false): Promise<void> {
+  const id = `${isIcon ? BUTTON_ICON_PREFIX : BUTTON_MEDIA_PREFIX}${btnId}`;
+  const prevUrl = buttonBlobUrls.get(id);
+  if (prevUrl) {
+    try {
+      URL.revokeObjectURL(prevUrl);
+    } catch {}
+    buttonBlobUrls.delete(id);
+  }
+
+  try {
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const transaction = db.transaction(STORE_NAME, 'readwrite');
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.delete(id);
+      request.addEventListener('success', () => resolve());
+      request.addEventListener('error', () => resolve());
+    });
+  } catch (err) {
+    console.warn('Failed to clear button media from IndexedDB:', err);
+  }
+}
