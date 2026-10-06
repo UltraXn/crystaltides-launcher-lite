@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import DOMPurify from 'dompurify';
 import {
   Info,
   Settings,
@@ -245,23 +246,69 @@ export const HomeDock: React.FC = () => {
   const visibleButtonsSet = new Set(dockConfig.visibleButtons);
   const activeButtons = dockConfig.buttonOrder.filter((id) => visibleButtonsSet.has(id));
 
+  // Helper to render icon respecting custom SVG, custom image, or none
+  const renderIconWithCustomization = (
+    btnId: DockButtonId,
+    defaultIcon: React.ReactNode,
+    effectiveColor: string | undefined,
+  ) => {
+    const btnCustom = dockConfig.buttonCustomizations?.[btnId];
+    if (btnCustom?.iconType === 'none') {
+      return null;
+    }
+    if (btnCustom?.iconType === 'custom_svg' && btnCustom.customSvg) {
+      const sanitized = DOMPurify.sanitize(btnCustom.customSvg, {
+        USE_PROFILES: { svg: true, svgFilters: true },
+      });
+      return (
+        <div
+          className="dock-icon-wrapper dock-custom-svg"
+          style={{
+            width: `${iconSize}px`,
+            height: `${iconSize}px`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: effectiveColor,
+          }}
+          dangerouslySetInnerHTML={{ __html: sanitized }}
+        />
+      );
+    }
+    if (btnCustom?.iconType === 'custom_image' && btnCustom.customIconUrl) {
+      return (
+        <div className="dock-icon-wrapper">
+          <img
+            src={btnCustom.customIconUrl}
+            alt=""
+            style={{ width: `${iconSize}px`, height: `${iconSize}px`, objectFit: 'contain' }}
+          />
+        </div>
+      );
+    }
+    return <div className="dock-icon-wrapper">{defaultIcon}</div>;
+  };
+
   // Render individual button content
   const renderButtonContent = (btnId: DockButtonId) => {
-    const customColor = getButtonCustomColor(btnId);
+    const btnCustom = dockConfig.buttonCustomizations?.[btnId];
+    const customColor = btnCustom?.contentColor || getButtonCustomColor(btnId);
 
     if (btnId === 'instances') {
       const iconColor = customColor || (activeInstance?.isOfficial ? accentColor : '#22c55e');
       return (
         <>
-          <div className="dock-icon-wrapper">
+          {renderIconWithCustomization(
+            'instances',
             <Layers
               size={iconSize}
               style={{
                 color: iconColor,
                 filter: customColor ? `drop-shadow(0 0 6px ${customColor}80)` : 'none',
               }}
-            />
-          </div>
+            />,
+            iconColor,
+          )}
           {showLabels && (
             <span
               className="dock-label"
@@ -280,15 +327,17 @@ export const HomeDock: React.FC = () => {
     if (btnId === 'about') {
       return (
         <>
-          <div className="dock-icon-wrapper">
+          {renderIconWithCustomization(
+            'about',
             <Info
               size={iconSize}
               style={{
                 color: customColor || undefined,
                 filter: customColor ? `drop-shadow(0 0 6px ${customColor}80)` : 'none',
               }}
-            />
-          </div>
+            />,
+            customColor || undefined,
+          )}
           {showLabels && (
             <span
               className="dock-label"
@@ -347,15 +396,17 @@ export const HomeDock: React.FC = () => {
     if (btnId === 'settings') {
       return (
         <>
-          <div className="dock-icon-wrapper">
+          {renderIconWithCustomization(
+            'settings',
             <Settings
               size={iconSize}
               style={{
                 color: customColor || undefined,
                 filter: customColor ? `drop-shadow(0 0 6px ${customColor}80)` : 'none',
               }}
-            />
-          </div>
+            />,
+            customColor || undefined,
+          )}
           {showLabels && (
             <span
               className="dock-label"
@@ -372,17 +423,22 @@ export const HomeDock: React.FC = () => {
     }
 
     if (btnId === 'launch') {
+      const launchIconColor = customColor || startColor;
       return (
         <>
-          <div className="dock-icon-wrapper" style={{ color: startColor }}>
-            {isRunning ? (
-              <CheckCircle2 size={iconSize + 2} />
-            ) : isLaunching ? (
-              <Loader2 size={iconSize + 2} style={{ animation: 'spin 1s linear infinite' }} />
-            ) : (
-              <Rocket size={iconSize + 2} style={{ transform: 'rotate(45deg)' }} />
-            )}
-          </div>
+          {renderIconWithCustomization(
+            'launch',
+            <div style={{ color: launchIconColor }}>
+              {isRunning ? (
+                <CheckCircle2 size={iconSize + 2} />
+              ) : isLaunching ? (
+                <Loader2 size={iconSize + 2} style={{ animation: 'spin 1s linear infinite' }} />
+              ) : (
+                <Rocket size={iconSize + 2} style={{ transform: 'rotate(45deg)' }} />
+              )}
+            </div>,
+            launchIconColor,
+          )}
           {showLabels && (
             <span
               className="dock-label"
@@ -495,23 +551,40 @@ export const HomeDock: React.FC = () => {
                   width: btnW,
                   height: btnH,
                   borderRadius: `${dockConfig.borderRadius}px`,
-                  background: isLaunch
-                    ? isRunning || isLaunching
-                      ? startHoverBg
-                      : startSubtleBg
-                    : customBtnColor
-                      ? `${customBtnColor}18`
-                      : `rgba(12, 17, 24, ${dockConfig.bgOpacity})`,
-                  color: isLaunch ? startColor : customBtnColor || '#cbd5e1',
+                  background: (() => {
+                    const btnCustom = dockConfig.buttonCustomizations?.[btnId];
+                    if (btnCustom?.bgType === 'color' && btnCustom.bgColor) return btnCustom.bgColor;
+                    if (btnCustom?.bgType === 'image' && btnCustom.bgImage)
+                      return `url(${btnCustom.bgImage}) center / cover no-repeat`;
+                    return isLaunch
+                      ? isRunning || isLaunching
+                        ? startHoverBg
+                        : startSubtleBg
+                      : customBtnColor
+                        ? `${customBtnColor}18`
+                        : `rgba(12, 17, 24, ${dockConfig.bgOpacity})`;
+                  })(),
+                  color: (() => {
+                    const btnCustom = dockConfig.buttonCustomizations?.[btnId];
+                    if (btnCustom?.contentColor) return btnCustom.contentColor;
+                    return isLaunch ? startColor : customBtnColor || '#cbd5e1';
+                  })(),
                   border: isEditingHud
                     ? isDraggingThis && isColliding
                       ? '2px dashed #ef4444'
                       : '2px dashed #38bdf8'
-                    : customBtnColor
-                      ? `1px solid ${customBtnColor}80`
-                      : dockConfig.dockBorderColorMode === 'accent'
-                        ? '1px solid var(--border-accent, rgba(0, 229, 255, 0.4))'
-                        : '1px solid rgba(255, 255, 255, 0.1)',
+                    : (() => {
+                        const btnCustom = dockConfig.buttonCustomizations?.[btnId];
+                        if (btnCustom?.bgType === 'color' && btnCustom.bgColor)
+                          return `1px solid ${btnCustom.bgColor}80`;
+                        if (btnCustom?.bgType === 'image' && btnCustom.bgImage)
+                          return '1px solid rgba(255, 255, 255, 0.16)';
+                        return customBtnColor
+                          ? `1px solid ${customBtnColor}80`
+                          : dockConfig.dockBorderColorMode === 'accent'
+                            ? '1px solid var(--border-accent, rgba(0, 229, 255, 0.4))'
+                            : '1px solid rgba(255, 255, 255, 0.1)';
+                      })(),
                   boxShadow: isEditingHud
                     ? isDraggingThis && isColliding
                       ? '0 0 20px rgba(239, 68, 68, 0.65)'
@@ -730,14 +803,24 @@ export const HomeDock: React.FC = () => {
                 width: btnW,
                 height: btnH,
                 borderRight: borderRightStyle,
-                background: isLaunch
-                  ? isRunning || isLaunching
-                    ? startHoverBg
-                    : startSubtleBg
-                  : customBtnColor
-                    ? `${customBtnColor}14`
-                    : 'transparent',
-                color: isLaunch ? startColor : customBtnColor || '#cbd5e1',
+                background: (() => {
+                  const btnCustom = dockConfig.buttonCustomizations?.[btnId];
+                  if (btnCustom?.bgType === 'color' && btnCustom.bgColor) return btnCustom.bgColor;
+                  if (btnCustom?.bgType === 'image' && btnCustom.bgImage)
+                    return `url(${btnCustom.bgImage}) center / cover no-repeat`;
+                  return isLaunch
+                    ? isRunning || isLaunching
+                      ? startHoverBg
+                      : startSubtleBg
+                    : customBtnColor
+                      ? `${customBtnColor}14`
+                      : 'transparent';
+                })(),
+                color: (() => {
+                  const btnCustom = dockConfig.buttonCustomizations?.[btnId];
+                  if (btnCustom?.contentColor) return btnCustom.contentColor;
+                  return isLaunch ? startColor : customBtnColor || '#cbd5e1';
+                })(),
                 cursor: isEditingHud
                   ? draggingTarget === 'dock'
                     ? 'grabbing'

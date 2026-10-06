@@ -616,6 +616,8 @@ pub fn run() {
                     height: 720.0,
                 }));
                 let _ = window.center();
+                let _ = window.show();
+                let _ = window.set_focus();
                 let _ = window.unminimize();
             }
             Ok(())

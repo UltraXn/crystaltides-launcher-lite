@@ -57,6 +57,7 @@ import {
 } from '../../utils/wallpaperStorage';
 import { invoke } from '@tauri-apps/api/core';
 import { LogViewerModal } from './LogViewerModal';
+import { ButtonCustomizerModal } from './ButtonCustomizerModal';
 import { CustomColorPicker } from '../common/CustomColorPicker';
 import {
   fetchVanillaVersions,
@@ -69,6 +70,39 @@ import {
 } from '../../services/minecraftMetadataService';
 import { getJavaVersionForMinecraft, ensureJava } from '../../services/javaService';
 import { CustomSelect, SelectOption } from '../common/CustomSelect';
+
+const isNearOpacity = (current: number, target: number) => Math.abs(current - target) < 0.01;
+
+const getLoaderStatusColor = (status: { success?: boolean; loading?: boolean }) => {
+  if (status.success) return '#22c55e';
+  if (status.loading) return '#38bdf8';
+  return '#f43f5e';
+};
+
+const getCustomWallpaperLabel = (url: string, isVideo: boolean) => {
+  if (isVideo || isVideoSource(url)) return 'Vídeo de fondo en uso';
+  if (url.toLowerCase().includes('.gif') || url.startsWith('data:image/gif')) {
+    return 'GIF animado en uso';
+  }
+  return 'Fondo personalizado en uso';
+};
+
+const resolveActiveBtnColor = (
+  btnId: string,
+  customColors?: Record<string, string>,
+  startBtnColorMode?: string,
+  customStartBtnColor?: string,
+  fallbackAccent?: string,
+) => {
+  if (customColors?.[btnId]) return customColors[btnId];
+  if (btnId === 'launch') {
+    if (startBtnColorMode === 'custom' && customStartBtnColor) {
+      return customStartBtnColor;
+    }
+    return '#22c55e';
+  }
+  return fallbackAccent || '#00e5ff';
+};
 
 export const SettingsModal: React.FC = () => {
   const activeModal = useLauncherStore((s: LauncherState) => s.activeModal);
@@ -89,6 +123,9 @@ export const SettingsModal: React.FC = () => {
   const isModuleEnabled = useModuleStore((s) => s.isModuleEnabled);
   const toggleModule = useModuleStore((s) => s.toggleModule);
   const openModuleModal = useModuleStore((s) => s.openModal);
+
+  // Button Customizer Modal state
+  const [selectedCustomizerBtn, setSelectedCustomizerBtn] = useState<DockButtonId | null>(null);
 
   // Local state for interactive editing before saving
   const initialMc = settings.mcVersion || '1.21.1';
@@ -112,7 +149,8 @@ export const SettingsModal: React.FC = () => {
   const [customLoaderMode, setCustomLoaderMode] = useState(false);
   const [disableAnimations, setDisableAnimations] = useState(false);
   const [disableHardwareAccel, setDisableHardwareAccel] = useState(() => {
-    return localStorage.getItem('ct_disable_hw_accel') === 'true';
+    if (typeof window === 'undefined') return false;
+    return window.localStorage.getItem('ct_disable_hw_accel') === 'true';
   });
   const [showHwRestartModal, setShowHwRestartModal] = useState(false);
   const [pendingHwAccel, setPendingHwAccel] = useState<boolean | null>(null);
@@ -348,13 +386,15 @@ export const SettingsModal: React.FC = () => {
     try {
       const result = await saveWallpaperFile(file);
       launcherActions.setCustomWallpaper(result.url, result.isVideo);
+      let feedbackMsg = 'Imagen de fondo aplicada exitosamente.';
+      if (result.isVideo) {
+        feedbackMsg = 'Vídeo de fondo configurado exitosamente (reproducción con audio habilitada).';
+      } else if (file.type === 'image/gif' || file.name.toLowerCase().endsWith('.gif')) {
+        feedbackMsg = 'GIF animado aplicado exitosamente.';
+      }
       setWallpaperFeedback({
         type: 'success',
-        message: result.isVideo
-          ? 'Vídeo de fondo configurado exitosamente (reproducción con audio habilitada).'
-          : file.type === 'image/gif' || file.name.toLowerCase().endsWith('.gif')
-            ? 'GIF animado aplicado exitosamente.'
-            : 'Imagen de fondo aplicada exitosamente.',
+        message: feedbackMsg,
       });
       setTimeout(() => setWallpaperFeedback(null), 4500);
     } catch (err) {
@@ -385,13 +425,15 @@ export const SettingsModal: React.FC = () => {
     await clearCustomWallpaper();
     const isVid = isVideoSource(trimmed);
     launcherActions.setCustomWallpaper(trimmed, isVid);
+    let urlFeedbackMsg = 'Fondo aplicado desde URL.';
+    if (isVid) {
+      urlFeedbackMsg = 'Vídeo aplicado desde enlace directo (audio habilitado).';
+    } else if (trimmed.toLowerCase().includes('.gif')) {
+      urlFeedbackMsg = 'GIF animado aplicado desde URL.';
+    }
     setWallpaperFeedback({
       type: 'success',
-      message: isVid
-        ? 'Vídeo aplicado desde enlace directo (audio habilitado).'
-        : trimmed.toLowerCase().includes('.gif')
-          ? 'GIF animado aplicado desde URL.'
-          : 'Fondo aplicado desde URL.',
+      message: urlFeedbackMsg,
     });
     setCustomUrlInput('');
     setTimeout(() => setWallpaperFeedback(null), 4000);
@@ -463,6 +505,89 @@ export const SettingsModal: React.FC = () => {
     { value: '__custom_loader__', label: t.settings.manualLoaderPlaceholder },
   ];
 
+  const renderLoaderInput = () => {
+    if (loaderType === 'vanilla') {
+      return (
+        <input
+          type="text"
+          value="N/A (Vanilla Puro)"
+          disabled
+          aria-label="Versión del loader no aplicable"
+          className="login-text-input"
+          style={{
+            width: '100%',
+            height: '36px',
+            background: 'rgba(255, 255, 255, 0.03)',
+            color: 'rgba(255, 255, 255, 0.3)',
+            border: '1px solid rgba(255, 255, 255, 0.08)',
+            borderRadius: '8px',
+            fontSize: '12px',
+            paddingLeft: '10px',
+          }}
+        />
+      );
+    }
+    if (customLoaderMode) {
+      return (
+        <input
+          type="text"
+          value={loaderVersion}
+          onChange={(e) => setLoaderVersion(e.target.value.trim())}
+          placeholder="Ej. 21.1.252, 0.16.10, 47.3.0..."
+          aria-label="Versión personalizada del loader"
+          className="login-text-input"
+          style={{
+            width: '100%',
+            height: '36px',
+            paddingLeft: '10px',
+            background: 'rgba(5, 9, 14, 0.75)',
+            color: '#38bdf8',
+            border: '1px solid rgba(56, 189, 248, 0.4)',
+            borderRadius: '8px',
+            fontSize: '12px',
+            fontWeight: 600,
+          }}
+        />
+      );
+    }
+    if (availableLoaderVersions.length > 0) {
+      return (
+        <CustomSelect
+          value={loaderVersion}
+          onChange={(v) => {
+            if (v === '__custom_loader__') {
+              setCustomLoaderMode(true);
+            } else {
+              setLoaderVersion(v);
+            }
+          }}
+          options={loaderVersionOptions}
+          height={36}
+        />
+      );
+    }
+    return (
+      <input
+        type="text"
+        value={loaderVersion}
+        onChange={(e) => setLoaderVersion(e.target.value.trim())}
+        placeholder="Ej. 21.1.252, 0.16.10 o versión custom"
+        aria-label="Versión del loader"
+        className="login-text-input"
+        style={{
+          width: '100%',
+          height: '36px',
+          paddingLeft: '10px',
+          background: 'rgba(5, 9, 14, 0.75)',
+          color: '#f1f5f9',
+          border: '1px solid rgba(255, 255, 255, 0.12)',
+          borderRadius: '8px',
+          fontSize: '12px',
+        }}
+      />
+    );
+  };
+
   return (
     <>
       <div
@@ -475,11 +600,11 @@ export const SettingsModal: React.FC = () => {
           if (e.key === 'Escape') launcherActions.closeModal();
         }}
       >
-        <div
+        <dialog
+          open
           className="papyrus-settings-card"
-          role="dialog"
-          aria-modal="true"
           aria-label={t.settings.title}
+          style={{ margin: 0 }}
         >
           {/* Close Button on Top Right */}
           <button
@@ -795,77 +920,7 @@ export const SettingsModal: React.FC = () => {
                     </button>
                   )}
                 </div>
-                {loaderType === 'vanilla' ? (
-                  <input
-                    type="text"
-                    value="N/A (Vanilla Puro)"
-                    disabled
-                    aria-label="Versión del loader no aplicable"
-                    className="login-text-input"
-                    style={{
-                      width: '100%',
-                      height: '36px',
-                      background: 'rgba(255, 255, 255, 0.03)',
-                      color: 'rgba(255, 255, 255, 0.3)',
-                      border: '1px solid rgba(255, 255, 255, 0.08)',
-                      borderRadius: '8px',
-                      fontSize: '12px',
-                      paddingLeft: '10px',
-                    }}
-                  />
-                ) : customLoaderMode ? (
-                  <input
-                    type="text"
-                    value={loaderVersion}
-                    onChange={(e) => setLoaderVersion(e.target.value.trim())}
-                    placeholder="Ej. 21.1.252, 0.16.10, 47.3.0..."
-                    aria-label="Versión personalizada del loader"
-                    className="login-text-input"
-                    style={{
-                      width: '100%',
-                      height: '36px',
-                      paddingLeft: '10px',
-                      background: 'rgba(5, 9, 14, 0.75)',
-                      color: '#38bdf8',
-                      border: '1px solid rgba(56, 189, 248, 0.4)',
-                      borderRadius: '8px',
-                      fontSize: '12px',
-                      fontWeight: 600,
-                    }}
-                  />
-                ) : availableLoaderVersions.length > 0 ? (
-                  <CustomSelect
-                    value={loaderVersion}
-                    onChange={(v) => {
-                      if (v === '__custom_loader__') {
-                        setCustomLoaderMode(true);
-                      } else {
-                        setLoaderVersion(v);
-                      }
-                    }}
-                    options={loaderVersionOptions}
-                    height={36}
-                  />
-                ) : (
-                  <input
-                    type="text"
-                    value={loaderVersion}
-                    onChange={(e) => setLoaderVersion(e.target.value.trim())}
-                    placeholder="Ej. 21.1.252, 0.16.10 o versión custom"
-                    aria-label="Versión del loader"
-                    className="login-text-input"
-                    style={{
-                      width: '100%',
-                      height: '36px',
-                      paddingLeft: '10px',
-                      background: 'rgba(5, 9, 14, 0.75)',
-                      color: '#f1f5f9',
-                      border: '1px solid rgba(255, 255, 255, 0.12)',
-                      borderRadius: '8px',
-                      fontSize: '12px',
-                    }}
-                  />
-                )}
+                {renderLoaderInput()}
               </div>
             </div>
 
@@ -912,11 +967,7 @@ export const SettingsModal: React.FC = () => {
                   <span
                     style={{
                       fontSize: '11px',
-                      color: loaderInstallStatus.success
-                        ? '#22c55e'
-                        : loaderInstallStatus.loading
-                          ? '#38bdf8'
-                          : '#f43f5e',
+                      color: getLoaderStatusColor(loaderInstallStatus),
                       display: 'inline-flex',
                       alignItems: 'center',
                       gap: '4px',
@@ -1099,12 +1150,7 @@ export const SettingsModal: React.FC = () => {
                       <CheckCircle2 size={12} />
                     )}
                     <span>
-                      {isVideoWallpaper || isVideoSource(customWallpaperUrl)
-                        ? 'Vídeo de fondo en uso'
-                        : customWallpaperUrl.toLowerCase().includes('.gif') ||
-                            customWallpaperUrl.startsWith('data:image/gif')
-                          ? 'GIF animado en uso'
-                          : 'Fondo personalizado en uso'}
+                      {getCustomWallpaperLabel(customWallpaperUrl, isVideoWallpaper)}
                     </span>
                   </div>
                 )}
@@ -1208,6 +1254,7 @@ export const SettingsModal: React.FC = () => {
                   onChange={(e) => setCustomUrlInput(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
+                      if (e.nativeEvent.isComposing) return;
                       e.preventDefault();
                       handleApplyUrl();
                     }
@@ -1832,21 +1879,21 @@ export const SettingsModal: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => launcherActions.setDockConfig({ bgOpacity: 0.92 })}
-                    className={`dock-preset-pill ${dockConfig.bgOpacity === 0.92 ? 'active' : ''}`}
+                    className={`dock-preset-pill ${isNearOpacity(dockConfig.bgOpacity, 0.92) ? 'active' : ''}`}
                   >
                     Sólido (92%)
                   </button>
                   <button
                     type="button"
                     onClick={() => launcherActions.setDockConfig({ bgOpacity: 0.7 })}
-                    className={`dock-preset-pill ${dockConfig.bgOpacity === 0.7 ? 'active' : ''}`}
+                    className={`dock-preset-pill ${isNearOpacity(dockConfig.bgOpacity, 0.7) ? 'active' : ''}`}
                   >
                     Medio (70%)
                   </button>
                   <button
                     type="button"
                     onClick={() => launcherActions.setDockConfig({ bgOpacity: 0.45 })}
-                    className={`dock-preset-pill ${dockConfig.bgOpacity === 0.45 ? 'active' : ''}`}
+                    className={`dock-preset-pill ${isNearOpacity(dockConfig.bgOpacity, 0.45) ? 'active' : ''}`}
                   >
                     Translúcido (45%)
                   </button>
@@ -1942,13 +1989,13 @@ export const SettingsModal: React.FC = () => {
                     const itemInfo = buttonLabels[btnId] || { name: btnId, icon: null };
 
                     const isCustomColor = Boolean(dockConfig.customButtonColors?.[btnId]);
-                    const activeBtnColor =
-                      dockConfig.customButtonColors?.[btnId] ||
-                      (btnId === 'launch'
-                        ? dockConfig.startBtnColorMode === 'custom' && dockConfig.customStartBtnColor
-                          ? dockConfig.customStartBtnColor
-                          : '#22c55e'
-                        : accentColor);
+                    const activeBtnColor = resolveActiveBtnColor(
+                      btnId,
+                      dockConfig.customButtonColors,
+                      dockConfig.startBtnColorMode,
+                      dockConfig.customStartBtnColor,
+                      accentColor,
+                    );
 
                     return (
                       <div
@@ -1973,6 +2020,36 @@ export const SettingsModal: React.FC = () => {
                         </div>
 
                         <div className="dock-reorder-actions" style={{ gap: '6px' }}>
+                          {/* Advanced Customizer (Background, SVG, Icon, Content Color) */}
+                          <button
+                            type="button"
+                            onClick={() => setSelectedCustomizerBtn(btnId)}
+                            className="dock-action-icon-btn"
+                            title="Personalizar fondo, color, SVG o imagen del botón"
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              padding: '4px 8px',
+                              borderRadius: '6px',
+                              background: dockConfig.buttonCustomizations?.[btnId]
+                                ? 'rgba(0, 229, 255, 0.18)'
+                                : 'rgba(255, 255, 255, 0.05)',
+                              border: dockConfig.buttonCustomizations?.[btnId]
+                                ? '1px solid rgba(0, 229, 255, 0.4)'
+                                : '1px solid rgba(255, 255, 255, 0.1)',
+                              color: dockConfig.buttonCustomizations?.[btnId]
+                                ? '#00e5ff'
+                                : '#cbd5e1',
+                              fontSize: '11px',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <Sparkles size={12} />
+                            <span>Personalizar</span>
+                          </button>
+
                           {/* Individual Color Picker */}
                           <CustomColorPicker
                             color={activeBtnColor}
@@ -2175,7 +2252,8 @@ export const SettingsModal: React.FC = () => {
                               display: 'flex',
                               alignItems: 'center',
                               gap: '4px',
-                              transition: 'all 0.15s ease',
+                              transition:
+                                'background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease',
                             }}
                           >
                             Abrir
@@ -2199,7 +2277,8 @@ export const SettingsModal: React.FC = () => {
                             display: 'flex',
                             alignItems: 'center',
                             gap: '5px',
-                            transition: 'all 0.15s ease',
+                            transition:
+                              'background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease',
                           }}
                         >
                           {enabled ? (
@@ -2455,7 +2534,7 @@ export const SettingsModal: React.FC = () => {
               Restablecer Configuración Local
             </button>
           </div>
-        </div>
+        </dialog>
       </div>
 
       {isLogViewerOpen && (
@@ -2480,16 +2559,16 @@ export const SettingsModal: React.FC = () => {
             }
           }}
         >
-          <div
+          <dialog
+            open
             className="papyrus-settings-card"
-            role="dialog"
-            aria-modal="true"
             aria-label="Confirm Restart"
             style={{
               width: '420px',
               padding: '24px 26px',
               border: '1px solid rgba(0, 229, 255, 0.25)',
               boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 30px rgba(0, 229, 255, 0.15)',
+              margin: 0,
             }}
           >
             <div
@@ -2592,8 +2671,16 @@ export const SettingsModal: React.FC = () => {
                 </button>
               </div>
             </div>
-          </div>
+          </dialog>
         </div>
+      )}
+
+      {selectedCustomizerBtn && (
+        <ButtonCustomizerModal
+          buttonId={selectedCustomizerBtn}
+          isOpen={Boolean(selectedCustomizerBtn)}
+          onClose={() => setSelectedCustomizerBtn(null)}
+        />
       )}
     </>
   );
