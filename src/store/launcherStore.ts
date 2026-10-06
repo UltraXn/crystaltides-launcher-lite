@@ -1017,6 +1017,9 @@ export function useLauncherStore<T>(selector: (state: LauncherState) => T): T {
   );
 }
 
+// Function to read current launcher state outside of React components
+export const getLauncherState = (): LauncherState => state;
+
 // React hook to access current active translations
 export function useT(): TranslationDictionary {
   const lang = useLauncherStore((s: LauncherState) => s.language);

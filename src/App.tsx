@@ -20,6 +20,8 @@ import { SplashScreen } from './components/SplashScreen';
 import { GameLaunchOverlay } from './components/GameLaunchOverlay';
 import { checkForAppUpdates, AppUpdateInfo } from './services/updateService';
 import { loadActiveWallpaper } from './utils/wallpaperStorage';
+import { initializeBuiltinModules } from './modules';
+import { ModuleModalRenderer } from './components/modals/ModuleModalRenderer';
 
 interface BootContext {
   mode: 'install' | 'launcher' | 'uninstall';
@@ -45,6 +47,7 @@ export const App: React.FC = () => {
 
   // Revelar la ventana de forma fluida una vez montado el DOM (Zero White Flash)
   useEffect(() => {
+    initializeBuiltinModules();
     const revealWindow = async () => {
       try {
         const win = getCurrentWebviewWindow();
@@ -202,6 +205,7 @@ export const App: React.FC = () => {
           <SettingsModal />
           <AccountsModal />
           <AboutModal />
+          <ModuleModalRenderer />
           <CrashReportModal
             isOpen={crashModalOpen}
             onClose={() => setCrashModalOpen(false)}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Info,
   Settings,
@@ -19,6 +19,7 @@ import {
   DockButtonId,
   useT,
 } from '../store/launcherStore';
+import { useModuleStore, getModuleContext } from '../modules';
 import {
   getActiveObstacles,
   resolveCollisionAndClamp,
@@ -40,6 +41,19 @@ export const HomeDock: React.FC = () => {
   const hudManualSide = useLauncherStore((s: LauncherState) => s.hudManualSide);
   const t = useT();
   const effectiveHudSide = getEffectiveHudSide(dockConfig, hudManualSide);
+
+  const modules = useModuleStore((s) => s.modules);
+  const enabledModuleIds = useModuleStore((s) => s.enabledModuleIds);
+
+  const activeModuleButtons = useMemo(() => {
+    const enabledSet = new Set(enabledModuleIds);
+    return modules
+      .filter((m) => enabledSet.has(m.id) && Boolean(m.slots.dockButton))
+      .map((m) => ({
+        module: m,
+        slot: m.slots.dockButton!,
+      }));
+  }, [modules, enabledModuleIds]);
 
   const [draggingTarget, setDraggingTarget] = useState<'dock' | DockButtonId | null>(null);
   const [tempPos, setTempPos] = useState<{ x: number; y: number } | null>(null);
@@ -699,7 +713,7 @@ export const HomeDock: React.FC = () => {
         {activeButtons.map((btnId, idx) => {
           const isLaunch = btnId === 'launch';
           const customBtnColor = getButtonCustomColor(btnId);
-          const isLast = idx === activeButtons.length - 1;
+          const isLast = idx === activeButtons.length - 1 && activeModuleButtons.length === 0;
           const borderRightStyle = isLast ? 'none' : '1px solid rgba(255, 255, 255, 0.06)';
           const btnW = isLaunch ? startSegmentWidth : segmentWidth;
           const btnH = segmentHeight;
@@ -732,6 +746,48 @@ export const HomeDock: React.FC = () => {
               }}
             >
               {renderButtonContent(btnId)}
+            </button>
+          );
+        })}
+
+        {/* Dynamic Plugin / Module Dock Buttons */}
+        {activeModuleButtons.map(({ module: mod, slot }, idx) => {
+          const modCustomColor =
+            dockConfig.customButtonColors?.[`mod:${mod.id}` as unknown as DockButtonId] ||
+            slot.defaultColor ||
+            accentColor;
+          const isLast = idx === activeModuleButtons.length - 1;
+
+          return (
+            <button
+              key={mod.id}
+              type="button"
+              onClick={() => slot.onClick(getModuleContext(mod.id))}
+              title={slot.tooltip || slot.label}
+              className="dock-segment"
+              style={{
+                width: segmentWidth,
+                height: segmentHeight,
+                borderRight: isLast ? 'none' : '1px solid rgba(255, 255, 255, 0.06)',
+                background: `${modCustomColor}14`,
+                color: modCustomColor,
+                cursor: isEditingHud ? 'default' : 'pointer',
+              }}
+            >
+              <div className="dock-icon-wrapper" style={{ color: modCustomColor }}>
+                {slot.icon}
+              </div>
+              {showLabels && (
+                <span
+                  className="dock-label"
+                  style={{
+                    fontSize: labelFontSize,
+                    color: modCustomColor,
+                  }}
+                >
+                  {slot.label}
+                </span>
+              )}
             </button>
           );
         })}

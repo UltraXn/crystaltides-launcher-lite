@@ -32,6 +32,7 @@ import {
   Film,
   Globe,
   Type,
+  Puzzle,
 } from 'lucide-react';
 import {
   useLauncherStore,
@@ -48,6 +49,7 @@ import {
   GuiBgPreset,
   GuiBorderPreset,
 } from '../../store/launcherStore';
+import { useModuleStore } from '../../modules';
 import {
   saveWallpaperFile,
   clearCustomWallpaper,
@@ -81,6 +83,12 @@ export const SettingsModal: React.FC = () => {
   const dockConfig = useLauncherStore((s: LauncherState) => s.dockConfig);
   const language = useLauncherStore((s: LauncherState) => s.language);
   const t = useT();
+
+  // Module & Extension SDK
+  const modules = useModuleStore((s) => s.modules);
+  const isModuleEnabled = useModuleStore((s) => s.isModuleEnabled);
+  const toggleModule = useModuleStore((s) => s.toggleModule);
+  const openModuleModal = useModuleStore((s) => s.openModal);
 
   // Local state for interactive editing before saving
   const initialMc = settings.mcVersion || '1.21.1';
@@ -2020,6 +2028,240 @@ export const SettingsModal: React.FC = () => {
                   });
                 })()}
               </div>
+            </div>
+          </div>
+
+          {/* Section: Plugin & Module SDK */}
+          <div
+            className="settings-section"
+            style={{ borderTop: '1px solid rgba(255, 255, 255, 0.06)', paddingTop: '16px' }}
+          >
+            <div className="settings-section-header">
+              <span
+                className="settings-label-title"
+                style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#38bdf8' }}
+              >
+                <Puzzle size={15} style={{ color: '#38bdf8' }} />
+                Módulos &amp; Extensiones (Plugin SDK)
+              </span>
+              <span
+                style={{
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  color: 'rgba(248, 250, 252, 0.6)',
+                  fontFamily: 'var(--font-inter)',
+                }}
+              >
+                {modules.filter((m) => isModuleEnabled(m.id)).length} / {modules.length} Activos
+              </span>
+            </div>
+            <p
+              style={{
+                fontSize: '11px',
+                color: 'rgba(248, 250, 252, 0.5)',
+                margin: '2px 0 12px 0',
+                lineHeight: 1.45,
+              }}
+            >
+              Arquitectura extensible SDK. Activa o desactiva herramientas modulares integradas (calculadoras, hubs, widgets) con integración viva en el Dock y el Launcher:
+            </p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {modules.map((mod) => {
+                const enabled = isModuleEnabled(mod.id);
+                const modAccent = mod.accentColor || mod.slots.dockButton?.defaultColor || '#38bdf8';
+                const hasModal = Boolean(mod.slots.modal);
+
+                return (
+                  <div
+                    key={mod.id}
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px',
+                      padding: '12px 14px',
+                      borderRadius: '10px',
+                      background: enabled ? 'rgba(255, 255, 255, 0.035)' : 'rgba(255, 255, 255, 0.015)',
+                      border: enabled ? `1px solid ${modAccent}44` : '1px solid rgba(255, 255, 255, 0.06)',
+                      transition: 'border-color 0.2s ease, background-color 0.2s ease',
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '12px',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+                        <div
+                          style={{
+                            width: '32px',
+                            height: '32px',
+                            borderRadius: '8px',
+                            background: `${modAccent}18`,
+                            border: `1px solid ${modAccent}33`,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: modAccent,
+                            flexShrink: 0,
+                          }}
+                        >
+                          <Puzzle size={16} />
+                        </div>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span
+                              style={{
+                                fontSize: '12.5px',
+                                fontWeight: 700,
+                                color: enabled ? '#f8fafc' : 'rgba(248, 250, 252, 0.6)',
+                              }}
+                            >
+                              {mod.name}
+                            </span>
+                            <span
+                              style={{
+                                fontSize: '10px',
+                                padding: '1px 6px',
+                                borderRadius: '4px',
+                                background: 'rgba(255, 255, 255, 0.06)',
+                                color: 'rgba(248, 250, 252, 0.5)',
+                                fontWeight: 600,
+                              }}
+                            >
+                              v{mod.version}
+                            </span>
+                            {mod.author && (
+                              <span
+                                style={{
+                                  fontSize: '10px',
+                                  color: 'rgba(248, 250, 252, 0.4)',
+                                }}
+                              >
+                                por {mod.author}
+                              </span>
+                            )}
+                          </div>
+                          <p
+                            style={{
+                              fontSize: '11px',
+                              color: 'rgba(248, 250, 252, 0.55)',
+                              margin: '2px 0 0 0',
+                              lineHeight: 1.35,
+                            }}
+                          >
+                            {mod.description}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                        {hasModal && enabled && (
+                          <button
+                            type="button"
+                            onClick={() => openModuleModal(mod.id)}
+                            style={{
+                              padding: '5px 10px',
+                              borderRadius: '6px',
+                              border: `1px solid ${modAccent}55`,
+                              background: `${modAccent}15`,
+                              color: modAccent,
+                              fontSize: '11px',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              transition: 'all 0.15s ease',
+                            }}
+                          >
+                            Abrir
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => toggleModule(mod.id)}
+                          style={{
+                            padding: '5px 12px',
+                            borderRadius: '6px',
+                            border: enabled
+                              ? `1px solid ${modAccent}66`
+                              : '1px solid rgba(255, 255, 255, 0.1)',
+                            background: enabled ? `${modAccent}25` : 'rgba(255, 255, 255, 0.04)',
+                            color: enabled ? '#f8fafc' : 'rgba(248, 250, 252, 0.5)',
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '5px',
+                            transition: 'all 0.15s ease',
+                          }}
+                        >
+                          {enabled ? (
+                            <>
+                              <Check size={12} color={modAccent} />
+                              Habilitado
+                            </>
+                          ) : (
+                            'Deshabilitado'
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Slots info tags */}
+                    <div style={{ display: 'flex', gap: '6px', marginTop: '2px' }}>
+                      {mod.slots.dockButton && (
+                        <span
+                          style={{
+                            fontSize: '9.5px',
+                            padding: '1px 5px',
+                            borderRadius: '3px',
+                            background: 'rgba(56, 189, 248, 0.1)',
+                            color: '#38bdf8',
+                            border: '1px solid rgba(56, 189, 248, 0.2)',
+                          }}
+                        >
+                          Dock Integrado
+                        </span>
+                      )}
+                      {mod.slots.modal && (
+                        <span
+                          style={{
+                            fontSize: '9.5px',
+                            padding: '1px 5px',
+                            borderRadius: '3px',
+                            background: 'rgba(168, 85, 247, 0.1)',
+                            color: '#a855f7',
+                            border: '1px solid rgba(168, 85, 247, 0.2)',
+                          }}
+                        >
+                          Herramienta Modal
+                        </span>
+                      )}
+                      {mod.slots.widget && (
+                        <span
+                          style={{
+                            fontSize: '9.5px',
+                            padding: '1px 5px',
+                            borderRadius: '3px',
+                            background: 'rgba(34, 197, 94, 0.1)',
+                            color: '#22c55e',
+                            border: '1px solid rgba(34, 197, 94, 0.2)',
+                          }}
+                        >
+                          Widget UI
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
