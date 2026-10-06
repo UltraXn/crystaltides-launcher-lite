@@ -82,9 +82,9 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
       }}
     >
       {/* Trigger Button */}
-      <div
-        role="button"
-        tabIndex={disabled ? -1 : 0}
+      <button
+        type="button"
+        disabled={disabled}
         aria-haspopup="listbox"
         aria-expanded={isOpen}
         onClick={() => {
@@ -115,7 +115,8 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
           cursor: disabled ? 'not-allowed' : 'pointer',
           outline: 'none',
           boxShadow: isOpen ? '0 0 0 2px rgba(56, 189, 248, 0.2)' : 'none',
-          transition: 'all 0.15s ease',
+          transition: 'border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease',
+          textAlign: 'left',
         }}
       >
         <span
@@ -138,7 +139,7 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
             flexShrink: 0,
           }}
         />
-      </div>
+      </button>
 
       {/* Dropdown Menu */}
       {isOpen && (
