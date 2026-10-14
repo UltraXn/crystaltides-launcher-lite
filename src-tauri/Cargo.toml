@@ -37,4 +37,3 @@ qbsdiff = "1.4.4"
 uuid = { version = "1", features = ["v4"] }
 tar = "0.4"
 
-[lints]

@@ -859,6 +859,7 @@ mod tests {
 
     #[test]
     #[cfg(target_os = "windows")]
+    #[cfg(target_os = "windows")]
     fn test_apply_os_optimizations_smoke() {
         apply_os_optimizations(std::process::id());
     }

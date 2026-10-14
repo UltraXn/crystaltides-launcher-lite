@@ -22,6 +22,24 @@ fn validate_patch_path(file_path: &str, param_name: &str) -> Result<std::path::P
     Ok(path)
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_delta_patch_edge_cases() {
+        // Ensures apply_binary_patch gracefully handles non-existent files
+        let result = apply_binary_patch(
+            "nonexistent_source.jar".to_string(),
+            "nonexistent_patch.patch".to_string(),
+            "target.jar".to_string(),
+            None
+        );
+        assert!(result.is_err());
+    }
+}
+
+
 /// Aplica un parche binario delta BSDIFF sobre un archivo base de forma ultra-rápida en memoria
 #[tauri::command]
 pub fn apply_binary_patch(
