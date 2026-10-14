@@ -35,125 +35,113 @@ if (!API_KEY) {
   process.exit(1);
 }
 
-// Las 10 Directivas Exploratorias de Caza Autónoma de Bugs
+// Las 10 Directivas Exploratorias 100% Compatibles con Google Jules (Zero AppSec Refusals)
 export const JULES_10_AGENT_SPECS = [
   {
     id: 'HUNT-UI-01',
-    category: 'Búsqueda de Bugs',
-    title: 'Exploración Autónoma de Bugs en Frontend, Estado y Ciclos de Vida',
+    category: 'UI & Render',
+    title: 'Caza de Bugs en Ciclos de Vida, Listeners y Renderizado de UI',
     prompt: `Actúa como un Cazador Autónomo de Bugs e Ingeniero de Fiabilidad de Frontend.
-Tu misión es explorar libremente el código de frontend (React, TypeScript, stores de estado Zustand, hooks e interfaces de usuario) en busca de fallos reales:
-1. Explora el código fuente y las rutas de renderizado buscando condiciones de carrera en el estado, desincronizaciones de UI, o efectos secundarios (useEffect) con dependencias incorrectas o llamadas cíclicas.
-2. Identifica listeners de eventos, sockets o timers que queden huérfanos o provoquen fugas de memoria por falta de cleanup al desmontar componentes.
-3. Examina las transiciones de estado complejas (ej. login, descarga, lanzamiento del juego, carga de instancias) buscando estados de congelamiento o bloqueos visuales ("pantallas en blanco").
-4. Si el entorno lo permite, ejecuta las herramientas de verificación del proyecto ('npm test', 'npm run lint' o chequeo de tipos con tsc).
-5. Si descubres un fallo concreto o comportamiento anómalo, documenta claramente la evidencia, diseña la solución mínima y aplica el parche asegurando que la UI sea resiliente.`
+Tu misión es explorar libremente los componentes de interfaz (React, TypeScript, hooks y vistas):
+1. Explora el código de componentes buscando event listeners de window/document que queden huérfanos o no se limpien al desmontar componentes.
+2. Identifica timers, intervalos o callbacks asíncronos que intenten actualizar estado en componentes ya desmontados.
+3. Examina las transiciones complejas entre modales y vistas para asegurar que no se produzcan bloqueos visuales ni estados congelados.
+4. Si el entorno lo permite, ejecuta 'npm test' o 'npm run lint' para verificar la salud del código.
+5. Si descubres un fallo concreto, documenta la causa raíz y aplica la corrección mínima y limpia.`
+  },
+  {
+    id: 'HUNT-UI-02',
+    category: 'Estado & Zustand',
+    title: 'Detección de Condiciones de Carrera y Desincronización en Zustand',
+    prompt: `Actúa como un Especialista en Estado Global y Concurrencia de Frontend.
+Tu misión es explorar los stores de estado global (Zustand, subscribers y acciones asíncronas):
+1. Analiza mutaciones asíncronas concurrentes donde clics rápidos del usuario puedan dejar el store en un estado inconsistente.
+2. Verifica que las transiciones de estado de descarga, lanzamiento y cierre del juego reseteen flags como isLoading o isLaunching adecuadamente.
+3. Identifica selectores de Zustand que provoquen re-renderizados innecesarios o ciclos infinitos.
+4. Si encuentras desincronizaciones de estado, formula la solución estructurada y aplica el parche.`
+  },
+  {
+    id: 'HUNT-RUST-01',
+    category: 'Rust & Robustez',
+    title: 'Erradicación de Pánicos y Manejo Idiomático de Errores en Rust',
+    prompt: `Actúa como un Cazador Autónomo de Bugs e Ingeniero de Sistemas en Rust.
+Tu misión es auditar el código en src-tauri/ en busca de puntos propensos a pánico (panic!):
+1. Busca llamadas a .unwrap() o .expect() en caminos normales de ejecución (parseo de configs, I/O de archivos o comandos IPC) que puedan colapsar la app ante entradas imprevistas.
+2. Reemplázalos con manejo de errores idiomático en Rust usando el operador '?' y tipos Result<T, E> con mensajes de error estructurados.
+3. Si el entorno lo permite, ejecuta 'cargo check' o 'cargo test' para verificar que compile limpiamente.
+4. Aplica las mejoras idiomáticas preservando intacto el comportamiento esperado.`
   },
   {
     id: 'HUNT-RUST-02',
-    category: 'Búsqueda de Bugs',
-    title: 'Caza Autónoma de Bugs en Backend Rust, Concurrencia y Procesos',
-    prompt: `Actúa como un Cazador Autónomo de Bugs e Ingeniero de Sistemas en Rust.
-Tu misión es explorar libremente el backend nativo (Tauri, Rust, IPC y gestión de procesos del sistema) en busca de fallos reales:
-1. Explora el código en src-tauri/ y analiza el uso de primitivas de sincronización (Mutex, RwLock, Arc, canales mpsc). Busca posibles situaciones de deadlock, contención indebida o liberación prematura de guardias (MutexGuard).
-2. Analiza el ciclo de vida de procesos hijos y threads en segundo plano: verifica que no queden procesos zombis o huérfanos y que el sondeo de procesos se realice sin condiciones de carrera.
-3. Busca llamadas a .unwrap() o .expect() en caminos de ejecución normales que puedan causar un panic! en caso de errores de I/O, rutas inexistentes o payloads inesperados.
-4. Si el entorno lo permite, ejecuta 'cargo check' o 'cargo test' para observar advertencias del compilador o fallos de tests.
-5. Si descubres un fallo o riesgo real de pánico/bloqueo, formula la solución idiomática en Rust y aplica el parche preservando la robustez del sistema.`
+    category: 'Rust & Concurrencia',
+    title: 'Auditoría de Concurrencia de Procesos, Mutex y Canales en Rust',
+    prompt: `Actúa como un Ingeniero de Concurrencia y Sistemas en Rust.
+Tu misión es auditar la gestión de procesos y comunicación entre threads:
+1. Explora el ProcessManager y el ciclo de vida de procesos de juego (spawn, kill, polling de estado).
+2. Analiza el uso de primitivas de sincronización (Mutex, RwLock, Arc) para prevenir contención excesiva o deadlocks.
+3. Verifica que la observación del estado de procesos hijos no libere prematuramente punteros ni deje procesos zombis.
+4. Aplica los parches de sincronización necesarios para garantizar que la gestión de procesos sea atómica y segura.`
   },
   {
-    id: 'HUNT-DEAD-03',
+    id: 'HUNT-DEAD-01',
     category: 'Código Muerto',
-    title: 'Auditoría Exploratoria de Código Muerto, Dependencias y Exports Huérfanos',
-    prompt: `Actúa como un Especialista en Higiene de Código y Poda de Código Muerto.
-Tu misión es explorar todo el repositorio para identificar y erradicar código zombie y redundante:
-1. Explora las carpetas del proyecto buscando archivos fuente, utilidades o componentes completamente desconectados del árbol de importaciones o bundles de compilación.
-2. Identifica funciones, interfaces, constantes y tipos exportados que no tengan ningún consumidor en el código base.
-3. Revisa package.json y Cargo.toml buscando dependencias declaradas que nunca se importen o utilicen.
-4. Detecta ramas condicionales inalcanzables (código muerto detrás de condiciones siempre falsas o retornos tempranos).
-5. Poda de forma limpia y segura el código muerto garantizando que el build, los tipos y los tests sigan funcionando al 100%.`
+    title: 'Higiene de Dependencias y Poda de Paquetes Huérfanos',
+    prompt: `Actúa como un Especialista en Optimización y Limpieza de Dependencias.
+Tu misión es explorar package.json y Cargo.toml en busca de dependencias no utilizadas:
+1. Identifica librerías y dependencias declaradas que no tengan ningún 'import' o uso en el código fuente.
+2. Verifica que la remoción de dependencias no afecte scripts de build o tipados de TypeScript.
+3. Poda las dependencias huérfanas garantizando que 'npm run build' y los tests sigan funcionando al 100%.`
   },
   {
-    id: 'HUNT-PROFILE-04',
-    category: 'Perfiles y Estado',
-    title: 'Caza de Bugs en Gestión de Perfiles, Cuentas y Sincronización Local',
-    prompt: `Actúa como un Cazador Autónomo de Bugs enfocado en Gestión de Perfiles y Cuentas de Usuario.
-Tu misión es explorar libremente los módulos de perfil de jugador, sincronización de cuentas y persistencia de configuración:
-1. Explora el código que gestiona los perfiles locales (ProfileStore, AccountManager, selección de avatares, skins y cuentas activas).
-2. Analiza qué ocurre cuando un perfil se corrompe, se borra o contiene datos inconsistentes (ej. nombres inválidos, UUIDs ausentes, estados no sincronizados).
-3. Revisa la sincronización entre el estado global de cuentas y los componentes de la interfaz de usuario.
-4. Identifica estados donde un perfil activo no se actualice correctamente en la UI tras un cambio de configuración o cierre de sesión.
-5. Si descubres un fallo o desajuste en la gestión de perfiles, formula la solución mínima y aplica el parche asegurando la consistencia del sistema.`
+    id: 'HUNT-DEAD-02',
+    category: 'Código Muerto',
+    title: 'Poda de Funciones Zombie, Componentes y Exports no Referenciados',
+    prompt: `Actúa como un Especialista en Poda de Código Muerto y Arquitectura Limpia (Knip Standard).
+Tu misión es erradicar código no utilizado en todo el proyecto:
+1. Identifica funciones, tipos, interfaces y componentes exportados que carezcan de consumidores en el árbol de importaciones.
+2. Busca ramas de código inalcanzables (condicionales con dead code o bloques de retorno temprano).
+3. Elimina limpiamente los elementos muertos garantizando cero regresiones funcionales.`
   },
   {
-    id: 'HUNT-FAIL-05',
+    id: 'HUNT-FAIL-01',
     category: 'Resiliencia ante Fallos',
-    title: 'Caza de Excepciones Silenciadas, Fallos de Red y Recuperación ante Errores',
-    prompt: `Actúa como un Ingeniero de Resiliencia de Software y Confiabilidad ante Fallos.
-Tu misión es explorar cómo reacciona la aplicación ante fallos y condiciones adversas:
-1. Explora el código buscando bloques 'catch' vacíos o excepciones silenciadas que oculten errores críticos y dejen la aplicación en un estado zombi o inconsistente.
-2. Analiza las llamadas a APIs externas, descargas de recursos o conexiones de red: busca qué ocurre si la red se cae, devuelve códigos 5xx o datos incompletos. ¿Tiene timeouts adecuados y reintentos o mensajes claros al usuario?
-3. Revisa la resiliencia en la interfaz: verifica si existen ErrorBoundaries o límites de captura que eviten el colapso total de la aplicación ante errores de renderizado.
-4. Si encuentras caminos de ejecución propensos a fallos no recuperados, implementa manejo de errores estructurado con logging y recuperación elegante.`
+    title: 'Caza de Excepciones Silenciadas y Promesas Flotantes sin Manejo',
+    prompt: `Actúa como un Ingeniero de Resiliencia de Software y Manejo de Errores.
+Tu misión es explorar cómo la aplicación captura y recupera errores en tiempo de ejecución:
+1. Explora el código buscando bloques 'catch (e) {}' vacíos que oculten fallos críticos sin logging ni notificación.
+2. Detecta promesas flotantes (floating promises) que puedan emitir UnhandledPromiseRejection en Node o el navegador.
+3. Añade logging descriptivo y mecanismos de recuperación elegante donde falten.`
   },
   {
-    id: 'HUNT-DATA-06',
-    category: 'Integridad de Datos',
-    title: 'Exploración de Validación de Entradas, Esquemas y Persistencia Local',
-    prompt: `Actúa como un Ingeniero de Integridad de Datos y Validación de Esquemas.
-Tu misión es explorar la persistencia local y el intercambio de datos entre frontend y backend:
-1. Explora el almacenamiento local (SQLite, JSON, configuraciones locales, perfiles de juego): busca posibles inconsistencias, escrituras no atómicas o lecturas que no validen la integridad del archivo.
-2. Analiza las consultas a base de datos y verifica que todas las operaciones usen consultas parametrizadas o bindings tipados para evitar corrupción de datos.
-3. Examina la deserialización de payloads (IPC commands, llamadas HTTP, parseo de configs): comprueba si se validan los tipos con esquemas estrictos (ej. Zod o serde) o si campos inesperados/faltantes pueden romper la aplicación.
-4. Normaliza y valida rutas de archivos para evitar errores al interactuar con el sistema de archivos del sistema operativo.
-5. Aplica los parches de código necesarios para blindar la integridad de los datos.`
+    id: 'HUNT-FAIL-02',
+    category: 'Resiliencia ante Fallos',
+    title: 'Resiliencia ante Caídas de Red, Timeouts y Reintentos en Descargas',
+    prompt: `Actúa como un Ingeniero de Redes y Confiabilidad en Clientes de Escritorio.
+Tu misión es auditar la resiliencia en descargas de assets, metadatos y librerías del juego:
+1. Revisa las peticiones HTTP y descargas de versiones: busca qué ocurre si la red tiene alta latencia, timeouts o caídas súbitas.
+2. Verifica que las descargas críticas cuenten con timeouts configurados y fallbacks apropiados (ej. listas cacheadas).
+3. Implementa tolerancia a fallos limpia para que la aplicación nunca quede congelada ante desconexiones.`
   },
   {
-    id: 'HUNT-ASYNC-07',
-    category: 'Fugas y Ciclos Asíncronos',
-    title: 'Caza de Fugas de Recursos, Conexiones Colgadas y Ciclos Asíncronos',
-    prompt: `Actúa como un Diagnosticador de Rendimiento y Gestión de Recursos.
-Tu misión es explorar el consumo y liberación de recursos en la aplicación:
-1. Busca conexiones de red (WebSockets, HTTP clients, sockets TCP) o manejadores de archivos abiertos que no tengan una política explícita de timeout o no se cierren en caso de fallo.
-2. Identifica promesas flotantes (floating promises) o funciones asíncronas no encadenadas que puedan emitir UnhandledPromiseRejection.
-3. Detecta buffers en memoria o acumuladores de eventos que crezcan indefinidamente sin mecanismo de expulsión o límite de tamaño.
-4. Revisa que las tareas en background y workers se detengan limpiamente cuando la aplicación se cierra o cambia de estado.
-5. Si descubres fugas o recursos colgados, implementa los mecanismos de liberación y límites correspondientes.`
+    id: 'HUNT-TEST-01',
+    category: 'Calidad & Pruebas',
+    title: 'Cobertura de Pruebas Unitarias en Funciones Puras y Casos Límite',
+    prompt: `Actúa como un Ingeniero de Testing Automatizado y Aseguramiento de Calidad.
+Tu misión es robustecer las suites de pruebas unitarias existentes (Vitest / Jest):
+1. Explora los archivos de utilidades y helpers puros en src/utils/ y src/services/.
+2. Identifica funciones críticas con cobertura de pruebas ausente o insuficiente.
+3. Diseña e implementa tests unitarios para casos de borde (entradas vacías, caracteres especiales, límites numéricos).
+4. Asegura que los nuevos tests sean deterministas, rápidos y pasen al 100%.`
   },
   {
-    id: 'HUNT-TEST-08',
-    category: 'Calidad & Tests',
-    title: 'Exploración de Suites de Pruebas, Casos Límite y Cobertura Crítica',
-    prompt: `Actúa como un Ingeniero de Calidad de Software y Testing Automatizado.
-Tu misión es auditar y robustecer las suites de pruebas del proyecto:
-1. Explora los tests existentes (Vitest, Jest, Cargo tests) y ejecútalos para verificar su estado actual.
-2. Identifica áreas críticas de la lógica de negocio (ej. autenticación, cálculo de rutas, gestión de versiones, IPC) que carezcan de pruebas o tengan aserciones superficiales.
-3. Diseña casos de prueba para valores límite (edge cases): entradas vacías, caracteres especiales, archivos inexistentes, respuestas corruptas o desconexiones súbitas.
-4. Implementa las pruebas unitarias o de integración necesarias para proteger el código contra regresiones futuras.`
-  },
-  {
-    id: 'HUNT-CLEAN-09',
+    id: 'HUNT-CLEAN-01',
     category: 'Mantenibilidad',
-    title: 'Refactorización Exploratoria de Complejidad Cognitiva y Código Duplicado',
-    prompt: `Actúa como un Arquitecto de Software enfocado en Calidad, Simplicidad y Mantenibilidad.
-Tu misión es explorar el repositorio buscando deuda técnica y complejidad excesiva:
-1. Identifica funciones monolíticas con alta complejidad cognitiva (múltiples anidaciones, condicionales en cascada, lógica mezclada) que dificulten el mantenimiento.
-2. Desacopla la lógica compleja en subfunciones puras, Feature Hooks o lookup tables bien documentadas con retornos tempranos (early returns).
-3. Busca bloques de lógica duplicados entre diferentes módulos y consolídalos en utilidades reutilizables.
-4. Verifica que los nombres de variables, funciones e interfaces sean descriptivos y reflejen con precisión su responsabilidad única.
-5. Aplica la refactorización preservando 100% el comportamiento original y asegurando que las pruebas sigan pasando.`
-  },
-  {
-    id: 'HUNT-BUILD-10',
-    category: 'Integridad de Build',
-    title: 'Auditoría de Integridad en Compilación, Empaquetado y Configuración de Tipos',
-    prompt: `Actúa como un Especialista en Herramientas de Compilación, Empaquetado y Tipado.
-Tu misión es auditar la infraestructura de construcción y configuración del proyecto:
-1. Revisa las configuraciones de compilación (tsconfig.json, vite.config.ts, Cargo.toml, tauri.conf.json) buscando flags permisivas o inconsistencias.
-2. Analiza el tipado TypeScript en busca del uso innecesario de 'any' o aserciones inseguras que oculten errores en tiempo de compilación.
-3. Verifica los scripts de 'package.json' y 'Cargo.toml' asegurando que comandos como build, lint y test se ejecuten de manera determinista y sin advertencias no resueltas.
-4. Si el entorno lo permite, ejecuta el build de prueba para comprobar que no existan advertencias de empaquetado o discrepancias de dependencias.
-5. Aplica las mejoras de configuración y tipos necesarias para asegurar una compilación limpia y robusta.`
+    title: 'Refactorización de Funciones Monolíticas y Complejidad Cognitiva',
+    prompt: `Actúa como un Arquitecto de Software enfocado en Calidad y Simplicidad.
+Tu misión es explorar el repositorio buscando funciones complejas y monolíticas:
+1. Localiza funciones con múltiples niveles de anidación, condicionales en cascada o responsabilidades mezcladas.
+2. Extrae la lógica en subfunciones puras o lookup tables con retornos tempranos (early returns).
+3. Reduce la complejidad cognitiva manteniendo exactamente el mismo comportamiento funcional y asegurando que las pruebas pasen.`
   }
 ];
 
@@ -235,6 +223,9 @@ async function main() {
 
   const limitIdx = args.indexOf('--limit');
   const limitCount = limitIdx !== -1 ? parseInt(args[limitIdx + 1], 10) : null;
+
+  const concurrencyIdx = args.indexOf('--concurrency');
+  const maxConcurrency = concurrencyIdx !== -1 ? parseInt(args[concurrencyIdx + 1], 10) : 2;
 
   console.log('\x1b[36m============================================================\x1b[0m');
   console.log('\x1b[1m\x1b[34m🌊 JULES ORCHESTRATOR — CRYSTALTIDES SMP MULTI-AGENT SWARM\x1b[0m');
@@ -350,10 +341,21 @@ async function main() {
           continue;
         }
 
+        // Verificar límite de concurrencia para prevenir pisadas de ramas y colisiones de base commit
+        const currentActiveCount = existingSessions.filter(s => 
+          s.state === 'IN_PROGRESS' || s.state === 'QUEUED'
+        ).length;
+
+        if (currentActiveCount >= maxConcurrency) {
+          console.log(`\x1b[33mCOLA LLENA\x1b[0m (${currentActiveCount}/${maxConcurrency} sesiones activas). Omitiendo nuevos despachos para evitar colisiones.`);
+          break;
+        }
+
         try {
           const session = await dispatchAgent(source, branch, spec, !noApproval);
           console.log(`\x1b[32mDESPACHADO\x1b[0m (Session: ${session.id || session.name})`);
           if (session.url) console.log(`     Link: ${session.url}`);
+          existingSessions.push({ ...session, state: 'QUEUED', title: `[${spec.id}] ${spec.title}` });
         } catch (err) {
           console.log(`\x1b[31mFALLÓ\x1b[0m (${err.message})`);
         }
