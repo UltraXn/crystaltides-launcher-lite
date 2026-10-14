@@ -62,6 +62,8 @@ export interface LauncherModule {
   author: string;
   category: ModuleCategory;
   accentColor?: string;
+  isCustom?: boolean;
+  manifest?: CustomPluginManifest;
   slots: {
     dockButton?: ModuleDockButtonSlot;
     modal?: ModuleModalSlot;
@@ -70,3 +72,34 @@ export interface LauncherModule {
   onInit?: (ctx: LauncherModuleContext) => void;
   onDestroy?: () => void;
 }
+
+export interface CustomPluginManifest {
+  id: string;
+  name: string;
+  version?: string;
+  description?: string;
+  author?: string;
+  category?: ModuleCategory;
+  accentColor?: string;
+  slots?: {
+    dockButton?: {
+      label: string;
+      tooltip?: string;
+      iconName?: string;
+      defaultColor?: string;
+      actionType: 'url' | 'modal' | 'openDir';
+      actionTarget?: string;
+    };
+    modal?: {
+      title: string;
+      description?: string;
+      externalUrl?: string;
+      links?: Array<{
+        title: string;
+        desc?: string;
+        url: string;
+      }>;
+    };
+  };
+}
+

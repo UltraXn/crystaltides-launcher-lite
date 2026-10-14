@@ -21,9 +21,16 @@ if (typeof window !== 'undefined') {
   });
 }
 
+let dbInstancePromise: Promise<IDBDatabase> | null = null;
+
 function openDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
+  if (dbInstancePromise) {
+    return dbInstancePromise;
+  }
+
+  dbInstancePromise = new Promise<IDBDatabase>((resolve, reject) => {
     if (typeof indexedDB === 'undefined') {
+      dbInstancePromise = null;
       return reject(new Error('IndexedDB is not supported in this environment'));
     }
 
@@ -36,14 +43,30 @@ function openDB(): Promise<IDBDatabase> {
       }
     });
 
-    request.addEventListener('success', () => resolve(request.result));
-    request.addEventListener('error', () => reject(request.error));
+    request.addEventListener('success', () => {
+      const db = request.result;
+      db.addEventListener('close', () => {
+        dbInstancePromise = null;
+      });
+      db.addEventListener('versionchange', () => {
+        db.close();
+        dbInstancePromise = null;
+      });
+      resolve(db);
+    });
+
+    request.addEventListener('error', () => {
+      dbInstancePromise = null;
+      reject(request.error ?? new Error('IndexedDB open request failed'));
+    });
   });
+
+  return dbInstancePromise;
 }
 
 export function isVideoSource(url: string | null, mimeType?: string): boolean {
   if (!url) return false;
-  if (mimeType && mimeType.startsWith('video/')) return true;
+  if (mimeType?.startsWith('video/')) return true;
   if (url.startsWith('data:video/')) return true;
   return /\.(mp4|webm|ogg|mov|mkv)(\?.*)?$/i.test(url);
 }
@@ -65,7 +88,7 @@ export async function loadActiveWallpaper(): Promise<StoredWallpaperMeta | null>
 
       request.addEventListener('success', () => {
         const record = request.result;
-        if (record && record.blob) {
+        if (record?.blob) {
           if (currentCreatedBlobUrl) {
             try {
               URL.revokeObjectURL(currentCreatedBlobUrl);
@@ -130,7 +153,9 @@ export async function saveWallpaperFile(file: File): Promise<StoredWallpaperMeta
       });
     });
 
-    request.addEventListener('error', () => reject(request.error));
+    request.addEventListener('error', () =>
+      reject(request.error ?? new Error('Failed to save wallpaper')),
+    );
   });
 }
 
@@ -182,7 +207,7 @@ if (typeof window !== 'undefined') {
 export async function saveButtonMediaFile(
   btnId: string,
   file: File,
-  isIcon: boolean = false
+  isIcon: boolean = false,
 ): Promise<{ url: string; isVideo: boolean; name: string }> {
   const isVideo = !isIcon && (file.type.startsWith('video/') || isVideoSource(file.name));
   const db = await openDB();
@@ -220,7 +245,9 @@ export async function saveButtonMediaFile(
       });
     });
 
-    request.addEventListener('error', () => reject(request.error));
+    request.addEventListener('error', () =>
+      reject(request.error ?? new Error('Failed to save button media')),
+    );
   });
 }
 
@@ -244,6 +271,11 @@ export async function loadAllButtonMedia(): Promise<{
           if (!record.id || !record.blob) continue;
           if (record.id.startsWith(BUTTON_MEDIA_PREFIX)) {
             const btnId = record.id.slice(BUTTON_MEDIA_PREFIX.length);
+            if (buttonBlobUrls.has(record.id)) {
+              try {
+                URL.revokeObjectURL(buttonBlobUrls.get(record.id)!);
+              } catch {}
+            }
             const url = URL.createObjectURL(record.blob);
             buttonBlobUrls.set(record.id, url);
             backgrounds[btnId] = {
@@ -252,6 +284,11 @@ export async function loadAllButtonMedia(): Promise<{
             };
           } else if (record.id.startsWith(BUTTON_ICON_PREFIX)) {
             const btnId = record.id.slice(BUTTON_ICON_PREFIX.length);
+            if (buttonBlobUrls.has(record.id)) {
+              try {
+                URL.revokeObjectURL(buttonBlobUrls.get(record.id)!);
+              } catch {}
+            }
             const url = URL.createObjectURL(record.blob);
             buttonBlobUrls.set(record.id, url);
             icons[btnId] = url;
@@ -290,5 +327,126 @@ export async function clearButtonMedia(btnId: string, isIcon: boolean = false): 
     });
   } catch (err) {
     console.warn('Failed to clear button media from IndexedDB:', err);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// DOCK BAR PANORAMA STORAGE (SHARED SPLIT-SCREEN BACKGROUND)
+// ═══════════════════════════════════════════════════════════════
+
+const DOCK_PANORAMA_KEY = 'dock_panorama_media';
+let currentDockPanoramaBlobUrl: string | null = null;
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', () => {
+    if (currentDockPanoramaBlobUrl) {
+      try {
+        URL.revokeObjectURL(currentDockPanoramaBlobUrl);
+      } catch {}
+      currentDockPanoramaBlobUrl = null;
+    }
+  });
+}
+
+export async function saveDockPanoramaFile(
+  file: File,
+): Promise<{ url: string; isVideo: boolean; name: string }> {
+  const isVideo = file.type.startsWith('video/') || isVideoSource(file.name);
+  const db = await openDB();
+
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(STORE_NAME, 'readwrite');
+    const store = transaction.objectStore(STORE_NAME);
+
+    const record = {
+      id: DOCK_PANORAMA_KEY,
+      blob: file,
+      name: file.name,
+      type: file.type,
+      size: file.size,
+      isVideo,
+      updatedAt: Date.now(),
+    };
+
+    const request = store.put(record);
+
+    request.addEventListener('success', () => {
+      if (currentDockPanoramaBlobUrl) {
+        try {
+          URL.revokeObjectURL(currentDockPanoramaBlobUrl);
+        } catch {}
+      }
+      currentDockPanoramaBlobUrl = URL.createObjectURL(file);
+      resolve({
+        url: currentDockPanoramaBlobUrl,
+        isVideo,
+        name: file.name,
+      });
+    });
+
+    request.addEventListener('error', () =>
+      reject(request.error ?? new Error('Failed to save dock panorama')),
+    );
+  });
+}
+
+export async function loadDockPanorama(): Promise<{
+  url: string;
+  isVideo: boolean;
+  name: string;
+} | null> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const transaction = db.transaction(STORE_NAME, 'readonly');
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.get(DOCK_PANORAMA_KEY);
+
+      request.addEventListener('success', () => {
+        const record = request.result;
+        if (record?.blob) {
+          if (currentDockPanoramaBlobUrl) {
+            try {
+              URL.revokeObjectURL(currentDockPanoramaBlobUrl);
+            } catch {}
+          }
+          currentDockPanoramaBlobUrl = URL.createObjectURL(record.blob);
+          resolve({
+            url: currentDockPanoramaBlobUrl,
+            isVideo: !!record.isVideo,
+            name: record.name ?? 'dock_panorama',
+          });
+        } else {
+          resolve(null);
+        }
+      });
+
+      request.addEventListener('error', () => resolve(null));
+    });
+  } catch (err) {
+    console.warn('Error loading dock panorama from IndexedDB:', err);
+    return null;
+  }
+}
+
+export async function clearDockPanorama(): Promise<void> {
+  if (currentDockPanoramaBlobUrl) {
+    try {
+      URL.revokeObjectURL(currentDockPanoramaBlobUrl);
+    } catch {}
+    currentDockPanoramaBlobUrl = null;
+  }
+
+  try {
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const transaction = db.transaction(STORE_NAME, 'readwrite');
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.delete(DOCK_PANORAMA_KEY);
+      request.addEventListener('success', () => resolve());
+      request.addEventListener('error', () => resolve());
+    });
+  } catch (err) {
+    console.warn('Failed to clear dock panorama from IndexedDB:', err);
   }
 }

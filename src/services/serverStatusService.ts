@@ -17,6 +17,7 @@ export const fetchLiveServerStatus = async (
     const res = await fetch(`https://api.mcstatus.io/v2/status/java/${encodeURIComponent(host)}`, {
       method: 'GET',
       headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(6000),
     });
 
     const elapsed = Math.max(12, Date.now() - startTime);
@@ -41,6 +42,14 @@ export const fetchLiveServerStatus = async (
     };
   } catch (err) {
     console.warn('[ServerStatus] Fetch failed, fallback:', err);
+    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+      return {
+        online: false,
+        playersCount: 0,
+        maxPlayers: 150,
+        ping: 0,
+      };
+    }
     return {
       online: true,
       playersCount: 42,

@@ -16,4 +16,5 @@ export const initializeBuiltinModules = () => {
   const registry = useModuleStore.getState();
   registry.registerModule(NetherPortalModule);
   registry.registerModule(CommunityHubModule);
+  registry.loadSavedCustomPlugins();
 };

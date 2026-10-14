@@ -128,7 +128,7 @@ export function validateMinecraftUsername(username: string): { valid: boolean; e
   if (clean.length > 16) {
     return { valid: false, error: 'El nombre no puede exceder 16 caracteres.' };
   }
-  if (!/^[a-zA-Z0-9_]+$/.test(clean)) {
+  if (!/^\w+$/.test(clean)) {
     return { valid: false, error: 'Solo se permiten letras, números y guiones bajos (_).' };
   }
   return { valid: true };
