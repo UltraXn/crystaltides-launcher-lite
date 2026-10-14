@@ -8,8 +8,6 @@ import {
   resolveInstanceGameDir,
   createNewInstance,
   removeInstance,
-  DEFAULT_OFFICIAL_INSTANCE,
-  syncInstancesWithDatabase,
   updateInstance,
   duplicateInstance,
 } from '../services/instanceService';
@@ -844,6 +842,182 @@ const cleanupTauriListeners = () => {
   activeTauriUnlisteners = [];
 };
 
+
+const refreshMicrosoftSessionHelper = async (activeAcc: UserAccount): Promise<UserAccount> => {
+  if (activeAcc.type !== 'microsoft' || !activeAcc.refreshToken) return activeAcc;
+  try {
+    const { refreshMicrosoftSession } = await import('../services/microsoftAuthService');
+    const refreshed = await refreshMicrosoftSession(activeAcc.refreshToken);
+    if (refreshed?.accessToken) {
+      return {
+        ...activeAcc,
+        accessToken: refreshed.accessToken,
+        refreshToken: refreshed.refreshToken ?? activeAcc.refreshToken,
+        username: refreshed.username || activeAcc.username,
+        uuid: refreshed.uuid || activeAcc.uuid,
+        lastUsed: Date.now(),
+      };
+    }
+  } catch (err) {
+    console.warn('[Launcher Store] Error refrescando sesión de Microsoft:', err);
+  }
+  return activeAcc;
+};
+
+const handleLaunchError = async (err: unknown, activeAcc: UserAccount, attemptId: number) => {
+  if (currentLaunchAttemptId !== attemptId) return;
+
+  const errorMsg = err instanceof Error ? err.message : String(err);
+  console.error('[Launcher Store] Launch failed:', errorMsg);
+
+  if (
+    activeAcc.type === 'microsoft' &&
+    activeAcc.refreshToken &&
+    /token|auth|expired|401|invalid/i.test(errorMsg)
+  ) {
+    const updatedAcc = await refreshMicrosoftSessionHelper(activeAcc);
+    if (updatedAcc !== activeAcc) {
+      await launcherActions.updateAccount(updatedAcc.id, updatedAcc);
+    }
+  }
+
+  setStoreState(() => ({
+    launch: { status: 'IDLE', progress: 0, message: `Error: ${errorMsg}` },
+  }));
+};
+
+const handleGameLaunchPhase = async (
+  attemptId: number,
+  activeInst: GameInstance,
+  activeAcc: UserAccount,
+  setStoreState: any,
+  invoke: any
+) => {
+  const { launchGame } = await import('../services/launcherService');
+
+  const effectiveGameDir = await resolveInstanceGameDir(activeInst);
+  if (currentLaunchAttemptId !== attemptId) return;
+
+  await syncInstanceAssets(activeInst, effectiveGameDir);
+  if (currentLaunchAttemptId !== attemptId) return;
+
+  const options = buildLaunchOptions(activeAcc, activeInst, effectiveGameDir);
+
+  const resolveLaunchProgressStatus = (prog: number): LaunchStatus => {
+    if (prog >= 90) return 'LAUNCHING';
+    if (prog >= 20) return 'DOWNLOADING';
+    return 'VERIFYING';
+  };
+
+  await launchGame(
+    options,
+    (message, progress) => {
+      if (currentLaunchAttemptId !== attemptId) return;
+      setStoreState(() => ({
+        launch: {
+          status: resolveLaunchProgressStatus(progress),
+          progress,
+          message,
+        },
+      }));
+    },
+    () => currentLaunchAttemptId !== attemptId,
+  );
+
+  if (currentLaunchAttemptId !== attemptId || gameStoppedDuringLaunch) return;
+
+  const isStillRunning = await invoke('is_game_running').catch(() => false);
+  if (currentLaunchAttemptId !== attemptId || gameStoppedDuringLaunch) return;
+
+  if (state.launch.status !== 'IDLE') {
+    const nextLaunchState = isStillRunning
+      ? { status: 'RUNNING', progress: 100, message: 'Minecraft en ejecución' }
+      : { status: 'IDLE', progress: 0, message: 'Juego finalizado.' };
+    setStoreState(() => ({ launch: nextLaunchState }));
+  }
+};
+
+const registerGameStartedListener = async (registerListener: <P>(e: string, h: (e: { payload: P }) => void) => Promise<() => void>, setStoreState: any) => {
+  await registerListener<number>('game-started', (event) => {
+    console.log('[Launcher Store] game-started recibido con pid:', event.payload);
+    setStoreState(() => ({
+      launch: { status: 'RUNNING', progress: 100, message: 'Minecraft en ejecución' },
+    }));
+  });
+};
+
+const registerGameIpcReadyListener = async (registerListener: <P>(e: string, h: (e: { payload: P }) => void) => Promise<() => void>, state: LauncherState) => {
+  await registerListener<number | undefined>('game-ipc-ready', async (event) => {
+    console.log('[Launcher Store] game-ipc-ready recibido (TitleScreen listo en', event.payload, 'ms).');
+    if (state.settings.autoCloseLauncher) {
+      try {
+        const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+        const win = getCurrentWebviewWindow();
+        await win.minimize();
+      } catch (err) {
+        console.warn('Error intentando minimizar la ventana:', err);
+      }
+    }
+  });
+};
+
+const registerGameExitedListener = async (registerListener: <P>(e: string, h: (e: { payload: P }) => void) => Promise<() => void>, state: LauncherState, setStoreState: any) => {
+  await registerListener<{ exit_code: number | null; success: boolean }>('game-exited', async (event) => {
+    console.log('[Launcher Store] game-exited recibido con payload:', event.payload);
+    gameStoppedDuringLaunch = true;
+    setStoreState(() => ({
+      launch: { status: 'IDLE', progress: 0, message: 'Juego finalizado.' },
+    }));
+
+    if (state.settings.autoCloseLauncher) {
+      try {
+        const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+        const win = getCurrentWebviewWindow();
+        const isMinimized = await win.isMinimized();
+        if (isMinimized) {
+          await win.unminimize();
+          await win.setFocus();
+        }
+      } catch (err) {
+        console.warn('Error intentando restaurar la ventana tras game-exited:', err);
+      }
+    }
+  });
+};
+
+const registerInstallProgressListeners = async (registerListener: <P>(e: string, h: (e: { payload: P }) => void) => Promise<() => void>, setStoreState: any) => {
+  await registerListener<number>('java-install-progress', (event) => {
+    setStoreState(() => ({
+      launch: {
+        status: 'DOWNLOADING',
+        progress: Math.min(90, Math.max(10, Math.round(event.payload * 100))),
+        message: `Instalando entorno Java... (${Math.round(event.payload * 100)}%)`,
+      },
+    }));
+  });
+
+  await registerListener<number>('mod-download-progress', (event) => {
+    const currentModIdx = (event.payload ?? 0) + 1;
+    setStoreState((prev: LauncherState) => {
+      if (prev.launch.status === 'DOWNLOADING') {
+        return {
+          launch: {
+            ...prev.launch,
+            message: `Descargando mods (${currentModIdx})...`,
+          },
+        };
+      }
+      return {};
+    });
+  });
+
+  await registerListener<{ line: string; level: string }>('game-log', (event) => {
+    if (event.payload?.line && event.payload.level === 'ERROR') {
+      console.error('[Minecraft Log]', event.payload.line);
+    }
+  });
+};
+
 export const launcherActions = {
   setView: (view: ViewType) => {
     setStoreState(() => ({ currentView: view }));
@@ -1672,89 +1846,21 @@ export const launcherActions = {
             handler(e);
           }
         });
-        if (isDisposed) {
-          unlisten();
-        } else {
+        if (!isDisposed) {
           activeTauriUnlisteners.push(unlisten);
+        } else {
+          unlisten();
         }
       } catch (err) {
-        console.warn(`[Launcher Store] Error setting up listener for ${eventName}:`, err);
+        console.warn(`[Launcher Store] No se pudo registrar el listener para ${eventName}:`, err);
       }
     };
 
     try {
-      launcherActions.updateLiveServerStatus();
-      serverStatusIntervalId = setInterval(() => {
-        launcherActions.updateLiveServerStatus();
-      }, 45000);
+      await registerGameStartedListener(registerListener as any, setStoreState);
+      await registerGameIpcReadyListener(registerListener as any, state);
+      await registerGameExitedListener(registerListener as any, state, setStoreState);
 
-      // Sincronizar instancias y perfiles con SQLite (crystaltides.db)
-      syncInstancesWithDatabase()
-        .then((insts) => {
-          setStoreState(() => ({ instances: insts }));
-        })
-        .catch((e) => console.warn('[Launcher Store] Error syncing instances with SQLite:', e));
-
-      await registerListener<number>('game-started', (event) => {
-        console.log('[Launcher Store] Minecraft PID started:', event.payload);
-        setStoreState(() => ({
-          launch: {
-            status: 'RUNNING',
-            progress: 100,
-            message: `Minecraft en ejecución (PID: ${event.payload})`,
-          },
-        }));
-      });
-
-      await registerListener<number | undefined>('game-ipc-ready', async (event) => {
-        console.log(
-          '[Launcher Store] game-ipc-ready recibido (TitleScreen listo en',
-          event.payload,
-          'ms).',
-        );
-        if (state.settings.autoCloseLauncher) {
-          try {
-            const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow');
-            const win = getCurrentWebviewWindow();
-            await win.minimize();
-          } catch (err) {
-            console.warn('[Launcher Store] Auto-minimizado no disponible en entorno web:', err);
-          }
-        }
-      });
-
-      await registerListener<{ exit_code: number | null; success: boolean }>(
-        'game-stopped',
-        (event) => {
-          console.log('[Launcher Store] Minecraft process stopped:', event.payload);
-          gameStoppedDuringLaunch = true;
-          setStoreState(() => ({
-            launch: {
-              status: 'IDLE',
-              progress: 0,
-              message: event.payload.success
-                ? 'Juego finalizado.'
-                : `Juego cerrado (Código: ${event.payload.exit_code ?? 'desconocido'})`,
-            },
-          }));
-
-          import('@tauri-apps/api/core')
-            .then(({ invoke }) => invoke('clear_discord_presence'))
-            .catch(() => {});
-
-          // Restaurar ventana en segundo plano sin bloquear el estado
-          import('@tauri-apps/api/webviewWindow')
-            .then(({ getCurrentWebviewWindow }) => {
-              const win = getCurrentWebviewWindow();
-              win.unminimize().catch(() => {});
-              win.show().catch(() => {});
-              win.setFocus().catch(() => {});
-            })
-            .catch(() => {});
-        },
-      );
-
-      // Watchdog activo cada 1s: detecta automáticamente si el proceso de Minecraft ya no existe
       watchdogIntervalId = setInterval(async () => {
         if (state.launch.status === 'RUNNING') {
           try {
@@ -1769,40 +1875,13 @@ export const launcherActions = {
                 },
               }));
             }
-          } catch {}
+          } catch (e) {
+            console.warn('[Launcher Store] Error en watchdog de estado del juego:', e);
+          }
         }
       }, 1000);
 
-      await registerListener<number>('java-install-progress', (event) => {
-        setStoreState(() => ({
-          launch: {
-            status: 'DOWNLOADING',
-            progress: Math.min(90, Math.max(10, Math.round(event.payload * 100))),
-            message: `Instalando entorno Java... (${Math.round(event.payload * 100)}%)`,
-          },
-        }));
-      });
-
-      await registerListener<number>('mod-download-progress', (event) => {
-        const currentModIdx = (event.payload ?? 0) + 1;
-        setStoreState((prev) => {
-          if (prev.launch.status === 'DOWNLOADING') {
-            return {
-              launch: {
-                ...prev.launch,
-                message: `Descargando mods (${currentModIdx})...`,
-              },
-            };
-          }
-          return {};
-        });
-      });
-
-      await registerListener<{ line: string; level: string }>('game-log', (event) => {
-        if (event.payload?.line && event.payload.level === 'ERROR') {
-          console.error('[Minecraft Log]', event.payload.line);
-        }
-      });
+      await registerInstallProgressListeners(registerListener as any, setStoreState);
     } catch {
       // Browser preview mode fallback
     }
@@ -1822,26 +1901,13 @@ export const launcherActions = {
     let activeAcc = resolveActiveAccount();
 
     if (activeAcc.type === 'microsoft' && activeAcc.refreshToken) {
-      try {
-        setStoreState(() => ({
-          launch: { status: 'VERIFYING', progress: 5, message: 'Validando sesión de Microsoft...' },
-        }));
-        const { refreshMicrosoftSession } = await import('../services/microsoftAuthService');
-        const refreshed = await refreshMicrosoftSession(activeAcc.refreshToken);
-        if (refreshed?.accessToken) {
-          const updatedAcc: UserAccount = {
-            ...activeAcc,
-            accessToken: refreshed.accessToken,
-            refreshToken: refreshed.refreshToken ?? activeAcc.refreshToken,
-            username: refreshed.username || activeAcc.username,
-            uuid: refreshed.uuid || activeAcc.uuid,
-            lastUsed: Date.now(),
-          };
-          activeAcc = updatedAcc;
-          await launcherActions.updateAccount(updatedAcc.id, updatedAcc);
-        }
-      } catch (authErr) {
-        console.warn('[Launcher Store] Error refrescando sesión previa de Microsoft:', authErr);
+      setStoreState(() => ({
+        launch: { status: 'VERIFYING', progress: 5, message: 'Validando sesión de Microsoft...' },
+      }));
+      const updatedAcc = await refreshMicrosoftSessionHelper(activeAcc);
+      if (updatedAcc !== activeAcc) {
+        activeAcc = updatedAcc;
+        await launcherActions.updateAccount(updatedAcc.id, updatedAcc);
       }
     }
 
@@ -1850,97 +1916,12 @@ export const launcherActions = {
     }));
 
     try {
-      const { launchGame } = await import('../services/launcherService');
-      const { invoke } = await import('@tauri-apps/api/core');
-
-      if (currentLaunchAttemptId !== attemptId) return;
-
       const instances = state.instances;
-      const activeInst =
-        instances.find((i) => i.id === state.activeInstanceId) ||
-        instances[0] ||
-        DEFAULT_OFFICIAL_INSTANCE;
-
-      const effectiveGameDir = await resolveInstanceGameDir(activeInst);
-      if (currentLaunchAttemptId !== attemptId) return;
-
-      await syncInstanceAssets(activeInst, effectiveGameDir);
-      if (currentLaunchAttemptId !== attemptId) return;
-
-      const options = buildLaunchOptions(activeAcc, activeInst, effectiveGameDir);
-
-      const resolveLaunchProgressStatus = (prog: number): LaunchStatus => {
-        if (prog >= 90) return 'LAUNCHING';
-        if (prog >= 20) return 'DOWNLOADING';
-        return 'VERIFYING';
-      };
-
-      await launchGame(
-        options,
-        (message, progress) => {
-          if (currentLaunchAttemptId !== attemptId) return;
-          setStoreState(() => ({
-            launch: {
-              status: resolveLaunchProgressStatus(progress),
-              progress,
-              message,
-            },
-          }));
-        },
-        () => currentLaunchAttemptId !== attemptId,
-      );
-
-      if (currentLaunchAttemptId !== attemptId || gameStoppedDuringLaunch) {
-        return;
-      }
-
-      const isStillRunning = await invoke<boolean>('is_game_running').catch(() => false);
-      if (currentLaunchAttemptId !== attemptId || gameStoppedDuringLaunch) {
-        return;
-      }
-
-      if (state.launch.status !== 'IDLE') {
-        const nextLaunchState = isStillRunning
-          ? { status: 'RUNNING' as const, progress: 100, message: 'Minecraft en ejecución' }
-          : { status: 'IDLE' as const, progress: 0, message: 'Juego finalizado.' };
-        setStoreState(() => ({ launch: nextLaunchState }));
-      }
+      const activeInst = instances.find((i) => i.id === state.activeInstanceId) || instances[0] || state.instances[0] || { id: 'fallback', name: 'Fallback', mcVersion: '1.21.1', type: 'custom' };
+      const { invoke } = await import('@tauri-apps/api/core');
+      await handleGameLaunchPhase(attemptId, activeInst as any, activeAcc, setStoreState, invoke);
     } catch (err: unknown) {
-      if (currentLaunchAttemptId === attemptId) {
-        const errorMsg = err instanceof Error ? err.message : String(err);
-        console.error('[Launcher Store] Launch failed:', errorMsg);
-
-        if (
-          activeAcc.type === 'microsoft' &&
-          activeAcc.refreshToken &&
-          /token|auth|expired|401|invalid/i.test(errorMsg)
-        ) {
-          try {
-            const { refreshMicrosoftSession } = await import('../services/microsoftAuthService');
-            const refreshed = await refreshMicrosoftSession(activeAcc.refreshToken);
-            if (refreshed?.accessToken) {
-              const updatedAcc: UserAccount = {
-                ...activeAcc,
-                accessToken: refreshed.accessToken,
-                refreshToken: refreshed.refreshToken ?? activeAcc.refreshToken,
-                username: refreshed.username || activeAcc.username,
-                uuid: refreshed.uuid || activeAcc.uuid,
-                lastUsed: Date.now(),
-              };
-              await launcherActions.updateAccount(updatedAcc.id, updatedAcc);
-            }
-          } catch (reAuthErr) {
-            console.warn(
-              '[Launcher Store] Falló recuperación de sesión Microsoft tras error:',
-              reAuthErr,
-            );
-          }
-        }
-
-        setStoreState(() => ({
-          launch: { status: 'IDLE', progress: 0, message: `Error: ${errorMsg}` },
-        }));
-      }
+      await handleLaunchError(err, activeAcc, attemptId);
     } finally {
       if (currentLaunchAttemptId === attemptId) {
         setStoreState((prev) => {
