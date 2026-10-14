@@ -10,8 +10,9 @@ target/
 
 # Logs & Environment
 *.log
-.env.local
-.env.*.local
+.env
+.env.*
+!.env.example
 
 # Release artifacts
 release/
