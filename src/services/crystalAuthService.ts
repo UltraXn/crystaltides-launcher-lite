@@ -5,6 +5,7 @@
  */
 
 import { generateOfflineUuid } from './offlineAuth';
+import { decodeProtectedHeader, decodeJwt } from 'jose';
 
 const SUPABASE_URL = 'https://gyoqnqvqhuxlcbrvtfia.supabase.co';
 const SUPABASE_ANON_KEY =
@@ -64,7 +65,18 @@ async function fetchUserProfile(
   userId: string,
   accessToken: string,
 ): Promise<Record<string, unknown> | null> {
+  // Defensive architecture: Ensure the query strictly enforces RLS and identity matching
+  // The query string includes id=eq.userId, but we must verify that accessToken belongs to userId to prevent IDOR/BOLA.
+  // Since we already check payload.sub === userId in loginWithCrystalTides, this acts as an extra layer
+  // of access control inside the fetch itself if it is exported or used elsewhere.
   try {
+    if (accessToken) {
+      const payload = decodeJwt(accessToken);
+      if (payload.sub !== userId) {
+        throw new Error('Violación de seguridad: intento de consultar un perfil que no pertenece a la sesión activa.');
+      }
+    }
+
     const profileRes = await fetch(
       `${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}&select=*`,
       {
@@ -176,6 +188,36 @@ export async function loginWithCrystalTides(
 
   if (!user?.id) {
     throw new Error('Respuesta inválida del servidor de autenticación.');
+  }
+
+  if (accessToken) {
+    try {
+      const header = decodeProtectedHeader(accessToken);
+      if (header.alg !== 'HS256' && header.alg !== 'RS256') {
+        throw new Error('Algoritmo de token JWT no seguro o no soportado.');
+      }
+
+      const payload = decodeJwt(accessToken);
+
+      if (payload.exp && Date.now() >= payload.exp * 1000) {
+        throw new Error('La sesión ha expirado.');
+      }
+
+      if (payload.sub !== user.id) {
+        throw new Error('Violación de seguridad: El token no pertenece al usuario autenticado.');
+      }
+    } catch (e) {
+      if (e instanceof Error && e.message.includes('Violación')) {
+        throw e;
+      }
+      if (e instanceof Error && e.message.includes('Algoritmo')) {
+        throw e;
+      }
+      if (e instanceof Error && e.message.includes('expirado')) {
+        throw e;
+      }
+      throw new Error('Token de sesión inválido o corrupto.');
+    }
   }
 
   const profileData = await fetchUserProfile(user.id, accessToken);
