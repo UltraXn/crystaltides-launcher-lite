@@ -1565,7 +1565,9 @@ export const launcherActions = {
         skin_url: account.skinUrl,
         is_active: true,
         created_at: account.lastUsed || Date.now(),
-      }).catch((err) => console.warn('[Store] Error guardando cuenta en SQLite:', err));
+      })
+        .then(() => setActiveDatabaseAccount(account.id))
+        .catch((err) => console.warn('[Store] Error guardando cuenta en SQLite:', err));
     }
   },
 
@@ -1602,8 +1604,9 @@ export const launcherActions = {
   },
 
   removeAccount: async (id: string) => {
+    const wasActive = state.activeAccountId === id;
     const updated = state.accounts.filter((a: UserAccount) => a.id !== id);
-    const nextActive = updated.length > 0 ? updated[0].id : null;
+    const nextActive = wasActive ? (updated.length > 0 ? updated[0].id : null) : state.activeAccountId;
     const nextView = updated.length > 0 ? state.currentView : 'login';
     setStoreState(() => ({
       accounts: updated,
@@ -1614,6 +1617,11 @@ export const launcherActions = {
     deleteDatabaseAccount(id).catch((err) =>
       console.warn('[Store] Error eliminando cuenta de SQLite:', err),
     );
+    if (wasActive && nextActive) {
+      setActiveDatabaseAccount(nextActive).catch((err) =>
+        console.warn('[Store] Error marcando nueva cuenta activa en SQLite tras eliminar:', err),
+      );
+    }
   },
 
   logout: async () => {
