@@ -6,10 +6,7 @@
 
 import { generateOfflineUuid } from './offlineAuth';
 import { decodeProtectedHeader, decodeJwt } from 'jose';
-
-const SUPABASE_URL = 'https://gyoqnqvqhuxlcbrvtfia.supabase.co';
-const SUPABASE_ANON_KEY =
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd5b3FucXZxaHV4bGNicnZ0ZmlhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUyOTk0MTEsImV4cCI6MjA4MDg3NTQxMX0.eLU_-IrRfixx7dpR9jeiEoOT1u-exQMhIsxSXVINbRA';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config/supabase';
 
 export interface CrystalAuthProfile {
   id: string;
@@ -73,7 +70,9 @@ async function fetchUserProfile(
     if (accessToken) {
       const payload = decodeJwt(accessToken);
       if (payload.sub !== userId) {
-        throw new Error('Violación de seguridad: intento de consultar un perfil que no pertenece a la sesión activa.');
+        throw new Error(
+          'Violación de seguridad: intento de consultar un perfil que no pertenece a la sesión activa.',
+        );
       }
     }
 
