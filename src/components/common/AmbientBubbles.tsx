@@ -32,11 +32,12 @@ export const AmbientBubbles: React.FC<{ count?: number }> = ({ count = 25 }) => 
   }, [count]);
 
   return (
-    <div className="ambient-bubbles-container" aria-hidden="true">
+    <div className="ambient-bubbles-container" aria-hidden="true" data-testid="ambient-bubbles-container">
       {bubbles.map((b) => (
         <div
           key={b.id}
           className="ambient-bubble"
+          data-testid="ambient-bubble"
           style={{
             width: `${b.size}px`,
             height: `${b.size}px`,

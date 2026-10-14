@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { X, ArrowRight, Loader2, Globe } from 'lucide-react';
 import { DiscordIcon } from './icons/DiscordIcon';
-import { launcherActions } from '../store/launcherStore';
+import { useLauncherStore, launcherActions, LauncherState } from '../store/launcherStore';
 
 const YoutubeIcon: React.FC<{ style?: React.CSSProperties }> = ({ style }) => (
   <svg style={style} viewBox="0 0 24 24" fill="currentColor">
@@ -10,11 +10,25 @@ const YoutubeIcon: React.FC<{ style?: React.CSSProperties }> = ({ style }) => (
 );
 
 export const LoginView: React.FC = () => {
+  const accounts = useLauncherStore((s: LauncherState) => s.accounts);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [rememberAccount, setRememberAccount] = useState(true);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const handleClose = async () => {
+    if (accounts.length > 0) {
+      launcherActions.setView('home');
+    } else {
+      try {
+        const { getCurrentWindow } = await import('@tauri-apps/api/window');
+        getCurrentWindow().close();
+      } catch {
+        // web mode
+      }
+    }
+  };
 
   // Microsoft OAuth Login flow
   const handleMicrosoftLogin = async () => {
@@ -94,7 +108,7 @@ export const LoginView: React.FC = () => {
       {/* Centered Login Card */}
       <div className="login-card-container">
         {/* Close button on top-right of card */}
-        <button className="login-card-close" title="Close">
+        <button onClick={handleClose} className="login-card-close" title="Close">
           <X style={{ width: '16px', height: '16px' }} />
         </button>
 

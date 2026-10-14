@@ -14,20 +14,20 @@ describe('AmbientBubbles', () => {
   it('should render the correct number of bubbles', () => {
     const count = 10;
     render(<AmbientBubbles count={count} />);
-    const bubbles = screen.getAllByRole('generic', { name: /bubble/i });
+    const bubbles = screen.getAllByTestId('ambient-bubble');
     expect(bubbles).toHaveLength(count);
   });
 
   it('should render the default number of bubbles when count is not provided', () => {
     render(<AmbientBubbles />);
-    const bubbles = screen.getAllByRole('generic', { name: /bubble/i });
+    const bubbles = screen.getAllByTestId('ambient-bubble');
     expect(bubbles).toHaveLength(25);
   });
 
   it('should render bubbles with correct styles', () => {
     const count = 1;
     render(<AmbientBubbles count={count} />);
-    const bubble = screen.getByRole('generic', { name: /bubble/i });
+    const bubble = screen.getByTestId('ambient-bubble');
     const style = window.getComputedStyle(bubble);
 
     expect(style.width).not.toBe('');
@@ -41,19 +41,20 @@ describe('AmbientBubbles', () => {
   it('should handle count boundary values', () => {
     const minCount = 0;
     const maxCount = 50;
-    render(<AmbientBubbles count={minCount} />);
-    let bubbles = screen.queryAllByRole('generic', { name: /bubble/i });
+    const { unmount } = render(<AmbientBubbles count={minCount} />);
+    let bubbles = screen.queryAllByTestId('ambient-bubble');
     expect(bubbles).toHaveLength(minCount);
+    unmount();
 
     render(<AmbientBubbles count={maxCount} />);
-    bubbles = screen.getAllByRole('generic', { name: /bubble/i });
+    bubbles = screen.getAllByTestId('ambient-bubble');
     expect(bubbles).toHaveLength(maxCount);
   });
 
   it('should generate bubbles with valid properties', () => {
     const count = 1;
     render(<AmbientBubbles count={count} />);
-    const bubble = screen.getByRole('generic', { name: /bubble/i });
+    const bubble = screen.getByTestId('ambient-bubble');
     const style = window.getComputedStyle(bubble);
 
     const size = parseFloat(style.width);

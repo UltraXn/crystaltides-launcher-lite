@@ -1,22 +1,33 @@
 import React, { useState } from "react";
 import { X } from "lucide-react";
-import { useLauncherStore, launcherActions, LauncherState } from "../../store/launcherStore";
+import { useLauncherStore, launcherActions, WALLPAPERS, LauncherState } from "../../store/launcherStore";
 
-export const SettingsModal: React.FC = () => {
+interface SettingsModalProps {
+  onOpenUninstaller?: () => void;
+}
+
+export const SettingsModal: React.FC<SettingsModalProps> = ({ onOpenUninstaller }) => {
   const activeModal = useLauncherStore((s: LauncherState) => s.activeModal);
   const settings = useLauncherStore((s: LauncherState) => s.settings);
+  const activeWallpaperId = useLauncherStore((s: LauncherState) => s.activeWallpaperId);
+
+  // Parse initial resolution
+  const initialRes = settings.resolution || "1920x1080";
+  const isDesktop = initialRes === "Desktop";
+  const [resW, resH] = !isDesktop && initialRes.includes("x") ? initialRes.split("x") : ["1920", "1080"];
 
   // Local state for interactive editing before saving
   const [mcVersion, setMcVersion] = useState(settings.mcVersion || "1.21.1");
   const [ramMb, setRamMb] = useState(settings.maxRamGb * 1024);
-  const [width, setWidth] = useState("1920");
-  const [height, setHeight] = useState("1080");
-  const [useDesktopRes, setUseDesktopRes] = useState(false);
+  const [width, setWidth] = useState(resW);
+  const [height, setHeight] = useState(resH);
+  const [useDesktopRes, setUseDesktopRes] = useState(isDesktop);
   const [keepLauncher, setKeepLauncher] = useState(!settings.autoCloseLauncher);
-  const [disableBgAnim, setDisableBgAnim] = useState(false);
-  const [showAllVersions, setShowAllVersions] = useState(false);
-  const [disableAnimations, setDisableAnimations] = useState(false);
-  const [disableHardwareAccel, setDisableHardwareAccel] = useState(false);
+  const [disableBgAnim, setDisableBgAnim] = useState(settings.disableBgAnim ?? false);
+  const [showAllVersions, setShowAllVersions] = useState(settings.showAllVersions ?? false);
+  const [disableAnimations, setDisableAnimations] = useState(settings.disableAnimations ?? false);
+  const [disableHardwareAccel, setDisableHardwareAccel] = useState(settings.disableHardwareAccel ?? false);
+  const [selectedWallpaper, setSelectedWallpaper] = useState(activeWallpaperId);
   const [launcherDir] = useState("C:\\Users\\Haume\\AppData\\Roaming\\.crystaltides");
 
   if (activeModal !== "settings") return null;
@@ -24,16 +35,21 @@ export const SettingsModal: React.FC = () => {
   const handleSave = () => {
     launcherActions.updateSettings({
       mcVersion,
-      maxRamGb: Math.round(ramMb / 1024),
+      maxRamGb: Math.max(1, ramMb / 1024),
       autoCloseLauncher: !keepLauncher,
-      resolution: useDesktopRes ? "Desktop" : `${width}x${height}`,
+      resolution: useDesktopRes ? "Desktop" : `${width || 1920}x${height || 1080}`,
+      showAllVersions,
+      disableBgAnim,
+      disableAnimations,
+      disableHardwareAccel,
     });
+    launcherActions.setWallpaper(selectedWallpaper);
     launcherActions.closeModal();
   };
 
   const handleReset = () => {
     setMcVersion("1.21.1");
-    setRamMb(4096);
+    setRamMb(8192);
     setWidth("1920");
     setHeight("1080");
     setUseDesktopRes(false);
@@ -42,6 +58,7 @@ export const SettingsModal: React.FC = () => {
     setShowAllVersions(false);
     setDisableAnimations(false);
     setDisableHardwareAccel(false);
+    setSelectedWallpaper("ct_night");
   };
 
   const VERSION_OPTIONS = showAllVersions
@@ -271,7 +288,34 @@ export const SettingsModal: React.FC = () => {
           </div>
         </div>
 
-        {/* Section 5: App Lifecycle */}
+        {/* Section 5: Fondo de Pantalla / Wallpaper */}
+        <div className="settings-section">
+          <span className="settings-label-title">Fondo de Pantalla</span>
+          <div style={{ display: "flex", gap: "8px", marginTop: "4px" }}>
+            {WALLPAPERS.map((wp) => (
+              <button
+                key={wp.id}
+                type="button"
+                onClick={() => setSelectedWallpaper(wp.id)}
+                style={{
+                  flex: 1,
+                  padding: "6px 8px",
+                  borderRadius: "6px",
+                  background: selectedWallpaper === wp.id ? "rgba(34, 197, 94, 0.2)" : "rgba(255, 255, 255, 0.05)",
+                  border: selectedWallpaper === wp.id ? "1px solid #22c55e" : "1px solid rgba(255, 255, 255, 0.1)",
+                  color: selectedWallpaper === wp.id ? "#22c55e" : "#cbd5e1",
+                  fontSize: "11px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                {wp.name}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Section 6: App Lifecycle */}
         <div className="settings-section" style={{ borderTop: "1px solid rgba(255, 255, 255, 0.05)", paddingTop: "14px" }}>
           <span className="settings-label-title" style={{ color: "#FDA4AF" }}>Zona de Mantenimiento</span>
           <p style={{ fontSize: "11px", color: "rgba(248, 250, 252, 0.5)", margin: "4px 0 10px 0" }}>
@@ -281,7 +325,10 @@ export const SettingsModal: React.FC = () => {
             type="button"
             onClick={() => {
               if (window.confirm("¿Deseas abrir el asistente de desinstalación de CrystalTides Launcher?")) {
-                window.location.reload();
+                launcherActions.closeModal();
+                if (onOpenUninstaller) {
+                  onOpenUninstaller();
+                }
               }
             }}
             style={{

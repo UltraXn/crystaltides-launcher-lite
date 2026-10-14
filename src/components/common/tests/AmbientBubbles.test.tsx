@@ -14,21 +14,21 @@ describe('AmbientBubbles', () => {
   it('should render the correct number of bubbles', () => {
     const count = 10;
     render(<AmbientBubbles count={count} />);
-    const bubbles = screen.getAllByRole('generic', { name: /ambient-bubble/i });
+    const bubbles = screen.getAllByTestId('ambient-bubble');
     expect(bubbles).toHaveLength(count);
   });
 
   it('should render the default number of bubbles when count is not provided', () => {
     const defaultCount = 25;
     render(<AmbientBubbles />);
-    const bubbles = screen.getAllByRole('generic', { name: /ambient-bubble/i });
+    const bubbles = screen.getAllByTestId('ambient-bubble');
     expect(bubbles).toHaveLength(defaultCount);
   });
 
   it('should render bubbles with valid size', () => {
     const count = 1;
     render(<AmbientBubbles count={count} />);
-    const bubble = screen.getByRole('generic', { name: /ambient-bubble/i });
+    const bubble = screen.getByTestId('ambient-bubble');
     const style = window.getComputedStyle(bubble);
     const size = parseFloat(style.width);
     expect(size).toBeGreaterThanOrEqual(6);
@@ -38,7 +38,7 @@ describe('AmbientBubbles', () => {
   it('should render bubbles with valid left position', () => {
     const count = 1;
     render(<AmbientBubbles count={count} />);
-    const bubble = screen.getByRole('generic', { name: /ambient-bubble/i });
+    const bubble = screen.getByTestId('ambient-bubble');
     const style = window.getComputedStyle(bubble);
     const left = parseFloat(style.left);
     expect(left).toBeGreaterThanOrEqual(0);
@@ -48,7 +48,7 @@ describe('AmbientBubbles', () => {
   it('should render bubbles with valid duration', () => {
     const count = 1;
     render(<AmbientBubbles count={count} />);
-    const bubble = screen.getByRole('generic', { name: /ambient-bubble/i });
+    const bubble = screen.getByTestId('ambient-bubble');
     const style = window.getComputedStyle(bubble);
     const duration = parseFloat(style.animationDuration);
     expect(duration).toBeGreaterThanOrEqual(6);
@@ -58,7 +58,7 @@ describe('AmbientBubbles', () => {
   it('should render bubbles with valid delay', () => {
     const count = 1;
     render(<AmbientBubbles count={count} />);
-    const bubble = screen.getByRole('generic', { name: /ambient-bubble/i });
+    const bubble = screen.getByTestId('ambient-bubble');
     const style = window.getComputedStyle(bubble);
     const delay = parseFloat(style.animationDelay);
     expect(delay).toBeGreaterThanOrEqual(0);
@@ -68,7 +68,7 @@ describe('AmbientBubbles', () => {
   it('should render bubbles with valid opacity', () => {
     const count = 1;
     render(<AmbientBubbles count={count} />);
-    const bubble = screen.getByRole('generic', { name: /ambient-bubble/i });
+    const bubble = screen.getByTestId('ambient-bubble');
     const style = window.getComputedStyle(bubble);
     const opacity = parseFloat(style.opacity);
     expect(opacity).toBeGreaterThanOrEqual(0.15);

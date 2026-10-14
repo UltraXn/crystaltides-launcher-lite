@@ -73,10 +73,10 @@ export const BottomBar: React.FC = () => {
         <button
           onClick={(e) => {
             e.stopPropagation();
-            launcherActions.logout();
+            launcherActions.setView('login');
           }}
           className="player-power-btn"
-          title="Cerrar sesión / Ir a Login"
+          title="Ir a pantalla de Login"
         >
           <Power style={{ width: '12px', height: '12px' }} />
         </button>

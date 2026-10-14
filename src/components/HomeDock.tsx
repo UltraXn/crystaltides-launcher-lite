@@ -37,12 +37,18 @@ export const HomeDock: React.FC = () => {
                 src={activeAccount.skinUrl}
                 alt="Skin"
                 className="dock-player-head"
+                onError={(evt) => {
+                  (evt.target as HTMLElement).style.display = 'none';
+                }}
               />
             ) : activeAccount?.uuid && activeAccount.uuid !== "00000000-0000-0000-0000-000000000000" ? (
               <img
                 src={`https://mc-heads.net/avatar/${activeAccount.uuid}/48`}
                 alt="Skin"
                 className="dock-player-head"
+                onError={(evt) => {
+                  (evt.target as HTMLElement).style.display = 'none';
+                }}
               />
             ) : (
               <User style={{ width: "20px", height: "20px" }} />

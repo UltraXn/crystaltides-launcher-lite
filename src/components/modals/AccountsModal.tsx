@@ -28,7 +28,7 @@ export const AccountsModal: React.FC = () => {
   const [isAddingMs, setIsAddingMs] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
+  const editingAccountIdRef = useRef<string | null>(null);
   const rowFileInputRef = useRef<HTMLInputElement>(null);
 
   if (activeModal !== 'accounts') return null;
@@ -78,6 +78,7 @@ export const AccountsModal: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    const targetAccId = editingAccountIdRef.current;
     const reader = new FileReader();
     reader.onload = (event) => {
       const dataUrl = event.target?.result as string;
@@ -85,9 +86,9 @@ export const AccountsModal: React.FC = () => {
 
       if (isNewAccount) {
         setNewSkinUrl(dataUrl);
-      } else if (editingAccountId) {
-        launcherActions.updateAccount(editingAccountId, { skinUrl: dataUrl });
-        setEditingAccountId(null);
+      } else if (targetAccId) {
+        launcherActions.updateAccount(targetAccId, { skinUrl: dataUrl });
+        editingAccountIdRef.current = null;
       }
     };
     reader.readAsDataURL(file);
@@ -95,7 +96,7 @@ export const AccountsModal: React.FC = () => {
   };
 
   const triggerRowSkinUpload = (accId: string) => {
-    setEditingAccountId(accId);
+    editingAccountIdRef.current = accId;
     rowFileInputRef.current?.click();
   };
 
@@ -181,12 +182,22 @@ export const AccountsModal: React.FC = () => {
                 <div className="account-row-left">
                   <div className="account-skin-head" title="Click para editar o subir skin">
                     {acc.skinUrl ? (
-                      <img src={acc.skinUrl} alt="Skin" className="skin-head-img" />
+                      <img
+                        src={acc.skinUrl}
+                        alt="Skin"
+                        className="skin-head-img"
+                        onError={(evt) => {
+                          (evt.target as HTMLElement).style.display = 'none';
+                        }}
+                      />
                     ) : acc.uuid && acc.uuid !== '00000000-0000-0000-0000-000000000000' ? (
                       <img
                         src={`https://mc-heads.net/avatar/${acc.uuid}/48`}
                         alt={acc.username}
                         className="skin-head-img"
+                        onError={(evt) => {
+                          (evt.target as HTMLElement).style.display = 'none';
+                        }}
                       />
                     ) : (
                       <User style={{ width: '18px', height: '18px', color: '#94a3b8' }} />

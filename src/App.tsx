@@ -126,7 +126,13 @@ export const App: React.FC = () => {
           <BottomBar />
 
           {/* Modales */}
-          <SettingsModal />
+          <SettingsModal
+            onOpenUninstaller={() =>
+              setBootContext((prev) =>
+                prev ? { ...prev, mode: "uninstall" } : null
+              )
+            }
+          />
           <AccountsModal />
           <AboutModal />
           <CrashReportModal

@@ -22,6 +22,10 @@ export interface LauncherSettings {
   discordRpc: boolean;
   fullscreen: boolean;
   mcVersion: string;
+  showAllVersions?: boolean;
+  disableBgAnim?: boolean;
+  disableAnimations?: boolean;
+  disableHardwareAccel?: boolean;
 }
 
 export type ModalType = "none" | "settings" | "accounts" | "about";
@@ -92,6 +96,10 @@ const defaultSettings: LauncherSettings = {
   discordRpc: true,
   fullscreen: false,
   mcVersion: "1.21.1",
+  showAllVersions: false,
+  disableBgAnim: false,
+  disableAnimations: false,
+  disableHardwareAccel: false,
 };
 
 export const isUserAccount = (obj: unknown): obj is UserAccount => {
@@ -113,11 +121,15 @@ export const sanitizeLauncherSettings = (raw: unknown): LauncherSettings => {
     minRamGb: typeof s.minRamGb === "number" && s.minRamGb >= 1 && s.minRamGb <= 64 ? s.minRamGb : defaultSettings.minRamGb,
     maxRamGb: typeof s.maxRamGb === "number" && s.maxRamGb >= 1 && s.maxRamGb <= 64 ? s.maxRamGb : defaultSettings.maxRamGb,
     javaPath: typeof s.javaPath === "string" && s.javaPath.length > 0 ? s.javaPath : defaultSettings.javaPath,
-    resolution: typeof s.resolution === "string" && /^\d+x\d+$/.test(s.resolution) ? s.resolution : defaultSettings.resolution,
+    resolution: typeof s.resolution === "string" && (/^\d+x\d+$/.test(s.resolution) || s.resolution === "Desktop") ? s.resolution : defaultSettings.resolution,
     autoCloseLauncher: typeof s.autoCloseLauncher === "boolean" ? s.autoCloseLauncher : defaultSettings.autoCloseLauncher,
     discordRpc: typeof s.discordRpc === "boolean" ? s.discordRpc : defaultSettings.discordRpc,
     fullscreen: typeof s.fullscreen === "boolean" ? s.fullscreen : defaultSettings.fullscreen,
     mcVersion: typeof s.mcVersion === "string" && s.mcVersion.length > 0 ? s.mcVersion : defaultSettings.mcVersion,
+    showAllVersions: typeof s.showAllVersions === "boolean" ? s.showAllVersions : defaultSettings.showAllVersions,
+    disableBgAnim: typeof s.disableBgAnim === "boolean" ? s.disableBgAnim : defaultSettings.disableBgAnim,
+    disableAnimations: typeof s.disableAnimations === "boolean" ? s.disableAnimations : defaultSettings.disableAnimations,
+    disableHardwareAccel: typeof s.disableHardwareAccel === "boolean" ? s.disableHardwareAccel : defaultSettings.disableHardwareAccel,
   };
 };
 
@@ -176,7 +188,7 @@ export const launcherActions = {
           setStoreState(() => ({
             accounts: sorted,
             activeAccountId: sorted[0].id,
-            // Stay on currentView (login by default unless user has interacted)
+            currentView: "home",
           }));
         }
       }
