@@ -162,7 +162,7 @@ fn split_command_line(cmd: &str) -> Vec<String> {
 }
 
 fn check_running_instance(process_lock: &Arc<Mutex<Option<Child>>>) -> Result<(), String> {
-    let mut lock = process_lock.lock().unwrap_or_else(|e| e.into_inner());
+    let mut lock = process_lock.lock().unwrap_or_else(|e| { crate::logger::log("WARN", "ProcessManager", &format!("Mutex envenenado, recuperando lock... {}", e)); e.into_inner() });
     if let Some(ref mut child) = *lock {
         if let Ok(None) = child.try_wait() {
             return Err("Ya existe una instancia de Minecraft en ejecución.".to_string());
@@ -484,7 +484,7 @@ fn poll_child_status(
     game_dir: &str,
 ) -> PollResult {
     let process_lock = get_game_process_handle();
-    let mut lock = process_lock.lock().unwrap_or_else(|e| e.into_inner());
+    let mut lock = process_lock.lock().unwrap_or_else(|e| { crate::logger::log("WARN", "ProcessManager", &format!("Mutex envenenado, recuperando lock... {}", e)); e.into_inner() });
 
     let Some(ref mut child) = *lock else {
         set_high_resolution_timer(false);
@@ -581,7 +581,7 @@ pub fn launch_minecraft_process(
     }
 
     {
-        let mut lock = process_lock.lock().unwrap_or_else(|e| e.into_inner());
+        let mut lock = process_lock.lock().unwrap_or_else(|e| { crate::logger::log("WARN", "ProcessManager", &format!("Mutex envenenado, recuperando lock... {}", e)); e.into_inner() });
         *lock = Some(child);
     }
 
@@ -593,7 +593,7 @@ pub fn launch_minecraft_process(
 
 pub fn kill_minecraft_process() -> Result<bool, String> {
     let process_lock = get_game_process_handle();
-    let mut lock = process_lock.lock().unwrap_or_else(|e| e.into_inner());
+    let mut lock = process_lock.lock().unwrap_or_else(|e| { crate::logger::log("WARN", "ProcessManager", &format!("Mutex envenenado, recuperando lock... {}", e)); e.into_inner() });
     if let Some(ref mut child) = *lock {
         println!("[ProcessManager] Forcefully killing active game process PID: {}", child.id());
         let _ = child.kill();
@@ -605,7 +605,7 @@ pub fn kill_minecraft_process() -> Result<bool, String> {
 
 pub fn is_game_running() -> bool {
     let process_lock = get_game_process_handle();
-    let mut lock = process_lock.lock().unwrap_or_else(|e| e.into_inner());
+    let mut lock = process_lock.lock().unwrap_or_else(|e| { crate::logger::log("WARN", "ProcessManager", &format!("Mutex envenenado, recuperando lock... {}", e)); e.into_inner() });
     lock.as_mut()
         .is_some_and(|child| matches!(child.try_wait(), Ok(None)))
 }
