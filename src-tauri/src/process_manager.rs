@@ -565,6 +565,7 @@ pub fn launch_minecraft_process(
     let pid = child.id();
     crate::logger::log("INFO", "ProcessManager", &format!("Proceso de Minecraft iniciado exitosamente. PID: {}", pid));
 
+    #[cfg(target_os = "windows")]
     apply_os_optimizations(pid);
     set_high_resolution_timer(true);
     let app_for_ipc = app_handle.clone();
@@ -857,6 +858,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "windows")]
     #[cfg(target_os = "windows")]
     fn test_apply_os_optimizations_smoke() {
         apply_os_optimizations(std::process::id());

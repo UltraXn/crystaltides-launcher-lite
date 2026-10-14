@@ -32,19 +32,41 @@ describe('launcherService pure helpers', () => {
     });
 
     it('aplica reglas allow generales y específicas de windows', () => {
+      const _navigator = global.navigator;
+      Object.defineProperty(global, 'navigator', {
+        value: { userAgent: 'windows' },
+        writable: true,
+      });
+
       expect(isLibraryAllowed({ rules: [{ action: 'allow' }] })).toBe(true);
       expect(isLibraryAllowed({ rules: [{ action: 'allow', os: { name: 'windows' } }] })).toBe(
         true,
       );
       expect(isLibraryAllowed({ rules: [{ action: 'allow', os: { name: 'osx' } }] })).toBe(false);
+
+      Object.defineProperty(global, 'navigator', {
+        value: _navigator,
+        writable: true,
+      });
     });
 
     it('aplica reglas disallow específicas de plataforma', () => {
+      const _navigator = global.navigator;
+      Object.defineProperty(global, 'navigator', {
+        value: { userAgent: 'windows' },
+        writable: true,
+      });
+
       expect(
         isLibraryAllowed({
           rules: [{ action: 'allow' }, { action: 'disallow', os: { name: 'windows' } }],
         }),
       ).toBe(false);
+
+      Object.defineProperty(global, 'navigator', {
+        value: _navigator,
+        writable: true,
+      });
     });
   });
 
@@ -487,7 +509,22 @@ describe('launcherService pure helpers', () => {
         },
       ];
       const placeholders = { version_name: '1.21.1' };
+      // Mute process.env.NODE_ENV mock for this specific test
+      const oldEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'production';
+      const _navigator = global.navigator;
+      Object.defineProperty(global, 'navigator', {
+        value: { userAgent: 'windows' },
+        writable: true,
+      });
+
       const { args } = processManifestJvmArgs(manifestJvm, placeholders, 'cp.jar', '1.21.1', '1.21.1');
+
+      process.env.NODE_ENV = oldEnv;
+      Object.defineProperty(global, 'navigator', {
+        value: _navigator,
+        writable: true,
+      });
 
       expect(args).toContain('-Dcommon=true');
       expect(args).toContain('-XX:HeapDumpPath=C:/dumps');

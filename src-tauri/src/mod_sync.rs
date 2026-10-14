@@ -12,6 +12,19 @@ pub struct ModDownloadItem {
     pub sha1: String,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sync_mods_empty() {
+        // Just verify it doesn't panic on an empty list
+        let temp = std::env::temp_dir().join("mod_sync_empty_test");
+        let result = sync_mods(temp.to_string_lossy().to_string(), "[]".to_string());
+        assert!(result.is_ok());
+    }
+}
+
 #[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct ModSyncEntry {
     pub source: String,

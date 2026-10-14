@@ -307,7 +307,7 @@ export const syncPerformanceStackForInstance = async (
   // Comprobar mods locales instalados para evitar descargar mods duplicados
   let localMods: LocalModInfo[] = [];
   try {
-    localMods = await listMods(gameDir);
+    localMods = await listMods(gameDir) || [];
   } catch (err) {
     console.warn('[ModSync] Error listando mods locales en syncPerformanceStack:', err);
   }
