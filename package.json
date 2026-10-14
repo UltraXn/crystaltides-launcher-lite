@@ -33,6 +33,7 @@
     "@tauri-apps/api": "^2.3.0",
     "clsx": "^2.1.1",
     "dompurify": "^3.4.16",
+    "jose": "^6.2.12",
     "lucide-react": "^1.16.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

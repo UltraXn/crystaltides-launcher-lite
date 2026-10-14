@@ -82,7 +82,7 @@ describe('crystalAuthService', () => {
           username: 'MetadataUser',
         },
       },
-      access_token: 'fake-jwt-token',
+      access_token: 'eyJhbGciOiJIUzI1NiJ9.eyJ1cm46ZXhhbXBsZTpjbGFpbSI6dHJ1ZSwic3ViIjoic3VwYWJhc2UtdXNlci0xMjMifQ.WdgB1wu-A1uQ1RAPepMpu8uGHC3WDaM49AEIXq5k7Hs',
       refresh_token: 'fake-refresh-token',
     };
 
@@ -116,7 +116,7 @@ describe('crystalAuthService', () => {
     expect(profile.uuid).toBe('11111111-2222-3333-4444-555555555555');
     expect(profile.skinUrl).toBe('https://example.com/skin.png');
     expect(profile.role).toBe('vip');
-    expect(profile.accessToken).toBe('fake-jwt-token');
+    expect(profile.accessToken).toBe('eyJhbGciOiJIUzI1NiJ9.eyJ1cm46ZXhhbXBsZTpjbGFpbSI6dHJ1ZSwic3ViIjoic3VwYWJhc2UtdXNlci0xMjMifQ.WdgB1wu-A1uQ1RAPepMpu8uGHC3WDaM49AEIXq5k7Hs');
     expect(profile.refreshToken).toBe('fake-refresh-token');
   });
 
@@ -126,7 +126,7 @@ describe('crystalAuthService', () => {
         id: 'no-uuid-user',
         user_metadata: {},
       },
-      access_token: 'token-abc',
+      access_token: 'eyJhbGciOiJIUzI1NiJ9.eyJ1cm46ZXhhbXBsZTpjbGFpbSI6dHJ1ZSwic3ViIjoibm8tdXVpZC11c2VyIn0.BL16ek-UThnN1TgnCxc5ezTSHNrYKkjjQe_110clHsc',
       refresh_token: 'refresh-abc',
     };
 
@@ -160,7 +160,7 @@ describe('crystalAuthService', () => {
           username: 'al',
         },
       },
-      access_token: 'token-short',
+      access_token: 'eyJhbGciOiJIUzI1NiJ9.eyJ1cm46ZXhhbXBsZTpjbGFpbSI6dHJ1ZSwic3ViIjoic2hvcnQtdXNlci1pZCJ9.nuIZSjxZwKwG4MN87TR9sxau1A-CVIVjEFtdVvVEx0Q',
       refresh_token: 'refresh-short',
     };
 
