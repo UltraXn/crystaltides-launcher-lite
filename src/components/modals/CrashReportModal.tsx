@@ -6,23 +6,75 @@ interface CrashReportModalProps {
   isOpen: boolean;
   onClose: () => void;
   onRetry: () => void;
+  onOpenOomAssistant?: () => void;
   crashReason?: string;
   crashDetails?: string;
   exitCode?: number;
+  gameDir?: string;
+  offendingMod?: string;
+  suggestedAction?:
+    | 'INCREASE_RAM'
+    | 'DISABLE_MOD'
+    | 'UPDATE_GPU_DRIVER'
+    | 'RESET_OPTIONS'
+    | 'UPDATE_JAVA'
+    | 'VIEW_LOGS';
 }
 
 export const CrashReportModal: React.FC<CrashReportModalProps> = ({
   isOpen,
   onClose,
   onRetry,
+  onOpenOomAssistant,
   crashReason = 'Incompatibilidad de mods o fallo de memoria de Java',
   crashDetails = 'java.lang.OutOfMemoryError: Java heap space',
   exitCode = 1,
+  gameDir,
+  offendingMod,
+  suggestedAction,
 }) => {
   const [copied, setCopied] = useState(false);
   const [isLogViewerOpen, setIsLogViewerOpen] = useState(false);
+  const [isFixing, setIsFixing] = useState(false);
+  const [actionFeedback, setActionFeedback] = useState<string | null>(null);
 
   if (!isOpen) return null;
+
+  const handleFixMod = async () => {
+    if (!gameDir || !offendingMod) return;
+    setIsFixing(true);
+    try {
+      const { fixOffendingMod } = await import('../../services/crashDoctorService');
+      const msg = await fixOffendingMod(gameDir, offendingMod);
+      setActionFeedback(msg);
+      setTimeout(() => {
+        onRetry();
+      }, 1000);
+    } catch (err) {
+      console.error('Error fixing offending mod:', err);
+      setActionFeedback(`Error: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setIsFixing(false);
+    }
+  };
+
+  const handleResetOptions = async () => {
+    if (!gameDir) return;
+    setIsFixing(true);
+    try {
+      const { resetOptionsTxt } = await import('../../services/crashDoctorService');
+      const msg = await resetOptionsTxt(gameDir);
+      setActionFeedback(msg);
+      setTimeout(() => {
+        onRetry();
+      }, 1000);
+    } catch (err) {
+      console.error('Error resetting options:', err);
+      setActionFeedback(`Error: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setIsFixing(false);
+    }
+  };
 
   const handleCopyReport = async () => {
     const report = `[CrystalTides Crash Report]\nMotivo: ${crashReason}\nCódigo de salida: ${exitCode}\nDetalles:\n${crashDetails}`;
@@ -118,10 +170,119 @@ export const CrashReportModal: React.FC<CrashReportModalProps> = ({
           }}
         >
           <div style={{ fontSize: '12px', fontWeight: 600, color: '#FDA4AF', marginBottom: '4px' }}>
-            Causa detectada:
+            Causa detectada por Crash Doctor:
           </div>
           <div style={{ fontSize: '13px', color: '#F8FAFC' }}>{crashReason}</div>
         </div>
+
+        {/* Feedback de acción rápida */}
+        {actionFeedback && (
+          <div
+            style={{
+              background: 'rgba(34, 197, 94, 0.15)',
+              border: '1px solid rgba(34, 197, 94, 0.4)',
+              borderRadius: '10px',
+              padding: '10px 14px',
+              marginBottom: '16px',
+              color: '#4ade80',
+              fontSize: '12px',
+              fontWeight: 600,
+            }}
+          >
+            {actionFeedback}
+          </div>
+        )}
+
+        {/* 1-Click Fix: Desactivar mod conflictivo */}
+        {suggestedAction === 'DISABLE_MOD' && offendingMod && gameDir && (
+          <div style={{ marginBottom: '16px' }}>
+            <button
+              type="button"
+              disabled={isFixing}
+              onClick={handleFixMod}
+              style={{
+                width: '100%',
+                background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.2) 0%, rgba(249, 115, 22, 0.25) 100%)',
+                border: '1px solid rgba(249, 115, 22, 0.5)',
+                borderRadius: '10px',
+                padding: '11px 14px',
+                color: '#fdba74',
+                fontSize: '13px',
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                cursor: isFixing ? 'not-allowed' : 'pointer',
+                boxShadow: '0 4px 16px rgba(249, 115, 22, 0.15)',
+              }}
+            >
+              <span>🛡️ {isFixing ? 'Desactivando...' : `Desactivar "${offendingMod}" y Reintentar`}</span>
+            </button>
+          </div>
+        )}
+
+        {/* 1-Click Fix: Restablecer options.txt */}
+        {suggestedAction === 'RESET_OPTIONS' && gameDir && (
+          <div style={{ marginBottom: '16px' }}>
+            <button
+              type="button"
+              disabled={isFixing}
+              onClick={handleResetOptions}
+              style={{
+                width: '100%',
+                background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.2) 0%, rgba(234, 179, 8, 0.25) 100%)',
+                border: '1px solid rgba(245, 158, 11, 0.5)',
+                borderRadius: '10px',
+                padding: '11px 14px',
+                color: '#fde047',
+                fontSize: '13px',
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                cursor: isFixing ? 'not-allowed' : 'pointer',
+              }}
+            >
+              <span>⚙️ {isFixing ? 'Restableciendo...' : 'Restablecer options.txt y Reintentar'}</span>
+            </button>
+          </div>
+        )}
+
+        {/* Botón especial si es Out of Memory */}
+        {(suggestedAction === 'INCREASE_RAM' ||
+          exitCode === 137 ||
+          /out of memory|heap space|could not reserve/i.test(crashReason + ' ' + (crashDetails || ''))) &&
+          onOpenOomAssistant && (
+            <div style={{ marginBottom: '16px' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenOomAssistant();
+                }}
+                style={{
+                  width: '100%',
+                  background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.18) 0%, rgba(99, 102, 241, 0.2) 100%)',
+                  border: '1px solid rgba(56, 189, 248, 0.45)',
+                  borderRadius: '10px',
+                  padding: '10px 14px',
+                  color: '#38bdf8',
+                  fontSize: '12.5px',
+                  fontWeight: 700,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 16px rgba(56, 189, 248, 0.15)',
+                }}
+              >
+                <span>☁️ Solucionar Falta de RAM (La Nubecita)</span>
+              </button>
+            </div>
+          )}
 
         {/* Consola resumida de error */}
         <div style={{ marginBottom: '20px' }}>

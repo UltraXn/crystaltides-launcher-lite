@@ -1,17 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   X,
-  Download,
   CheckCircle2,
-  AlertCircle,
-  Loader2,
   FileText,
   FolderOpen,
-  Upload,
-  Link as LinkIcon,
   RotateCcw,
   Sparkles,
-  Palette,
   Check,
   Layout,
   Move,
@@ -27,11 +21,7 @@ import {
   User,
   Settings as SettingsIcon,
   Rocket,
-  Volume2,
-  VolumeX,
-  Film,
   Globe,
-  Type,
   Puzzle,
   Lock,
 } from 'lucide-react';
@@ -39,17 +29,10 @@ import {
   useLauncherStore,
   launcherActions,
   LauncherState,
-  WALLPAPERS,
-  WallpaperOption,
-  ACCENT_PRESETS,
-  AccentColorPreset,
   DockButtonId,
   PROTECTED_DOCK_BUTTONS,
   useT,
-  LoaderType,
-  GuiFontFamily,
-  GuiBgPreset,
-  GuiBorderPreset,
+  resolveEffectiveLoaderVersion,
 } from '../../store/launcherStore';
 import { useModuleStore } from '../../modules';
 import {
@@ -60,6 +43,14 @@ import {
 import { invoke } from '@tauri-apps/api/core';
 import { LogViewerModal } from './LogViewerModal';
 import { ButtonCustomizerModal } from './ButtonCustomizerModal';
+import {
+  SettingsMinecraftSection,
+  type SettingsMinecraftSectionProps,
+} from './settings/SettingsMinecraftSection';
+import {
+  SettingsPersonalizationSection,
+  type SettingsPersonalizationSectionProps,
+} from './settings/SettingsPersonalizationSection';
 import { CustomColorPicker } from '../common/CustomColorPicker';
 import {
   fetchVanillaVersions,
@@ -71,40 +62,7 @@ import {
   installLoader,
 } from '../../services/minecraftMetadataService';
 import { getJavaVersionForMinecraft, ensureJava } from '../../services/javaService';
-import { CustomSelect, SelectOption } from '../common/CustomSelect';
-
-const isNearOpacity = (current: number, target: number) => Math.abs(current - target) < 0.01;
-
-const getLoaderStatusColor = (status: { success?: boolean; loading?: boolean }) => {
-  if (status.success) return '#22c55e';
-  if (status.loading) return '#38bdf8';
-  return '#f43f5e';
-};
-
-const getCustomWallpaperLabel = (url: string, isVideo: boolean) => {
-  if (isVideo || isVideoSource(url)) return 'Vídeo de fondo en uso';
-  if (url.toLowerCase().includes('.gif') || url.startsWith('data:image/gif')) {
-    return 'GIF animado en uso';
-  }
-  return 'Fondo personalizado en uso';
-};
-
-const resolveActiveBtnColor = (
-  btnId: string,
-  customColors?: Record<string, string>,
-  startBtnColorMode?: string,
-  customStartBtnColor?: string,
-  fallbackAccent?: string,
-) => {
-  if (customColors?.[btnId]) return customColors[btnId];
-  if (btnId === 'launch') {
-    if (startBtnColorMode === 'custom' && customStartBtnColor) {
-      return customStartBtnColor;
-    }
-    return '#22c55e';
-  }
-  return fallbackAccent || '#00e5ff';
-};
+import { isNearOpacity, resolveActiveBtnColor } from '../../utils/settingsUtils';
 
 export const SettingsModal: React.FC = () => {
   const activeModal = useLauncherStore((s: LauncherState) => s.activeModal);
@@ -122,12 +80,13 @@ export const SettingsModal: React.FC = () => {
 
   // Module & Extension SDK
   const modules = useModuleStore((s) => s.modules);
+  const enabledModuleIds = useModuleStore((s) => s.enabledModuleIds);
+  const installPlugin = useModuleStore((s) => s.installPlugin);
+  const [showAddExtension, setShowAddExtension] = useState(false);
+  const [newExtensionName, setNewExtensionName] = useState('');
   const isModuleEnabled = useModuleStore((s) => s.isModuleEnabled);
   const toggleModule = useModuleStore((s) => s.toggleModule);
   const openModuleModal = useModuleStore((s) => s.openModal);
-
-  // Button Customizer Modal state
-  const [selectedCustomizerBtn, setSelectedCustomizerBtn] = useState<DockButtonId | null>(null);
 
   // Local state for interactive editing before saving
   const initialMc = settings.mcVersion || '1.21.1';
@@ -144,12 +103,15 @@ export const SettingsModal: React.FC = () => {
   const [width, setWidth] = useState('1280');
   const [height, setHeight] = useState('720');
   const [useDesktopRes, setUseDesktopRes] = useState(false);
+  const [javaDistribution, setJavaDistribution] = useState<'adoptium' | 'graalvm'>(
+    settings.javaDistribution || 'adoptium',
+  );
   const [keepLauncher, setKeepLauncher] = useState(!settings.autoCloseLauncher);
-  const [disableBgAnim, setDisableBgAnim] = useState(false);
+  const [disableBgAnim, setDisableBgAnim] = useState(settings.disableBgAnim ?? false);
   const [showAllVersions, setShowAllVersions] = useState(false);
   const [customVersionMode, setCustomVersionMode] = useState(false);
   const [customLoaderMode, setCustomLoaderMode] = useState(false);
-  const [disableAnimations, setDisableAnimations] = useState(false);
+  const [disableAnimations, setDisableAnimations] = useState(settings.disableAnimations ?? false);
   const [disableHardwareAccel, setDisableHardwareAccel] = useState(() => {
     if (typeof window === 'undefined') return false;
     return window.localStorage.getItem('ct_disable_hw_accel') === 'true';
@@ -180,6 +142,7 @@ export const SettingsModal: React.FC = () => {
 
   // Resolve user home directory
   useEffect(() => {
+    if (activeModal !== 'settings') return;
     invoke<string | null>('get_home_dir')
       .then((home) => {
         if (home) {
@@ -187,10 +150,11 @@ export const SettingsModal: React.FC = () => {
         }
       })
       .catch(() => {});
-  }, []);
+  }, [activeModal]);
 
   // Fetch online Minecraft versions and local installed versions
   useEffect(() => {
+    if (activeModal !== 'settings') return;
     let isMounted = true;
     setIsLoadingVersions(true);
 
@@ -210,10 +174,11 @@ export const SettingsModal: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [showAllVersions]);
+  }, [activeModal, showAllVersions]);
 
   // Fetch available loader versions whenever mcVersion or loaderType changes
   useEffect(() => {
+    if (activeModal !== 'settings') return;
     let isMounted = true;
 
     if (loaderType === 'vanilla') {
@@ -222,53 +187,81 @@ export const SettingsModal: React.FC = () => {
     }
 
     if (loaderType === 'fabric') {
-      fetchFabricLoaderVersions(mcVersion).then((loaders) => {
-        if (isMounted && loaders.length > 0) {
-          setAvailableLoaderVersions(loaders);
-          setLoaderVersion((current) => (!loaders.includes(current) ? loaders[0] : current));
-        }
-      });
+      fetchFabricLoaderVersions(mcVersion)
+        .then((loaders) => {
+          if (isMounted && loaders.length > 0) {
+            setAvailableLoaderVersions(loaders);
+            setLoaderVersion((current) => (!loaders.includes(current) ? loaders[0] : current));
+          }
+        })
+        .catch(() => {});
     } else if (loaderType === 'quilt') {
-      fetchQuiltLoaderVersions(mcVersion).then((loaders) => {
-        if (isMounted && loaders.length > 0) {
-          setAvailableLoaderVersions(loaders);
-          setLoaderVersion((current) => (!loaders.includes(current) ? loaders[0] : current));
-        }
-      });
+      fetchQuiltLoaderVersions(mcVersion)
+        .then((loaders) => {
+          if (isMounted && loaders.length > 0) {
+            setAvailableLoaderVersions(loaders);
+            setLoaderVersion((current) => (!loaders.includes(current) ? loaders[0] : current));
+          }
+        })
+        .catch(() => {});
     } else if (loaderType === 'neoforge') {
-      fetchNeoForgeVersions(mcVersion).then((versions) => {
-        if (isMounted) {
-          setAvailableLoaderVersions(versions);
-          if (versions.length > 0) {
-            setLoaderVersion((current) => (!versions.includes(current) ? versions[0] : current));
+      fetchNeoForgeVersions(mcVersion)
+        .then((versions) => {
+          if (isMounted) {
+            setAvailableLoaderVersions(versions);
+            if (versions.length > 0) {
+              setLoaderVersion((current) => (!versions.includes(current) ? versions[0] : current));
+            }
           }
-        }
-      });
+        })
+        .catch(() => {});
     } else if (loaderType === 'forge') {
-      fetchForgeVersions(mcVersion).then((versions) => {
-        if (isMounted) {
-          setAvailableLoaderVersions(versions);
-          if (versions.length > 0) {
-            setLoaderVersion((current) => (!versions.includes(current) ? versions[0] : current));
+      fetchForgeVersions(mcVersion)
+        .then((versions) => {
+          if (isMounted) {
+            setAvailableLoaderVersions(versions);
+            if (versions.length > 0) {
+              setLoaderVersion((current) => (!versions.includes(current) ? versions[0] : current));
+            }
           }
-        }
-      });
+        })
+        .catch(() => {});
     }
 
     return () => {
       isMounted = false;
     };
-  }, [loaderType, mcVersion]);
+  }, [activeModal, loaderType, mcVersion]);
+
+  useEffect(() => {
+    if (activeModal === 'settings') {
+      setKeepLauncher(!settings.autoCloseLauncher);
+      setDisableBgAnim(settings.disableBgAnim ?? false);
+      setDisableAnimations(settings.disableAnimations ?? false);
+      setDisableHardwareAccel(
+        typeof window !== 'undefined' &&
+          window.localStorage.getItem('ct_disable_hw_accel') === 'true',
+      );
+    }
+  }, [activeModal, settings.autoCloseLauncher, settings.disableBgAnim, settings.disableAnimations]);
 
   if (activeModal !== 'settings') return null;
 
   const handleSave = () => {
+    if (disableHardwareAccel) {
+      localStorage.setItem('ct_disable_hw_accel', 'true');
+    } else {
+      localStorage.removeItem('ct_disable_hw_accel');
+    }
     launcherActions.updateSettings({
       mcVersion,
       loaderType,
       loaderVersion,
       maxRamGb: Math.round(ramMb / 1024),
+      javaDistribution,
       autoCloseLauncher: !keepLauncher,
+      disableBgAnim,
+      disableAnimations,
       resolution: useDesktopRes ? 'Desktop' : `${width}x${height}`,
     });
     launcherActions.closeModal();
@@ -287,7 +280,6 @@ export const SettingsModal: React.FC = () => {
     setShowAllVersions(false);
     setDisableAnimations(false);
     setDisableHardwareAccel(false);
-    localStorage.removeItem('ct_disable_hw_accel');
   };
 
   const handleConfirmHwRestart = async (relaunchNow: boolean) => {
@@ -464,133 +456,6 @@ export const SettingsModal: React.FC = () => {
     setTimeout(() => setWallpaperFeedback(null), 3000);
   };
 
-  // Compile version options
-  const defaultPopular = [
-    '1.21.1',
-    '1.21.0',
-    '1.20.4',
-    '1.20.1',
-    '1.19.4',
-    '1.18.2',
-    '1.16.5',
-    '1.12.2',
-    '1.8.9',
-  ];
-  const displayVersions = showAllVersions && allVersions.length > 0 ? allVersions : defaultPopular;
-
-  const mcVersionOptions: SelectOption[] = [
-    { value: '1.21.1', label: `1.21.1 (${t.instances.officialTag} CrystalTides SMP)` },
-    ...localVersions.map((v) => ({
-      value: v,
-      label: v,
-      group: t.settings.installedLocallyGroup,
-    })),
-    ...displayVersions
-      .filter((v) => v !== '1.21.1')
-      .map((v) => ({
-        value: v,
-        label: `Minecraft ${v}`,
-        group: t.settings.officialMojangGroup,
-      })),
-    { value: '__custom_version__', label: t.settings.manualVersionPlaceholder },
-  ];
-
-  const loaderTypeOptions: SelectOption[] = [
-    { value: 'neoforge', label: 'NeoForge' },
-    { value: 'fabric', label: 'Fabric' },
-    { value: 'forge', label: 'Forge' },
-    { value: 'quilt', label: 'Quilt' },
-    { value: 'vanilla', label: 'Vanilla' },
-  ];
-
-  const loaderVersionOptions: SelectOption[] = [
-    ...availableLoaderVersions.map((lv) => ({ value: lv, label: lv })),
-    { value: '__custom_loader__', label: t.settings.manualLoaderPlaceholder },
-  ];
-
-  const renderLoaderInput = () => {
-    if (loaderType === 'vanilla') {
-      return (
-        <input
-          type="text"
-          value="N/A (Vanilla Puro)"
-          disabled
-          aria-label="Versión del loader no aplicable"
-          className="login-text-input"
-          style={{
-            width: '100%',
-            height: '36px',
-            background: 'rgba(255, 255, 255, 0.03)',
-            color: 'rgba(255, 255, 255, 0.3)',
-            border: '1px solid rgba(255, 255, 255, 0.08)',
-            borderRadius: '8px',
-            fontSize: '12px',
-            paddingLeft: '10px',
-          }}
-        />
-      );
-    }
-    if (customLoaderMode) {
-      return (
-        <input
-          type="text"
-          value={loaderVersion}
-          onChange={(e) => setLoaderVersion(e.target.value.trim())}
-          placeholder="Ej. 21.1.252, 0.16.10, 47.3.0..."
-          aria-label="Versión personalizada del loader"
-          className="login-text-input"
-          style={{
-            width: '100%',
-            height: '36px',
-            paddingLeft: '10px',
-            background: 'rgba(5, 9, 14, 0.75)',
-            color: '#38bdf8',
-            border: '1px solid rgba(56, 189, 248, 0.4)',
-            borderRadius: '8px',
-            fontSize: '12px',
-            fontWeight: 600,
-          }}
-        />
-      );
-    }
-    if (availableLoaderVersions.length > 0) {
-      return (
-        <CustomSelect
-          value={loaderVersion}
-          onChange={(v) => {
-            if (v === '__custom_loader__') {
-              setCustomLoaderMode(true);
-            } else {
-              setLoaderVersion(v);
-            }
-          }}
-          options={loaderVersionOptions}
-          height={36}
-        />
-      );
-    }
-    return (
-      <input
-        type="text"
-        value={loaderVersion}
-        onChange={(e) => setLoaderVersion(e.target.value.trim())}
-        placeholder="Ej. 21.1.252, 0.16.10 o versión custom"
-        aria-label="Versión del loader"
-        className="login-text-input"
-        style={{
-          width: '100%',
-          height: '36px',
-          paddingLeft: '10px',
-          background: 'rgba(5, 9, 14, 0.75)',
-          color: '#f1f5f9',
-          border: '1px solid rgba(255, 255, 255, 0.12)',
-          borderRadius: '8px',
-          fontSize: '12px',
-        }}
-      />
-    );
-  };
-
   return (
     <>
       <div
@@ -655,6 +520,7 @@ export const SettingsModal: React.FC = () => {
               <button
                 type="button"
                 onClick={() => launcherActions.setLanguage('es')}
+                className={`settings-action-btn ${language === 'es' ? 'active' : ''}`}
                 style={{
                   flex: 1,
                   padding: '7px 12px',
@@ -681,6 +547,7 @@ export const SettingsModal: React.FC = () => {
               <button
                 type="button"
                 onClick={() => launcherActions.setLanguage('en')}
+                className={`settings-action-btn ${language === 'en' ? 'active' : ''}`}
                 style={{
                   flex: 1,
                   padding: '7px 12px',
@@ -708,861 +575,59 @@ export const SettingsModal: React.FC = () => {
           </div>
 
           {/* Section 0: Minecraft Version Selector */}
-          <div className="settings-section">
-            <div className="settings-section-header">
-              <span className="settings-label-title">{t.settings.mcVersion}</span>
-              <span
-                style={{
-                  fontSize: '11px',
-                  fontWeight: 700,
-                  color: '#22c55e',
-                  fontFamily: 'var(--font-inter)',
-                }}
-              >
-                {mcVersion} {loaderType !== 'vanilla' ? `(${loaderType})` : '(Vanilla)'}
-              </span>
-            </div>
-
-            {customVersionMode ? (
-              <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
-                <input
-                  type="text"
-                  value={mcVersion}
-                  onChange={(e) => setMcVersion(e.target.value.trim())}
-                  placeholder="Escribe versión (ej. 26.2, 1.21.4, 25w10a, 1.16.5...)"
-                  aria-label="Versión personalizada de Minecraft"
-                  className="login-text-input"
-                  style={{
-                    flex: 1,
-                    height: '38px',
-                    paddingLeft: '12px',
-                    paddingRight: '12px',
-                    background: 'rgba(5, 9, 14, 0.75)',
-                    color: '#38bdf8',
-                    border: '1px solid rgba(56, 189, 248, 0.4)',
-                    borderRadius: '8px',
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    fontFamily: 'var(--font-inter)',
-                    outline: 'none',
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={() => setCustomVersionMode(false)}
-                  className="settings-action-btn"
-                  style={{ padding: '0 12px', fontSize: '11px', whiteSpace: 'nowrap' }}
-                >
-                  Ver Lista
-                </button>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
-                <div style={{ flex: 1 }}>
-                  <CustomSelect
-                    value={mcVersion}
-                    onChange={(v) => {
-                      if (v === '__custom_version__') {
-                        setCustomVersionMode(true);
-                      } else {
-                        setMcVersion(v);
-                      }
-                    }}
-                    options={mcVersionOptions}
-                    height={38}
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setCustomVersionMode(true)}
-                  title="Escribir cualquier versión manualmente"
-                  style={{
-                    padding: '0 10px',
-                    height: '38px',
-                    background: 'rgba(255, 255, 255, 0.05)',
-                    border: '1px solid rgba(255, 255, 255, 0.12)',
-                    borderRadius: '8px',
-                    color: 'rgba(255, 255, 255, 0.7)',
-                    fontSize: '11px',
-                    cursor: 'pointer',
-                  }}
-                >
-                  Manual
-                </button>
-              </div>
-            )}
-
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                marginTop: '8px',
-              }}
-            >
-              <label
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  cursor: 'pointer',
-                  fontSize: '12px',
-                  color: 'rgba(248, 250, 252, 0.7)',
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={showAllVersions}
-                  onChange={(e) => setShowAllVersions(e.target.checked)}
-                  className="papyrus-checkbox"
-                />
-                <span>
-                  Mostrar todas las versiones históricas (
-                  {allVersions.length > 0 ? allVersions.length : '17+'} versiones)
-                </span>
-              </label>
-              {isLoadingVersions && (
-                <span
-                  style={{
-                    fontSize: '11px',
-                    color: '#38bdf8',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                  }}
-                >
-                  <Loader2
-                    style={{ width: '12px', height: '12px', animation: 'spin 1s linear infinite' }}
-                  />
-                  Consultando Mojang...
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* Section 0.5: Mod Loader Selector & Installer (Forge, NeoForge, Fabric, Quilt) */}
-          <div
-            className="settings-section"
-            style={{ borderTop: '1px solid rgba(255, 255, 255, 0.05)', paddingTop: '12px' }}
-          >
-            <div className="settings-section-header">
-              <span className="settings-label-title">Mod Loader (Motor de Mods)</span>
-              <span
-                style={{
-                  fontSize: '11px',
-                  fontWeight: 700,
-                  color: '#38bdf8',
-                  fontFamily: 'var(--font-inter)',
-                  textTransform: 'uppercase',
-                }}
-              >
-                {loaderType}
-              </span>
-            </div>
-
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                gap: '10px',
-                marginTop: '6px',
-              }}
-            >
-              {/* Loader Type Select */}
-              <div>
-                <span
-                  style={{
-                    fontSize: '11px',
-                    color: 'rgba(248, 250, 252, 0.5)',
-                    display: 'block',
-                    marginBottom: '4px',
-                  }}
-                >
-                  Tipo de Loader:
-                </span>
-                <CustomSelect
-                  value={loaderType}
-                  onChange={(v) => setLoaderType(v as LoaderType)}
-                  options={loaderTypeOptions}
-                  height={36}
-                />
-              </div>
-
-              {/* Loader Version Select */}
-              <div>
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    marginBottom: '4px',
-                  }}
-                >
-                  <span
-                    style={{
-                      fontSize: '11px',
-                      color: 'rgba(248, 250, 252, 0.5)',
-                    }}
-                  >
-                    Versión del Loader:
-                  </span>
-                  {loaderType !== 'vanilla' && (
-                    <button
-                      type="button"
-                      onClick={() => setCustomLoaderMode(!customLoaderMode)}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        color: '#38bdf8',
-                        fontSize: '10px',
-                        cursor: 'pointer',
-                        padding: 0,
-                      }}
-                    >
-                      {customLoaderMode ? 'Ver lista' : 'Manual'}
-                    </button>
-                  )}
-                </div>
-                {renderLoaderInput()}
-              </div>
-            </div>
-
-            {/* Action button to install mod loader */}
-            {loaderType !== 'vanilla' && (
-              <div
-                style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '10px' }}
-              >
-                <button
-                  type="button"
-                  onClick={handleInstallLoader}
-                  disabled={loaderInstallStatus.loading}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    background: 'rgba(56, 189, 248, 0.12)',
-                    border: '1px solid rgba(56, 189, 248, 0.3)',
-                    borderRadius: '6px',
-                    color: '#38bdf8',
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    padding: '6px 12px',
-                    cursor: loaderInstallStatus.loading ? 'not-allowed' : 'pointer',
-                    transition:
-                      'background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease',
-                  }}
-                >
-                  {loaderInstallStatus.loading ? (
-                    <Loader2
-                      style={{
-                        width: '13px',
-                        height: '13px',
-                        animation: 'spin 1s linear infinite',
-                      }}
-                    />
-                  ) : (
-                    <Download style={{ width: '13px', height: '13px' }} />
-                  )}
-                  Descargar e Instalar {loaderType} {loaderVersion}
-                </button>
-
-                {loaderInstallStatus.message && (
-                  <span
-                    style={{
-                      fontSize: '11px',
-                      color: getLoaderStatusColor(loaderInstallStatus),
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                    }}
-                  >
-                    {loaderInstallStatus.success && (
-                      <CheckCircle2 style={{ width: '13px', height: '13px' }} />
-                    )}
-                    {!loaderInstallStatus.success && !loaderInstallStatus.loading && (
-                      <AlertCircle style={{ width: '13px', height: '13px' }} />
-                    )}
-                    {loaderInstallStatus.message}
-                  </span>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Section 1: Memory (RAM) Allocation Slider */}
-          <div className="settings-section">
-            <div className="settings-section-header">
-              <span className="settings-label-title">Memory Allocation (RAM)</span>
-              <span className="settings-label-value tabular-nums">
-                {Math.round(ramMb / 1024)} GB ({ramMb} MB)
-              </span>
-            </div>
-            <div className="settings-slider-wrapper">
-              <input
-                type="range"
-                min="2048"
-                max="16384"
-                step="512"
-                value={ramMb}
-                onChange={(e) => setRamMb(Number(e.target.value))}
-                aria-label="Asignación de memoria RAM"
-                className="papyrus-range-slider"
-              />
-            </div>
-          </div>
-
-          {/* Section 2: Game Screen Resolution */}
-          <div className="settings-section">
-            <span className="settings-label-title">Game Resolution</span>
-            <div className="settings-res-row">
-              <div className="settings-input-group">
-                <span className="settings-input-sub">Width</span>
-                <input
-                  type="text"
-                  value={width}
-                  disabled={useDesktopRes}
-                  onChange={(e) => setWidth(e.target.value)}
-                  aria-label="Ancho de resolución"
-                  className="settings-text-input"
-                />
-              </div>
-              <div className="settings-input-group">
-                <span className="settings-input-sub">Height</span>
-                <input
-                  type="text"
-                  value={height}
-                  disabled={useDesktopRes}
-                  onChange={(e) => setHeight(e.target.value)}
-                  aria-label="Alto de resolución"
-                  className="settings-text-input"
-                />
-              </div>
-            </div>
-            <div className="settings-res-checkbox">
-              <label htmlFor="settings-res-desktop" className="settings-checkbox-item">
-                <input
-                  id="settings-res-desktop"
-                  type="checkbox"
-                  checked={useDesktopRes}
-                  onChange={(e) => setUseDesktopRes(e.target.checked)}
-                  className="papyrus-checkbox"
-                />
-                <span className="checkbox-text">Use desktop resolution.</span>
-              </label>
-            </div>
-          </div>
+          <SettingsMinecraftSection
+            t={t}
+            language={language}
+            mcVersion={mcVersion}
+            setMcVersion={setMcVersion}
+            showAllVersions={showAllVersions}
+            setShowAllVersions={setShowAllVersions}
+            customVersionMode={customVersionMode}
+            setCustomVersionMode={setCustomVersionMode}
+            allVersions={allVersions}
+            localVersions={localVersions}
+            isLoadingVersions={isLoadingVersions}
+            loaderType={loaderType}
+            setLoaderType={(newLoader) => {
+              setLoaderType(newLoader);
+              setLoaderVersion(resolveEffectiveLoaderVersion(newLoader, '', mcVersion) || '');
+            }}
+            loaderVersion={loaderVersion}
+            setLoaderVersion={setLoaderVersion}
+            customLoaderMode={customLoaderMode}
+            setCustomLoaderMode={setCustomLoaderMode}
+            availableLoaderVersions={availableLoaderVersions}
+            loaderInstallStatus={loaderInstallStatus}
+            handleInstallLoader={handleInstallLoader}
+            ramMb={ramMb}
+            setRamMb={setRamMb}
+            width={width}
+            setWidth={setWidth}
+            height={height}
+            setHeight={setHeight}
+            useDesktopRes={useDesktopRes}
+            setUseDesktopRes={setUseDesktopRes}
+          />
 
           {/* Section: Wallpaper & Personalization */}
-          <div className="settings-section">
-            <div className="settings-section-header">
-              <span
-                className="settings-label-title"
-                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-              >
-                <Sparkles size={14} style={{ color: '#38bdf8' }} />
-                Fondo de Pantalla & Personalización
-              </span>
-              {customWallpaperUrl && (
-                <button
-                  type="button"
-                  onClick={handleResetWallpaper}
-                  className="wallpaper-reset-btn"
-                  title="Volver a los fondos oficiales"
-                >
-                  <RotateCcw size={12} />
-                  Restablecer oficial
-                </button>
-              )}
-            </div>
-            <p
-              style={{
-                fontSize: '11px',
-                color: 'rgba(248, 250, 252, 0.5)',
-                margin: '2px 0 8px 0',
-              }}
-            >
-              Selecciona un entorno oficial de CrystalTides o añade tu propia imagen, GIF animado o
-              vídeo (hasta 500 MB):
-            </p>
-
-            {/* Preset Wallpapers */}
-            <div className="wallpaper-presets-grid">
-              {WALLPAPERS.map((wp: WallpaperOption) => {
-                const isSelected = !customWallpaperUrl && activeWallpaperId === wp.id;
-                return (
-                  <div
-                    key={wp.id}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => handleSelectPreset(wp.id)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        handleSelectPreset(wp.id);
-                      }
-                    }}
-                    className={`wallpaper-preset-card ${isSelected ? 'active' : ''}`}
-                    style={{ backgroundImage: `url(${wp.url})` }}
-                  >
-                    <div className="wallpaper-preset-overlay" />
-                    <span className="wallpaper-preset-title">{wp.name}</span>
-                    {isSelected && (
-                      <div style={{ position: 'absolute', top: '6px', right: '6px', zIndex: 2 }}>
-                        <CheckCircle2 size={14} color="#38bdf8" />
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Custom Upload or URL */}
-            <div className="wallpaper-custom-card">
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '8px',
-                  flexWrap: 'wrap',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    onChange={handleFileChange}
-                    accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm,video/ogg,video/quicktime"
-                    style={{ display: 'none' }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="wallpaper-upload-btn"
-                  >
-                    <Upload size={14} />
-                    Subir Imagen, GIF o Vídeo
-                  </button>
-                </div>
-
-                {customWallpaperUrl && (
-                  <div className="wallpaper-active-badge">
-                    {isVideoWallpaper || isVideoSource(customWallpaperUrl) ? (
-                      <Film size={12} color="#00e5ff" />
-                    ) : (
-                      <CheckCircle2 size={12} />
-                    )}
-                    <span>{getCustomWallpaperLabel(customWallpaperUrl, isVideoWallpaper)}</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Video Audio & Volume Controls */}
-              {customWallpaperUrl && (isVideoWallpaper || isVideoSource(customWallpaperUrl)) && (
-                <div
-                  style={{
-                    marginTop: '12px',
-                    padding: '10px 14px',
-                    borderRadius: '8px',
-                    background: 'rgba(0, 229, 255, 0.05)',
-                    border: '1px solid rgba(0, 229, 255, 0.2)',
-                  }}
-                >
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      marginBottom: '8px',
-                    }}
-                  >
-                    <span
-                      style={{
-                        fontSize: '11px',
-                        fontWeight: 600,
-                        color: '#f8fafc',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                      }}
-                    >
-                      <Film size={12} color="#00e5ff" />
-                      Audio del Vídeo de Fondo:
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => launcherActions.setWallpaperMuted(!wallpaperMuted)}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '5px',
-                        padding: '3px 8px',
-                        borderRadius: '6px',
-                        background: wallpaperMuted
-                          ? 'rgba(239, 68, 68, 0.15)'
-                          : 'rgba(0, 229, 255, 0.15)',
-                        border: wallpaperMuted
-                          ? '1px solid rgba(239, 68, 68, 0.3)'
-                          : '1px solid rgba(0, 229, 255, 0.3)',
-                        color: wallpaperMuted ? '#f87171' : '#38bdf8',
-                        fontSize: '11px',
-                        cursor: 'pointer',
-                        transition:
-                          'background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease',
-                      }}
-                    >
-                      {wallpaperMuted ? <VolumeX size={12} /> : <Volume2 size={12} />}
-                      {wallpaperMuted ? 'Silenciado' : 'Con Sonido'}
-                    </button>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <Volume2 size={12} color="rgba(248, 250, 252, 0.6)" />
-                    <input
-                      type="range"
-                      min="0"
-                      max="1"
-                      step="0.05"
-                      value={wallpaperMuted ? 0 : wallpaperVolume}
-                      onChange={(e) => {
-                        if (wallpaperMuted) launcherActions.setWallpaperMuted(false);
-                        launcherActions.setWallpaperVolume(parseFloat(e.target.value));
-                      }}
-                      aria-label="Volumen del fondo de pantalla"
-                      style={{ flex: 1, accentColor: '#00e5ff', cursor: 'pointer' }}
-                    />
-                    <span
-                      style={{
-                        fontSize: '10px',
-                        color: 'rgba(248, 250, 252, 0.7)',
-                        width: '32px',
-                        textAlign: 'right',
-                        fontVariantNumeric: 'tabular-nums',
-                      }}
-                    >
-                      {wallpaperMuted ? '0%' : `${Math.round(wallpaperVolume * 100)}%`}
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              {/* URL input option */}
-              <div className="wallpaper-url-box">
-                <input
-                  type="text"
-                  placeholder="O pega un enlace directo (ej: https://.../fondo.gif)"
-                  aria-label="URL directa del fondo de pantalla"
-                  value={customUrlInput}
-                  onChange={(e) => setCustomUrlInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      if (e.nativeEvent.isComposing) return;
-                      e.preventDefault();
-                      handleApplyUrl();
-                    }
-                  }}
-                  className="wallpaper-url-input"
-                />
-                <button type="button" onClick={handleApplyUrl} className="wallpaper-url-apply-btn">
-                  <LinkIcon
-                    size={12}
-                    style={{ display: 'inline', marginRight: '4px', verticalAlign: 'middle' }}
-                  />
-                  Aplicar
-                </button>
-              </div>
-
-              {/* Feedback message */}
-              {wallpaperFeedback && (
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    fontSize: '11px',
-                    color: wallpaperFeedback.type === 'success' ? '#4ade80' : '#f87171',
-                    marginTop: '2px',
-                  }}
-                >
-                  {wallpaperFeedback.type === 'success' ? (
-                    <CheckCircle2 size={12} />
-                  ) : (
-                    <AlertCircle size={12} />
-                  )}
-                  <span>{wallpaperFeedback.message}</span>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Section: Accent Color Customization */}
-          <div
-            className="settings-section"
-            style={{ borderTop: '1px solid rgba(255, 255, 255, 0.06)', paddingTop: '14px' }}
-          >
-            <div className="settings-section-header">
-              <span
-                className="settings-label-title"
-                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-              >
-                <Palette size={14} style={{ color: accentColor }} />
-                Color de Acento & Iluminación
-              </span>
-              {accentColor.toLowerCase() !== '#00e5ff' && (
-                <button
-                  type="button"
-                  onClick={() => launcherActions.setAccentColor('#00e5ff')}
-                  className="wallpaper-reset-btn"
-                  title="Restablecer color cian oficial"
-                >
-                  <RotateCcw size={12} />
-                  Restablecer a Cian
-                </button>
-              )}
-            </div>
-            <p
-              style={{
-                fontSize: '11px',
-                color: 'rgba(248, 250, 252, 0.5)',
-                margin: '2px 0 8px 0',
-              }}
-            >
-              Selecciona la paleta de iluminación que tiñe los botones, resplandores ambientales y
-              bordes:
-            </p>
-
-            <div className="accent-colors-grid">
-              {ACCENT_PRESETS.map((preset: AccentColorPreset) => {
-                const isActive = accentColor.toLowerCase() === preset.hex.toLowerCase();
-                return (
-                  <button
-                    key={preset.id}
-                    type="button"
-                    onClick={() => launcherActions.setAccentColor(preset.hex)}
-                    className={`accent-color-swatch ${isActive ? 'active' : ''}`}
-                    style={{ backgroundColor: preset.hex }}
-                    title={preset.name}
-                    aria-label={preset.name}
-                  >
-                    {isActive && <Check size={14} color="#ffffff" strokeWidth={3} />}
-                  </button>
-                );
-              })}
-
-              {/* Custom In-App Glass Color Picker */}
-              <CustomColorPicker
-                color={accentColor}
-                onChange={(hex) => launcherActions.setAccentColor(hex)}
-                label="Personalizado"
-              />
-            </div>
-          </div>
-
-          {/* Section: GUI Theme & Typography Customization */}
-          <div
-            className="settings-section"
-            style={{ borderTop: '1px solid rgba(255, 255, 255, 0.06)', paddingTop: '16px' }}
-          >
-            <div className="settings-section-header">
-              <span
-                className="settings-label-title"
-                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-              >
-                <Type size={14} style={{ color: accentColor }} />
-                Personalización de la GUI (Tema & Tipografía)
-              </span>
-              {(guiTheme.fontFamily !== 'jost' ||
-                guiTheme.bgMode !== 'obsidian' ||
-                guiTheme.borderMode !== 'subtle' ||
-                guiTheme.borderRadius !== 16) && (
-                <button
-                  type="button"
-                  onClick={() => launcherActions.resetGuiTheme()}
-                  className="wallpaper-reset-btn"
-                  title="Restablecer tema de la GUI a valores predeterminados"
-                >
-                  <RotateCcw size={12} />
-                  Restablecer GUI
-                </button>
-              )}
-            </div>
-            <p
-              style={{
-                fontSize: '11px',
-                color: 'rgba(248, 250, 252, 0.5)',
-                margin: '2px 0 12px 0',
-              }}
-            >
-              Personaliza la tipografía de la interfaz, los colores de fondo de las ventanas y los
-              bordes:
-            </p>
-
-            {/* 1. Fuente / Tipografía */}
-            <div style={{ marginBottom: '14px' }}>
-              <span
-                style={{
-                  fontSize: '11px',
-                  fontWeight: 600,
-                  color: '#e2e8f0',
-                  display: 'block',
-                  marginBottom: '6px',
-                }}
-              >
-                Fuente de la Interfaz:
-              </span>
-              <div className="dock-preset-group" style={{ margin: 0, flexWrap: 'wrap' }}>
-                {[
-                  { id: 'jost', label: 'Jost (Elegante)' },
-                  { id: 'inter', label: 'Inter (Limpia)' },
-                  { id: 'outfit', label: 'Outfit (Gaming)' },
-                  { id: 'fira-code', label: 'Fira Code (Mono)' },
-                  { id: 'pixel', label: 'Pixel (VT323)' },
-                ].map((font) => (
-                  <button
-                    key={font.id}
-                    type="button"
-                    onClick={() =>
-                      launcherActions.setGuiTheme({ fontFamily: font.id as GuiFontFamily })
-                    }
-                    className={`dock-preset-pill ${guiTheme.fontFamily === font.id ? 'active' : ''}`}
-                  >
-                    {guiTheme.fontFamily === font.id && <Check size={12} color="#38bdf8" />}
-                    <span>{font.label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* 2. Color de Fondo de la GUI / Modales */}
-            <div style={{ marginBottom: '14px' }}>
-              <span
-                style={{
-                  fontSize: '11px',
-                  fontWeight: 600,
-                  color: '#e2e8f0',
-                  display: 'block',
-                  marginBottom: '6px',
-                }}
-              >
-                Color de Fondo de la GUI (Ventanas y Modales):
-              </span>
-              <div className="dock-preset-group" style={{ margin: 0, flexWrap: 'wrap' }}>
-                {[
-                  { id: 'obsidian', label: 'Obsidiana Profunda', hex: '#0a0f18' },
-                  { id: 'midnight', label: 'Medianoche Azul', hex: '#081224' },
-                  { id: 'amethyst', label: 'Amatista Cyber', hex: '#160a24' },
-                  { id: 'emerald', label: 'Esmeralda Abisal', hex: '#061a12' },
-                  { id: 'crimson', label: 'Carmesí Nether', hex: '#20080e' },
-                ].map((bg) => (
-                  <button
-                    key={bg.id}
-                    type="button"
-                    onClick={() => launcherActions.setGuiTheme({ bgMode: bg.id as GuiBgPreset })}
-                    className={`dock-preset-pill ${guiTheme.bgMode === bg.id ? 'active' : ''}`}
-                  >
-                    <div
-                      style={{
-                        width: '10px',
-                        height: '10px',
-                        borderRadius: '2px',
-                        backgroundColor: bg.hex,
-                        border: '1px solid rgba(255,255,255,0.2)',
-                      }}
-                    />
-                    <span>{bg.label}</span>
-                  </button>
-                ))}
-
-                <CustomColorPicker
-                  color={guiTheme.customBgColor || '#0a0f18'}
-                  onChange={(hex) =>
-                    launcherActions.setGuiTheme({
-                      bgMode: 'custom',
-                      customBgColor: hex,
-                    })
-                  }
-                  label="Color Propio"
-                />
-              </div>
-            </div>
-
-            {/* 3. Color de Bordes de la GUI */}
-            <div style={{ marginBottom: '14px' }}>
-              <span
-                style={{
-                  fontSize: '11px',
-                  fontWeight: 600,
-                  color: '#e2e8f0',
-                  display: 'block',
-                  marginBottom: '6px',
-                }}
-              >
-                Color de Bordes de la GUI:
-              </span>
-              <div className="dock-preset-group" style={{ margin: 0, flexWrap: 'wrap' }}>
-                {[
-                  { id: 'subtle', label: 'Sutil (Translúcido)' },
-                  { id: 'accent', label: `Acento Dinámico (${accentColor.toUpperCase()})` },
-                  { id: 'cyan', label: 'Cian Cristalino' },
-                  { id: 'amber', label: 'Oro Solar' },
-                ].map((b) => (
-                  <button
-                    key={b.id}
-                    type="button"
-                    onClick={() =>
-                      launcherActions.setGuiTheme({ borderMode: b.id as GuiBorderPreset })
-                    }
-                    className={`dock-preset-pill ${guiTheme.borderMode === b.id ? 'active' : ''}`}
-                  >
-                    {guiTheme.borderMode === b.id && <Check size={12} color="#38bdf8" />}
-                    <span>{b.label}</span>
-                  </button>
-                ))}
-
-                <CustomColorPicker
-                  color={guiTheme.customBorderColor || '#00e5ff'}
-                  onChange={(hex) =>
-                    launcherActions.setGuiTheme({
-                      borderMode: 'custom',
-                      customBorderColor: hex,
-                    })
-                  }
-                  label="Borde Propio"
-                />
-              </div>
-            </div>
-
-            {/* 4. Curvatura de Bordes (Border Radius) */}
-            <div>
-              <span
-                style={{
-                  fontSize: '11px',
-                  fontWeight: 600,
-                  color: '#e2e8f0',
-                  display: 'block',
-                  marginBottom: '6px',
-                }}
-              >
-                Curvatura de Bordes (Radio):
-              </span>
-              <div className="dock-preset-group" style={{ margin: 0 }}>
-                {[
-                  { radius: 8, label: '8px (Angular)' },
-                  { radius: 12, label: '12px (Suave)' },
-                  { radius: 16, label: '16px (Estándar)' },
-                  { radius: 22, label: '22px (Cápsula)' },
-                ].map((r) => (
-                  <button
-                    key={r.radius}
-                    type="button"
-                    onClick={() => launcherActions.setGuiTheme({ borderRadius: r.radius })}
-                    className={`dock-preset-pill ${guiTheme.borderRadius === r.radius ? 'active' : ''}`}
-                  >
-                    <span>{r.label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
+          <SettingsPersonalizationSection
+            accentColor={accentColor}
+            guiTheme={guiTheme}
+            customUrlInput={customUrlInput}
+            setCustomUrlInput={setCustomUrlInput}
+            wallpaperFeedback={wallpaperFeedback}
+            fileInputRef={fileInputRef}
+            activeWallpaperId={activeWallpaperId}
+            customWallpaperUrl={customWallpaperUrl}
+            isVideoWallpaper={isVideoWallpaper}
+            wallpaperMuted={wallpaperMuted}
+            wallpaperVolume={wallpaperVolume}
+            handleResetWallpaper={handleResetWallpaper}
+            handleSelectPreset={handleSelectPreset}
+            handleFileChange={handleFileChange}
+            handleApplyUrl={handleApplyUrl}
+            t={t}
+          />
 
           {/* Section: Dock & Main Menu Customization */}
           <div
@@ -2006,6 +1071,7 @@ export const SettingsModal: React.FC = () => {
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           <div
+                            className="dock-drag-handle"
                             style={{
                               width: '8px',
                               height: '8px',
@@ -2134,6 +1200,14 @@ export const SettingsModal: React.FC = () => {
                 <Puzzle size={15} style={{ color: '#38bdf8' }} />
                 Módulos &amp; Extensiones (Plugin SDK)
               </span>
+              <button
+                type="button"
+                onClick={() => setShowAddExtension(!showAddExtension)}
+                className="settings-action-btn"
+                style={{ padding: '3px 8px', fontSize: '10.5px' }}
+              >
+                Agregar Extensión
+              </button>
               <span
                 style={{
                   fontSize: '11px',
@@ -2157,9 +1231,63 @@ export const SettingsModal: React.FC = () => {
               (calculadoras, hubs, widgets) con integración viva en el Dock y el Launcher:
             </p>
 
+            {showAddExtension && (
+              <div
+                style={{
+                  padding: '12px 14px',
+                  borderRadius: '10px',
+                  background: 'rgba(56, 189, 248, 0.08)',
+                  border: '1px solid rgba(56, 189, 248, 0.25)',
+                  marginBottom: '10px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px',
+                }}
+              >
+                <span style={{ fontSize: '12px', fontWeight: 600, color: '#38bdf8' }}>
+                  Instalar Extensión (Plugin SDK)
+                </span>
+                <input
+                  type="text"
+                  placeholder="ej: Discord Oficial, Tienda, Mapa"
+                  value={newExtensionName}
+                  onChange={(e) => setNewExtensionName(e.target.value)}
+                  className="login-text-input"
+                  style={{
+                    width: '100%',
+                    height: '34px',
+                    paddingLeft: '10px',
+                    background: 'rgba(5, 9, 14, 0.75)',
+                    border: '1px solid rgba(255, 255, 255, 0.15)',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                    color: '#f8fafc',
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!newExtensionName.trim()) return;
+                    installPlugin({
+                      id: `custom.${Date.now()}`,
+                      name: newExtensionName.trim(),
+                      description: 'Personalizada',
+                      author: 'Usuario',
+                      version: '1.0.0',
+                    });
+                    setNewExtensionName('');
+                    setShowAddExtension(false);
+                  }}
+                  className="settings-action-btn"
+                  style={{ alignSelf: 'flex-start', fontSize: '11px', padding: '5px 12px' }}
+                >
+                  Crear e Instalar Extensión
+                </button>
+              </div>
+            )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               {modules.map((mod) => {
-                const enabled = isModuleEnabled(mod.id);
+                const enabled = enabledModuleIds.includes(mod.id);
                 const modAccent =
                   mod.accentColor || mod.slots.dockButton?.defaultColor || '#38bdf8';
                 const hasModal = Boolean(mod.slots.modal);
@@ -2464,6 +1592,40 @@ export const SettingsModal: React.FC = () => {
               Revisa los eventos detallados del launcher, descargas de Java, instaladores y salidas
               del juego en caso de fallo:
             </p>
+            <div
+              style={{ marginBottom: '14px', display: 'flex', flexDirection: 'column', gap: '8px' }}
+            >
+              <span className="settings-field-label">Motor de Ejecución Java:</span>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  type="button"
+                  onClick={() => setJavaDistribution('graalvm')}
+                  className={`dock-preset-pill ${javaDistribution === 'graalvm' ? 'active' : ''}`}
+                  style={{ fontSize: '11px', padding: '6px 12px' }}
+                >
+                  GraalVM CE (Alto Rendimiento)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setJavaDistribution('adoptium')}
+                  className={`dock-preset-pill ${javaDistribution === 'adoptium' ? 'active' : ''}`}
+                  style={{ fontSize: '11px', padding: '6px 12px' }}
+                >
+                  Eclipse Temurin (Adoptium)
+                </button>
+              </div>
+
+              <div style={{ marginTop: '6px' }}>
+                <button
+                  type="button"
+                  onClick={() => invoke('exclude_windows_defender').catch(() => {})}
+                  className="settings-action-btn"
+                  style={{ fontSize: '11px', padding: '6px 12px' }}
+                >
+                  Excluir Carpeta en Windows Defender
+                </button>
+              </div>
+            </div>
             <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
               <button
                 type="button"
@@ -2490,7 +1652,7 @@ export const SettingsModal: React.FC = () => {
 
               <button
                 type="button"
-                onClick={() => invoke('open_logs_folder')}
+                onClick={() => invoke('open_logs_folder').catch(() => {})}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -2698,13 +1860,10 @@ export const SettingsModal: React.FC = () => {
         </div>
       )}
 
-      {selectedCustomizerBtn && (
-        <ButtonCustomizerModal
-          buttonId={selectedCustomizerBtn}
-          isOpen={Boolean(selectedCustomizerBtn)}
-          onClose={() => setSelectedCustomizerBtn(null)}
-        />
-      )}
+      <ButtonCustomizerModal />
     </>
   );
 };
+
+export { SettingsMinecraftSection, SettingsPersonalizationSection };
+export type { SettingsMinecraftSectionProps, SettingsPersonalizationSectionProps };

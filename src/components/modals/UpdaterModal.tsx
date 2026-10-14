@@ -26,10 +26,9 @@ export const UpdaterModal: React.FC<UpdaterModalProps> = ({ updateInfo, onClose 
 
   return (
     <div className="papyrus-modal-overlay">
-      <div
+      <dialog
+        open
         className="papyrus-updater-card"
-        role="dialog"
-        aria-modal="true"
         aria-labelledby="updater-title"
         style={{
           width: '100%',
@@ -93,7 +92,7 @@ export const UpdaterModal: React.FC<UpdaterModalProps> = ({ updateInfo, onClose 
               <span style={{ fontSize: '12px', color: '#94A3B8' }}>v{updateInfo.currentVersion}</span>
               <span style={{ fontSize: '11px', color: '#2DD4BF' }}>➔</span>
               <span style={{ fontSize: '12px', color: '#2DD4BF', fontWeight: 700 }}>
-                v{updateInfo.version || 'Nueva'}
+                v{updateInfo.version ?? 'Nueva'}
               </span>
             </div>
           </div>
@@ -114,7 +113,7 @@ export const UpdaterModal: React.FC<UpdaterModalProps> = ({ updateInfo, onClose 
             lineHeight: 1.5,
           }}
         >
-          {updateInfo.body || 'Esta actualización incluye mejoras de rendimiento, optimizaciones de red y corrección de errores para betatesters.'}
+          {updateInfo.body ?? 'Esta actualización incluye mejoras de rendimiento, optimizaciones de red y corrección de errores para betatesters.'}
         </div>
 
         {/* Error Alert */}
@@ -204,7 +203,7 @@ export const UpdaterModal: React.FC<UpdaterModalProps> = ({ updateInfo, onClose 
             )}
           </button>
         </div>
-      </div>
+      </dialog>
     </div>
   );
 };

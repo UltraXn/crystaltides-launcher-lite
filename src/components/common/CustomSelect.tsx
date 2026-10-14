@@ -5,6 +5,7 @@ export interface SelectOption {
   value: string;
   label: string;
   group?: string;
+  icon?: React.ReactNode;
 }
 
 export interface CustomSelectProps {
@@ -65,7 +66,7 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
 
   // Group options if groups are present
   const groupedOptions = options.reduce<Record<string, SelectOption[]>>((acc, opt) => {
-    const grp = opt.group || '__nogroup__';
+    const grp = opt.group ?? '__nogroup__';
     if (!acc[grp]) acc[grp] = [];
     acc[grp].push(opt);
     return acc;
@@ -75,6 +76,11 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
     <div
       ref={containerRef}
       className={`custom-select-container ${className}`}
+      onKeyDown={(e) => {
+        if (e.key === 'Tab' && isOpen) {
+          setIsOpen(false);
+        }
+      }}
       style={{
         position: 'relative',
         userSelect: 'none',
@@ -92,7 +98,9 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
         }}
         onKeyDown={(e) => {
           if (disabled) return;
-          if (e.key === 'Enter' || e.key === ' ') {
+          if (e.key === 'Tab' && isOpen) {
+            setIsOpen(false);
+          } else if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
             setIsOpen(!isOpen);
           }
@@ -104,63 +112,94 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
           width: '100%',
           height: typeof height === 'number' ? `${height}px` : height,
           padding: '0 12px',
-          background: disabled ? 'rgba(255, 255, 255, 0.03)' : 'rgba(5, 9, 14, 0.75)',
+          background: disabled
+            ? 'rgba(255, 255, 255, 0.02)'
+            : isOpen
+              ? 'rgba(14, 21, 33, 0.92)'
+              : 'rgba(8, 13, 20, 0.78)',
           color: disabled ? 'rgba(255, 255, 255, 0.3)' : '#f1f5f9',
-          border: isOpen
-            ? '1px solid #38bdf8'
-            : '1px solid rgba(255, 255, 255, 0.12)',
+          border: isOpen ? '1px solid rgba(56, 189, 248, 0.6)' : '1px solid rgba(255, 255, 255, 0.1)',
           borderRadius: '8px',
           fontSize: '12px',
           fontFamily: 'var(--font-inter)',
           cursor: disabled ? 'not-allowed' : 'pointer',
           outline: 'none',
-          boxShadow: isOpen ? '0 0 0 2px rgba(56, 189, 248, 0.2)' : 'none',
-          transition: 'border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease',
+          boxShadow: isOpen
+            ? '0 0 0 2px rgba(56, 189, 248, 0.2), 0 4px 12px rgba(0, 0, 0, 0.4)'
+            : 'inset 0 1px 0 rgba(255, 255, 255, 0.04)',
+          transition:
+            'border-color 0.15s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.15s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.15s ease',
           textAlign: 'left',
         }}
+        onMouseEnter={(e) => {
+          if (!disabled && !isOpen) {
+            e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.18)';
+            e.currentTarget.style.background = 'rgba(13, 20, 31, 0.88)';
+          }
+        }}
+        onMouseLeave={(e) => {
+          if (!disabled && !isOpen) {
+            e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)';
+            e.currentTarget.style.background = 'rgba(8, 13, 20, 0.78)';
+          }
+        }}
       >
-        <span
+        <div
           style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
             paddingRight: '6px',
             fontWeight: 500,
+            minWidth: 0,
           }}
         >
-          {selectedOption ? selectedOption.label : placeholder}
-        </span>
+          {selectedOption?.icon && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', flexShrink: 0 }}>
+              {selectedOption.icon}
+            </span>
+          )}
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {selectedOption ? selectedOption.label : placeholder}
+          </span>
+        </div>
         <ChevronDown
           size={14}
           style={{
-            color: disabled ? 'rgba(255, 255, 255, 0.2)' : '#94a3b8',
-            transition: 'transform 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+            color: disabled ? 'rgba(255, 255, 255, 0.2)' : isOpen ? '#38bdf8' : '#94a3b8',
+            transition: 'transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), color 0.15s ease',
             transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)',
             flexShrink: 0,
           }}
         />
       </button>
 
-      {/* Dropdown Menu */}
+      {/* Dropdown Menu (Linear / Raycast Context Menu Style) */}
       {isOpen && (
         <div
-          role="listbox"
+          className="custom-select-dropdown"
           style={{
             position: 'absolute',
-            top: 'calc(100% + 4px)',
+            top: 'calc(100% + 5px)',
             left: 0,
             right: 0,
             zIndex: 999,
-            background: 'rgba(10, 15, 24, 0.97)',
-            backdropFilter: 'blur(20px)',
-            WebkitBackdropFilter: 'blur(20px)',
-            border: '1px solid rgba(255, 255, 255, 0.14)',
+            background: 'rgba(9, 14, 23, 0.96)',
+            backdropFilter: 'blur(24px) saturate(180%)',
+            WebkitBackdropFilter: 'blur(24px) saturate(180%)',
+            border: '1px solid rgba(255, 255, 255, 0.12)',
             borderRadius: '10px',
-            boxShadow: '0 12px 32px rgba(0, 0, 0, 0.85), inset 0 1px 1px rgba(255, 255, 255, 0.08)',
-            maxHeight: '220px',
+            boxShadow:
+              '0 16px 40px -4px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(255, 255, 255, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.1)',
+            maxHeight: '230px',
             overflowY: 'auto',
-            padding: '4px',
-            animation: 'modalPop 0.15s cubic-bezier(0.16, 1, 0.3, 1)',
+            overflowX: 'hidden',
+            scrollbarGutter: 'stable',
+            padding: '5px',
+            animation: 'customSelectPop 0.14s cubic-bezier(0.16, 1, 0.3, 1)',
           }}
         >
           {Object.entries(groupedOptions).map(([groupName, groupOpts]) => (
@@ -168,11 +207,11 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
               {groupName !== '__nogroup__' && (
                 <div
                   style={{
-                    padding: '6px 10px 2px 10px',
+                    padding: '6px 10px 4px 10px',
                     fontSize: '10px',
                     fontWeight: 700,
                     textTransform: 'uppercase',
-                    letterSpacing: '0.5px',
+                    letterSpacing: '0.6px',
                     color: '#38bdf8',
                     fontFamily: 'var(--font-inter)',
                   }}
@@ -183,64 +222,88 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
               {groupOpts.map((opt) => {
                 const isSelected = opt.value === value;
                 return (
-                  <div
+                  <button
+                    type="button"
                     key={opt.value}
-                    role="option"
-                    aria-selected={isSelected}
-                    tabIndex={0}
+                    aria-pressed={isSelected}
                     onClick={() => {
                       onChange(opt.value);
                       setIsOpen(false);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        onChange(opt.value);
-                        setIsOpen(false);
-                      }
                     }}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
-                      padding: '8px 10px',
-                      margin: '1px 0',
+                      width: '100%',
+                      border: 'none',
+                      outline: 'none',
+                      boxSizing: 'border-box',
+                      padding: '7px 10px',
+                      margin: '2px 0',
                       borderRadius: '6px',
                       fontSize: '12px',
                       fontFamily: 'var(--font-inter)',
                       cursor: 'pointer',
-                      background: isSelected
-                        ? 'rgba(56, 189, 248, 0.14)'
-                        : 'transparent',
+                      textAlign: 'left',
+                      background: isSelected ? 'rgba(56, 189, 248, 0.14)' : 'transparent',
                       color: isSelected ? '#38bdf8' : '#e2e8f0',
                       fontWeight: isSelected ? 600 : 400,
-                      transition: 'background 0.12s ease, color 0.12s ease',
+                      transition:
+                        'background-color 0.12s cubic-bezier(0.16, 1, 0.3, 1), color 0.12s ease',
                     }}
                     onMouseEnter={(e) => {
                       if (!isSelected) {
-                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.07)';
                         e.currentTarget.style.color = '#ffffff';
+                      } else {
+                        e.currentTarget.style.background = 'rgba(56, 189, 248, 0.22)';
+                        e.currentTarget.style.color = '#7dd3fc';
                       }
                     }}
                     onMouseLeave={(e) => {
                       if (!isSelected) {
                         e.currentTarget.style.background = 'transparent';
                         e.currentTarget.style.color = '#e2e8f0';
+                      } else {
+                        e.currentTarget.style.background = 'rgba(56, 189, 248, 0.14)';
+                        e.currentTarget.style.color = '#38bdf8';
                       }
                     }}
                   >
-                    <span
+                    <div
                       style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap',
                         paddingRight: '8px',
+                        minWidth: 0,
                       }}
                     >
-                      {opt.label}
-                    </span>
-                    {isSelected && <Check size={13} color="#38bdf8" style={{ flexShrink: 0 }} />}
-                  </div>
+                      {opt.icon && (
+                        <span
+                          style={{ display: 'inline-flex', alignItems: 'center', flexShrink: 0 }}
+                        >
+                          {opt.icon}
+                        </span>
+                      )}
+                      <span
+                        style={{
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          fontSize: '12px',
+                        }}
+                      >
+                        {opt.label}
+                      </span>
+                    </div>
+                    {isSelected && (
+                      <Check size={13} strokeWidth={2.5} color="#38bdf8" style={{ flexShrink: 0 }} />
+                    )}
+                  </button>
                 );
               })}
             </div>

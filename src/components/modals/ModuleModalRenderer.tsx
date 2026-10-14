@@ -1,38 +1,71 @@
 import React from 'react';
 import { X, Puzzle } from 'lucide-react';
 import { useModuleStore, getModuleContext } from '../../modules';
+import { useLauncherStore, LauncherState } from '../../store/launcherStore';
 
 export const ModuleModalRenderer: React.FC = () => {
   const activeModalModuleId = useModuleStore((s) => s.activeModalModuleId);
   const modules = useModuleStore((s) => s.modules);
   const closeModal = useModuleStore((s) => s.closeModal);
+  const isEditingHud = useLauncherStore((s: LauncherState) => s.isEditingHud);
+  const instances = useLauncherStore((s: LauncherState) => s.instances);
+  const activeInstanceId = useLauncherStore((s: LauncherState) => s.activeInstanceId);
+  const accounts = useLauncherStore((s: LauncherState) => s.accounts);
+  const activeAccountId = useLauncherStore((s: LauncherState) => s.activeAccountId);
+  const serverStatus = useLauncherStore((s: LauncherState) => s.serverStatus);
+  const accentColor = useLauncherStore((s: LauncherState) => s.accentColor);
 
-  if (!activeModalModuleId) return null;
+  const ctx = React.useMemo(() => {
+    if (!activeModalModuleId) return null;
+    const baseCtx = getModuleContext(activeModalModuleId);
+    const activeInstance = instances.find((i) => i.id === activeInstanceId);
+    const activeAccount = accounts.find((a) => a.id === activeAccountId);
+    return {
+      ...baseCtx,
+      activeInstance,
+      activeAccount,
+      serverStatus,
+      accentColor,
+    };
+  }, [
+    activeModalModuleId,
+    instances,
+    activeInstanceId,
+    accounts,
+    activeAccountId,
+    serverStatus,
+    accentColor,
+  ]);
+
+  if (isEditingHud || !activeModalModuleId || !ctx) return null;
 
   const currentModule = modules.find((m) => m.id === activeModalModuleId);
-  if (!currentModule || !currentModule.slots.modal) return null;
+  if (!currentModule?.slots.modal) return null;
 
   const modalSlot = currentModule.slots.modal;
   const ModalComponent = modalSlot.component;
-  const ctx = getModuleContext(currentModule.id);
 
   return (
-    <div
-      className="papyrus-modal-overlay"
-      role="presentation"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) closeModal();
-      }}
-      onKeyDown={(e) => {
-        if (e.key === 'Escape') closeModal();
-      }}
-    >
-      <div
+    <div className="papyrus-modal-overlay">
+      <button
+        type="button"
+        aria-label="Cerrar modal"
+        style={{
+          position: 'fixed',
+          inset: 0,
+          width: '100%',
+          height: '100%',
+          border: 'none',
+          background: 'transparent',
+          cursor: 'default',
+        }}
+        onClick={closeModal}
+      />
+      <dialog
+        open
         className="papyrus-settings-card"
-        role="dialog"
-        aria-modal="true"
         aria-label={modalSlot.title}
-        style={{ width: modalSlot.width || '480px' }}
+        style={{ width: modalSlot.width ?? '480px' }}
       >
         {/* Close Button on Top Right */}
         <button
@@ -64,7 +97,7 @@ export const ModuleModalRenderer: React.FC = () => {
 
         {/* Module Content */}
         <ModalComponent ctx={ctx} onClose={closeModal} />
-      </div>
+      </dialog>
     </div>
   );
 };

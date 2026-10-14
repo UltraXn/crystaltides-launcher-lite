@@ -1,157 +1,262 @@
-import React, { useState, useEffect } from 'react';
-import { Sparkles, X } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Sparkles, X, Check, Move } from 'lucide-react';
 import { useLauncherStore, launcherActions, LauncherState } from '../store/launcherStore';
+import { getEffectiveHudSide } from '../utils/collisionSystem';
 
-export const GuiHintToast: React.FC = () => {
+type ToastMode = 'hint' | 'editing_active' | 'editing_saved';
+
+function getToastDuration(mode: ToastMode): number {
+  if (mode === 'editing_saved') return 3200;
+  if (mode === 'editing_active') return 5000;
+  return 6000;
+}
+
+function getToastAccentColor(mode: ToastMode): string {
+  if (mode === 'editing_saved') return '#4ade80';
+  if (mode === 'editing_active') return '#38bdf8';
+  return '#00e5ff';
+}
+
+function getToastInfo(mode: ToastMode) {
+  if (mode === 'editing_saved') {
+    return { title: 'Disposición Guardada', subtitle: 'Cambios aplicados' };
+  }
+  if (mode === 'editing_active') {
+    return { title: 'Modo Edición', subtitle: 'Arrastra botones libremente' };
+  }
+  return { title: 'Personalizar GUI', subtitle: 'Mueve y escala botones' };
+}
+
+function useGuiHintToast() {
   const currentView = useLauncherStore((s: LauncherState) => s.currentView);
   const isEditingHud = useLauncherStore((s: LauncherState) => s.isEditingHud);
-  const [visible, setVisible] = useState(false);
-  const [hasDismissed, setHasDismissed] = useState(false);
+  const dockConfig = useLauncherStore((s: LauncherState) => s.dockConfig);
+  const hudManualSide = useLauncherStore((s: LauncherState) => s.hudManualSide);
+
+  const [toastMode, setToastMode] = useState<ToastMode | null>(null);
+  const [isDismissing, setIsDismissing] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
+
+  const prevEditingRef = useRef<boolean>(isEditingHud);
+  const initialMountedRef = useRef(false);
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const remainingMsRef = useRef<number>(0);
+  const startTimeRef = useRef<number>(0);
+
+  const triggerDismiss = useCallback(() => {
+    if (hideTimerRef.current) {
+      clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = null;
+    }
+    setIsDismissing(true);
+    if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
+    dismissTimerRef.current = setTimeout(() => {
+      setToastMode(null);
+      setIsDismissing(false);
+    }, 240);
+  }, []);
 
   useEffect(() => {
-    // Only show on home view, not editing, and haven't dismissed yet this session
-    if (currentView !== 'home' || isEditingHud || hasDismissed) {
-      setVisible(false);
-      return;
+    if (currentView !== 'home' || initialMountedRef.current) return;
+    initialMountedRef.current = true;
+    const timer = setTimeout(() => {
+      setToastMode((prev) => prev ?? 'hint');
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [currentView]);
+
+  useEffect(() => {
+    if (prevEditingRef.current !== isEditingHud) {
+      setIsDismissing(false);
+      setToastMode(isEditingHud ? 'editing_active' : 'editing_saved');
+      prevEditingRef.current = isEditingHud;
     }
+  }, [isEditingHud]);
 
-    const sessionKey = 'crystaltides_gui_hint_seen';
-    if (sessionStorage.getItem(sessionKey)) {
-      return;
+  useEffect(() => {
+    if (!toastMode || isDismissing) return;
+    const baseDuration = getToastDuration(toastMode);
+    remainingMsRef.current = baseDuration;
+    startTimeRef.current = Date.now();
+
+    if (!isHovered) {
+      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = setTimeout(triggerDismiss, baseDuration);
     }
-
-    // Delay slightly after launcher renders for smooth appearance
-    const showTimer = setTimeout(() => {
-      setVisible(true);
-    }, 1200);
-
-    // Auto-dismiss after 6 seconds
-    const hideTimer = setTimeout(() => {
-      setVisible(false);
-      try {
-        sessionStorage.setItem(sessionKey, '1');
-      } catch {}
-    }, 7200);
-
     return () => {
-      clearTimeout(showTimer);
-      clearTimeout(hideTimer);
+      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
     };
-  }, [currentView, isEditingHud, hasDismissed]);
+  }, [toastMode, isHovered, isDismissing, triggerDismiss]);
 
-  const handleDismiss = (e?: React.MouseEvent) => {
-    e?.stopPropagation();
-    setVisible(false);
-    setHasDismissed(true);
-    try {
-      sessionStorage.setItem('crystaltides_gui_hint_seen', '1');
-    } catch {}
+  const handleMouseEnter = () => {
+    if (isDismissing) return;
+    if (hideTimerRef.current) {
+      clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = null;
+    }
+    const elapsed = Date.now() - startTimeRef.current;
+    remainingMsRef.current = Math.max(1500, remainingMsRef.current - elapsed);
+    setIsHovered(true);
   };
 
-  const handleClick = () => {
-    handleDismiss();
-    launcherActions.setEditingHud(true);
+  const handleMouseLeave = () => {
+    if (isDismissing) return;
+    setIsHovered(false);
+    startTimeRef.current = Date.now();
+    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    hideTimerRef.current = setTimeout(triggerDismiss, remainingMsRef.current);
   };
 
-  if (!visible) return null;
+  useEffect(() => {
+    return () => {
+      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+      if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
+    };
+  }, []);
 
+  return {
+    toastMode,
+    isDismissing,
+    isEditingHud,
+    currentView,
+    dockConfig,
+    hudManualSide,
+    triggerDismiss,
+    handleMouseEnter,
+    handleMouseLeave,
+  };
+}
+
+const ToastIconBadge: React.FC<{ mode: ToastMode; accentColor: string }> = ({
+  mode,
+  accentColor,
+}) => {
   return (
     <div
-      onClick={handleClick}
+      className="capsule-icon-badge"
       style={{
-        position: 'fixed',
-        top: '48px',
-        right: '24px',
-        zIndex: 999,
-        display: 'flex',
-        alignItems: 'center',
-        gap: '10px',
-        background: 'rgba(10, 15, 24, 0.92)',
-        backdropFilter: 'blur(20px)',
-        WebkitBackdropFilter: 'blur(20px)',
-        border: '1px solid rgba(0, 229, 255, 0.35)',
-        borderRadius: '12px',
-        padding: '8px 12px 8px 10px',
-        boxShadow: '0 12px 35px rgba(0, 0, 0, 0.8), 0 0 20px rgba(0, 229, 255, 0.2)',
-        color: '#f1f5f9',
-        fontSize: '11.5px',
-        cursor: 'pointer',
-        animation: 'fadeInSlideDown 0.35s cubic-bezier(0.16, 1, 0.3, 1)',
-        userSelect: 'none',
-        overflow: 'hidden',
+        background: `${accentColor}18`,
+        border: `1px solid ${accentColor}40`,
+        color: accentColor,
       }}
     >
-      <div
-        style={{
-          width: '26px',
-          height: '26px',
-          borderRadius: '8px',
-          background: 'rgba(0, 229, 255, 0.15)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: '#00e5ff',
-          flexShrink: 0,
+      {mode === 'editing_saved' && <Check size={12} strokeWidth={2.8} />}
+      {mode === 'editing_active' && (
+        <Move size={12} strokeWidth={2.2} className="capsule-icon-pulse" />
+      )}
+      {mode === 'hint' && <Sparkles size={12} strokeWidth={2.2} />}
+    </div>
+  );
+};
+
+const ToastActionButton: React.FC<{
+  mode: ToastMode;
+  onDismiss: () => void;
+}> = ({ mode, onDismiss }) => {
+  if (mode === 'editing_saved') {
+    return (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onDismiss();
         }}
+        className="capsule-keycap-btn"
+        title="Aceptar y cerrar notificación"
       >
-        <Sparkles size={14} />
+        <kbd className="hud-keycap accent-green">OK</kbd>
+      </button>
+    );
+  }
+
+  if (mode === 'editing_active') {
+    return (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          launcherActions.setEditingHud(false);
+        }}
+        className="capsule-keycap-btn"
+        title="Guardar cambios y salir (F8 o Esc)"
+      >
+        <kbd className="hud-keycap accent-cyan">F8</kbd>
+        <span className="capsule-or">o</span>
+        <kbd className="hud-keycap">Esc</kbd>
+      </button>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        launcherActions.setEditingHud(true);
+        onDismiss();
+      }}
+      className="capsule-keycap-btn"
+      title="Abrir editor de botones (F8)"
+    >
+      <kbd className="hud-keycap accent-cyan">F8</kbd>
+    </button>
+  );
+};
+
+export const GuiHintToast: React.FC = () => {
+  const {
+    toastMode,
+    isDismissing,
+    isEditingHud,
+    currentView,
+    dockConfig,
+    hudManualSide,
+    triggerDismiss,
+    handleMouseEnter,
+    handleMouseLeave,
+  } = useGuiHintToast();
+
+  if (!toastMode || currentView !== 'home') return null;
+
+  const accentColor = getToastAccentColor(toastMode);
+  const effectiveSide = getEffectiveHudSide(dockConfig, hudManualSide);
+  const topPos = isEditingHud && effectiveSide === 'center' ? '98px' : '48px';
+  const info = getToastInfo(toastMode);
+
+  return (
+    <output
+      aria-live="polite"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      className={`dynamic-capsule-toast ${isDismissing ? 'dismissing' : ''}`}
+      style={{
+        top: topPos,
+        borderColor: `${accentColor}40`,
+        boxShadow: `0 12px 32px rgba(0, 0, 0, 0.7), 0 0 20px ${accentColor}25, inset 0 1px 0 rgba(255, 255, 255, 0.12)`,
+      }}
+    >
+      <ToastIconBadge mode={toastMode} accentColor={accentColor} />
+
+      <div className="capsule-content">
+        <span className="capsule-title">{info.title}</span>
+        <span className="capsule-dot">•</span>
+        <span className="capsule-subtitle">{info.subtitle}</span>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <span style={{ fontWeight: 700, color: '#ffffff' }}>Personalizar GUI</span>
-          <span
-            style={{
-              fontSize: '9px',
-              fontWeight: 800,
-              background: 'rgba(0, 229, 255, 0.2)',
-              color: '#00e5ff',
-              border: '1px solid rgba(0, 229, 255, 0.4)',
-              padding: '0 4px',
-              borderRadius: '4px',
-            }}
-          >
-            F8
-          </span>
-        </div>
-        <span style={{ color: '#94a3b8', fontSize: '10.5px' }}>
-          Haz clic o pulsa F8 para mover o redimensionar botones
-        </span>
-      </div>
+      <ToastActionButton mode={toastMode} onDismiss={triggerDismiss} />
 
       <button
         type="button"
-        onClick={handleDismiss}
-        style={{
-          background: 'transparent',
-          border: 'none',
-          color: '#64748b',
-          cursor: 'pointer',
-          padding: '2px',
-          borderRadius: '4px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          marginLeft: '4px',
-          flexShrink: 0,
+        onClick={(e) => {
+          e.stopPropagation();
+          triggerDismiss();
         }}
+        className="capsule-close-btn"
         title="Cerrar notificación"
       >
-        <X size={14} />
+        <X size={12} strokeWidth={2.5} />
       </button>
-
-      {/* Shimmer / Progress indicator bar at bottom */}
-      <div
-        style={{
-          position: 'absolute',
-          bottom: 0,
-          left: 0,
-          height: '2px',
-          background: 'linear-gradient(to right, #00e5ff, #3b82f6)',
-          animation: 'shrinkWidth 6s linear forwards',
-          width: '100%',
-        }}
-      />
-    </div>
+    </output>
   );
 };

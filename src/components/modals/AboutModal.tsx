@@ -1,11 +1,43 @@
 import React from 'react';
-import { X, Sparkles, Heart, Globe } from 'lucide-react';
+import { X, Globe } from 'lucide-react';
 import { DiscordIcon } from '../icons/DiscordIcon';
 import { useLauncherStore, launcherActions, LauncherState, useT } from '../../store/launcherStore';
+
+function getOperatingSystem(): string {
+  if (typeof navigator === 'undefined') return 'Windows 11';
+  const ua = navigator.userAgent;
+  if (ua.includes('Win')) return 'Windows 11';
+  if (ua.includes('Mac')) return 'macOS Sonoma';
+  if (ua.includes('Linux')) return 'Linux x86_64';
+  return 'Desktop Client';
+}
+
+function getFormattedClientDate(lang: string): string {
+  try {
+    const now = new Date();
+    const locale = lang === 'en' ? 'en-US' : 'es-ES';
+    const dateStr = now.toLocaleDateString(locale, {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
+    const capitalized = dateStr.charAt(0).toUpperCase() + dateStr.slice(1);
+    const tzOffset = -now.getTimezoneOffset() / 60;
+    const gmt = `(GMT${tzOffset >= 0 ? `+${tzOffset}` : tzOffset})`;
+    return `${capitalized} ${gmt}`;
+  } catch {
+    return '2026';
+  }
+}
 
 export const AboutModal: React.FC = () => {
   const t = useT();
   const activeModal = useLauncherStore((s: LauncherState) => s.activeModal);
+  const language = useLauncherStore((s: LauncherState) => s.language);
+
+  const formattedDate = React.useMemo(() => getFormattedClientDate(language), [language]);
+  const systemOs = React.useMemo(() => getOperatingSystem(), []);
 
   if (activeModal !== 'about') return null;
 
@@ -26,102 +58,94 @@ export const AboutModal: React.FC = () => {
         }}
         onClick={launcherActions.closeModal}
       />
-      <div
+      <dialog
+        open
         className="papyrus-about-card"
-        role="dialog"
-        aria-modal="true"
         aria-labelledby="about-modal-title"
+        style={{ color: 'inherit' }}
       >
-        {/* Close Button on Top Right */}
-        <button
-          type="button"
-          onClick={launcherActions.closeModal}
-          className="settings-card-close"
-          title={t.settings.close}
-          aria-label={t.settings.close}
-        >
-          <X style={{ width: '16px', height: '16px' }} />
-        </button>
-
-        {/* Title */}
-        <div className="settings-header-block">
-          <h2 id="about-modal-title" className="settings-main-title">
+        {/* Header: Title and Close */}
+        <div className="about-header-row">
+          <h2 id="about-modal-title" className="about-modal-title">
             {t.about.title}
           </h2>
-          <p style={{ fontSize: '12px', color: '#94a3b8', fontFamily: 'var(--font-inter)' }}>
-            {t.about.tagline}
-          </p>
+          <button
+            type="button"
+            onClick={launcherActions.closeModal}
+            className="settings-card-close"
+            title={t.settings.close}
+            aria-label={t.settings.close}
+          >
+            <X style={{ width: '16px', height: '16px' }} />
+          </button>
         </div>
 
-        {/* Highlight Card */}
-        <div className="about-highlight-box">
-          <div className="about-highlight-title">
-            <Sparkles style={{ width: '16px', height: '16px', color: '#22c55e' }} />
-            <span>{t.about.highlightTitle}</span>
-          </div>
-          <p className="about-highlight-desc">
-            {t.about.highlightDesc}
-          </p>
+        {/* Report a Bug Button */}
+        <div>
+          <a
+            href="https://crystaltidessmp.net/support"
+            target="_blank"
+            rel="noreferrer"
+            className="about-bug-btn"
+          >
+            {t.about.reportBug}
+          </a>
         </div>
 
-        {/* System Specs Grid */}
-        <div className="about-specs-grid">
-          <div className="spec-tile">
-            <span className="spec-title">{t.about.specEngine}</span>
-            <span className="spec-value">Tauri v2 + React 19</span>
-          </div>
-          <div className="spec-tile">
-            <span className="spec-title">{t.about.specSecurity}</span>
-            <span className="spec-value green">AES-256-GCM</span>
-          </div>
-          <div className="spec-tile">
-            <span className="spec-title">{t.about.specServer}</span>
-            <span className="spec-value">mc.crystaltidessmp.net</span>
-          </div>
-          <div className="spec-tile">
-            <span className="spec-title">{t.about.specVersion}</span>
-            <span className="spec-value">1.0.0-lite</span>
+        {/* Copyright & Disclaimer */}
+        <div className="about-legal-block">
+          <div className="about-legal-copyright">{t.about.copyright}</div>
+          <div className="about-legal-disclaimer">{t.about.disclaimer}</div>
+        </div>
+
+        {/* APP Section */}
+        <div className="about-section">
+          <h3 className="about-section-heading">{t.about.sectionApp}</h3>
+          <div className="about-section-list">
+            <div>{systemOs}</div>
+            <div>{formattedDate}</div>
+            <div>{t.about.launcherVersion}</div>
+            <div>{t.about.engine}</div>
+            <div>{t.about.runtime}</div>
+            <div>{t.about.arch}</div>
           </div>
         </div>
 
-        {/* Footer info & Links */}
+        {/* UI Section */}
+        <div className="about-section">
+          <h3 className="about-section-heading">{t.about.sectionUi}</h3>
+          <div className="about-section-list">
+            <div>{t.about.uiSystem}</div>
+          </div>
+        </div>
+
+        {/* Tagline */}
+        <div className="about-tagline">{t.about.tagline}</div>
+
+        {/* Footer Links */}
         <div className="about-footer-row">
-          <span className="about-credit-text">
-            {t.about.developedWith}{' '}
-            <Heart
-              style={{
-                width: '12px',
-                height: '12px',
-                color: '#f43f5e',
-                fill: '#f43f5e',
-                display: 'inline',
-              }}
-            />{' '}
-            {t.about.forCommunity}
-          </span>
-
-          <div className="about-footer-links">
-            <a
-              href="https://discord.gg/crystaltides"
-              target="_blank"
-              rel="noreferrer"
-              className="about-link-icon"
-              title="Discord"
-            >
-              <DiscordIcon style={{ width: '14px', height: '14px' }} />
-            </a>
-            <a
-              href="https://crystaltidessmp.net"
-              target="_blank"
-              rel="noreferrer"
-              className="about-link-icon"
-              title="Website"
-            >
-              <Globe style={{ width: '14px', height: '14px' }} />
-            </a>
-          </div>
+          <a
+            href="https://discord.gg/crystaltides"
+            target="_blank"
+            rel="noreferrer"
+            className="about-link-icon"
+            title={t.about.openDiscord}
+            aria-label={t.about.openDiscord}
+          >
+            <DiscordIcon style={{ width: '14px', height: '14px' }} />
+          </a>
+          <a
+            href="https://crystaltidessmp.net"
+            target="_blank"
+            rel="noreferrer"
+            className="about-link-icon"
+            title={t.about.openWebsite}
+            aria-label={t.about.openWebsite}
+          >
+            <Globe style={{ width: '14px', height: '14px' }} />
+          </a>
         </div>
-      </div>
+      </dialog>
     </div>
   );
 };

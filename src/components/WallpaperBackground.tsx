@@ -10,13 +10,14 @@ export const WallpaperBackground: React.FC = () => {
   const wallpaperVolume = useLauncherStore((s: LauncherState) => s.wallpaperVolume);
   const accentColor = useLauncherStore((s: LauncherState) => s.accentColor);
   const activeModal = useLauncherStore((s: LauncherState) => s.activeModal);
+  const disableBgAnim = useLauncherStore((s: LauncherState) => s.settings.disableBgAnim);
 
   const videoRef = useRef<HTMLVideoElement>(null);
 
   const defaultWallpaper =
-    WALLPAPERS.find((w) => w.id === activeWallpaperId) || WALLPAPERS[0];
+    WALLPAPERS.find((w) => w.id === activeWallpaperId) ?? WALLPAPERS[0];
 
-  const currentBgUrl = customWallpaperUrl || defaultWallpaper.url;
+  const currentBgUrl = customWallpaperUrl ?? defaultWallpaper.url;
   const currentAccent = accentColor || (customWallpaperUrl ? '#00e5ff' : defaultWallpaper.accent);
 
   const isModalOpen = activeModal !== 'none';
@@ -25,6 +26,10 @@ export const WallpaperBackground: React.FC = () => {
   // Synchronize audio volume and muted state
   useEffect(() => {
     if (videoRef.current && isVideo) {
+      if (disableBgAnim) {
+        videoRef.current.pause();
+        return;
+      }
       const targetVolume = isModalOpen ? wallpaperVolume * 0.4 : wallpaperVolume;
       videoRef.current.volume = Math.max(0, Math.min(1, targetVolume));
       videoRef.current.muted = wallpaperMuted;
@@ -40,7 +45,7 @@ export const WallpaperBackground: React.FC = () => {
         });
       }
     }
-  }, [isVideo, wallpaperVolume, wallpaperMuted, isModalOpen, currentBgUrl]);
+  }, [isVideo, wallpaperVolume, wallpaperMuted, isModalOpen, currentBgUrl, disableBgAnim]);
 
   return (
     <div className="wallpaper-layer">
@@ -49,7 +54,7 @@ export const WallpaperBackground: React.FC = () => {
           ref={videoRef}
           key={currentBgUrl}
           src={currentBgUrl}
-          autoPlay
+          autoPlay={!disableBgAnim}
           loop
           playsInline
           muted={wallpaperMuted}

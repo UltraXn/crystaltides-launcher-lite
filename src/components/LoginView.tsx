@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { X, ArrowRight, ArrowLeft, Loader2, Globe } from 'lucide-react';
 import { DiscordIcon } from './icons/DiscordIcon';
+import { SpainFlag, UsaFlag } from './icons/FlagIcons';
 import logoImg from '../assets/logo.png';
-import { launcherActions } from '../store/launcherStore';
+import { launcherActions, useLauncherStore, useT } from '../store/launcherStore';
 import { validateMinecraftUsername, generateOfflineUuid } from '../services/offlineAuth';
 import { loginWithCrystalTides } from '../services/crystalAuthService';
 
@@ -13,6 +14,8 @@ const YoutubeIcon: React.FC<{ style?: React.CSSProperties }> = ({ style }) => (
 );
 
 export const LoginView: React.FC = () => {
+  const language = useLauncherStore((s) => s.language);
+  const t = useT();
   const [authMode, setAuthMode] = useState<'offline' | 'crystaltides'>('offline');
   const [username, setUsername] = useState('');
   const [rememberAccount, setRememberAccount] = useState(true);
@@ -21,13 +24,14 @@ export const LoginView: React.FC = () => {
   const [crystalEmail, setCrystalEmail] = useState('');
   const [crystalPassword, setCrystalPassword] = useState('');
 
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  type ActiveLogin = 'offline' | 'microsoft' | 'crystaltides' | null;
+  const [activeLogin, setActiveLogin] = useState<ActiveLogin>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Microsoft OAuth Login flow
   const handleMicrosoftLogin = async () => {
     try {
-      setIsLoggingIn(true);
+      setActiveLogin('microsoft');
       setErrorMsg(null);
 
       // Try real Microsoft OAuth authentication via Tauri backend
@@ -63,23 +67,23 @@ export const LoginView: React.FC = () => {
         lastUsed: Date.now(),
       });
     } catch (e) {
-      setErrorMsg(e instanceof Error ? e.message : 'Error al iniciar sesión con Microsoft.');
+      setErrorMsg(e instanceof Error ? e.message : t.login.msLoginError);
     } finally {
-      setIsLoggingIn(false);
+      setActiveLogin(null);
     }
   };
 
   // Direct login / Offline username login (No-Premium)
-  const handleDirectLogin = async (e: React.FormEvent) => {
+  const handleDirectLogin = async (e: React.SyntheticEvent) => {
     e.preventDefault();
     const val = validateMinecraftUsername(username);
     if (!val.valid) {
-      setErrorMsg(val.error || 'Por favor, introduce un nombre de usuario válido (3 a 16 caracteres).');
+      setErrorMsg(val.error ?? t.login.invalidUsername);
       return;
     }
 
     try {
-      setIsLoggingIn(true);
+      setActiveLogin('offline');
       setErrorMsg(null);
 
       const cleanName = username.trim();
@@ -93,39 +97,42 @@ export const LoginView: React.FC = () => {
         lastUsed: Date.now(),
       };
 
-      await launcherActions.addAccount(userAccount);
+      await launcherActions.addAccount(userAccount, rememberAccount);
     } catch {
-      setErrorMsg('Error al guardar la cuenta.');
+      setErrorMsg(t.login.saveAccountError);
     } finally {
-      setIsLoggingIn(false);
+      setActiveLogin(null);
     }
   };
 
   // CrystalTides SMP Official Web Account Login
-  const handleCrystalLogin = async (e: React.FormEvent) => {
+  const handleCrystalLogin = async (e: React.SyntheticEvent) => {
     e.preventDefault();
     try {
-      setIsLoggingIn(true);
+      setActiveLogin('crystaltides');
       setErrorMsg(null);
 
       const profile = await loginWithCrystalTides(crystalEmail, crystalPassword);
 
-      await launcherActions.addAccount({
-        id: profile.id,
-        username: profile.username,
-        uuid: profile.uuid,
-        role: profile.role,
-        email: profile.email,
-        skinUrl: profile.skinUrl,
-        accessToken: profile.accessToken,
-        refreshToken: profile.refreshToken,
-        type: 'crystaltides',
-        lastUsed: Date.now(),
-      });
+      await launcherActions.addAccount(
+        {
+          id: profile.id,
+          username: profile.username,
+          uuid: profile.uuid,
+          role: profile.role,
+          email: profile.email,
+          skinUrl: profile.skinUrl,
+          accessToken: profile.accessToken,
+          refreshToken: profile.refreshToken,
+          type: 'crystaltides',
+          lastUsed: Date.now(),
+        },
+        rememberAccount,
+      );
     } catch (e) {
-      setErrorMsg(e instanceof Error ? e.message : 'Error al conectar con la cuenta de CrystalTides.');
+      setErrorMsg(e instanceof Error ? e.message : t.login.crystalLoginError);
     } finally {
-      setIsLoggingIn(false);
+      setActiveLogin(null);
     }
   };
 
@@ -152,11 +159,48 @@ export const LoginView: React.FC = () => {
 
         {authMode === 'offline' ? (
           <>
-            {/* Card Header */}
+            {/* Card Header with Title and Language Toggle */}
             <div className="login-header-text">
-              <h1 className="login-main-title">CrystalTides</h1>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  width: '100%',
+                }}
+              >
+                <h1 className="login-main-title">CrystalTides</h1>
+                <div
+                  className="login-lang-segmented"
+                  role="group"
+                  aria-label="Selector de idioma / Language selector"
+                >
+                  <button
+                    type="button"
+                    onClick={() => launcherActions.setLanguage('es')}
+                    className={`login-lang-btn ${language === 'es' ? 'active' : ''}`}
+                    title={t.login.langSpanish}
+                    aria-label={t.login.langSpanish}
+                  >
+                    <SpainFlag size={14} />
+                    <span>ES</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => launcherActions.setLanguage('en')}
+                    className={`login-lang-btn ${language === 'en' ? 'active' : ''}`}
+                    title={t.login.langEnglish}
+                    aria-label={t.login.langEnglish}
+                  >
+                    <UsaFlag size={14} />
+                    <span>EN</span>
+                  </button>
+                </div>
+              </div>
               <p className="login-sub-title">
-                Inicia sesión con tu apodo <span className="login-link-highlight">No-Premium</span> o conecta tu cuenta
+                {t.login.subTitlePrefix}{' '}
+                <span className="login-link-highlight">{t.login.subTitleHighlight}</span>{' '}
+                {t.login.subTitleSuffix}
               </p>
             </div>
 
@@ -165,8 +209,8 @@ export const LoginView: React.FC = () => {
               <div className="login-fields-col">
                 <input
                   type="text"
-                  placeholder="Tu Apodo / Nickname (No-Premium)"
-                  aria-label="Tu Apodo o Nickname (No-Premium)"
+                  placeholder={t.login.nicknamePlaceholder}
+                  aria-label={t.login.nicknameAria}
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   className="login-text-input"
@@ -183,16 +227,21 @@ export const LoginView: React.FC = () => {
                   onChange={(e) => setRememberAccount(e.target.checked)}
                   className="login-custom-checkbox"
                 />
-                <span className="login-checkbox-text">Recordar este apodo.</span>
+                <span className="login-checkbox-text">{t.login.rememberNickname}</span>
               </label>
 
               {/* Solid Green Continue Button */}
-              <button type="submit" disabled={isLoggingIn} className="login-continue-btn">
-                {isLoggingIn ? (
+              <button
+                type="submit"
+                disabled={Boolean(activeLogin)}
+                className="login-continue-btn"
+              >
+                {activeLogin === 'offline' ? (
                   <Loader2 className="login-btn-spinner" />
                 ) : (
                   <>
-                    Entrar a Jugar <ArrowRight style={{ width: '16px', height: '16px', strokeWidth: 2.5 }} />
+                    {t.login.playBtn}{' '}
+                    <ArrowRight style={{ width: '16px', height: '16px', strokeWidth: 2.5 }} />
                   </>
                 )}
               </button>
@@ -201,7 +250,7 @@ export const LoginView: React.FC = () => {
             {/* OR Divider */}
             <div className="login-or-divider">
               <div className="login-divider-bar" />
-              <span className="login-divider-label">OR</span>
+              <span className="login-divider-label">{t.login.orDivider}</span>
               <div className="login-divider-bar" />
             </div>
 
@@ -215,13 +264,13 @@ export const LoginView: React.FC = () => {
                   setAuthMode('crystaltides');
                   setErrorMsg(null);
                 }}
-                disabled={isLoggingIn}
+                disabled={Boolean(activeLogin)}
                 className="login-crystaltides-box"
               >
                 <img src={logoImg} alt="Octopus Mascot" className="ct-box-logo" />
                 <div className="ct-box-labels">
-                  <span className="ct-box-sub">Cuenta Oficial:</span>
-                  <span className="ct-box-title">CrystalTides Login</span>
+                  <span className="ct-box-sub">{t.login.officialAccount}</span>
+                  <span className="ct-box-title">{t.login.crystalLoginTitle}</span>
                 </div>
               </button>
 
@@ -230,18 +279,28 @@ export const LoginView: React.FC = () => {
                 type="button"
                 aria-label="Iniciar sesión con Microsoft"
                 onClick={handleMicrosoftLogin}
-                disabled={isLoggingIn}
-                className="login-microsoft-box"
+                disabled={Boolean(activeLogin)}
+                className={`login-microsoft-box ${activeLogin === 'microsoft' ? 'loading' : ''}`}
               >
-                <div className="ms-icon-grid">
-                  <span style={{ backgroundColor: '#f25022' }} />
-                  <span style={{ backgroundColor: '#7fba00' }} />
-                  <span style={{ backgroundColor: '#00a4ef' }} />
-                  <span style={{ backgroundColor: '#ffb900' }} />
-                </div>
+                {activeLogin === 'microsoft' ? (
+                  <div className="ms-loading-indicator">
+                    <Loader2 className="login-btn-spinner" style={{ color: '#00a4ef' }} />
+                  </div>
+                ) : (
+                  <div className="ms-icon-grid">
+                    <span style={{ backgroundColor: '#f25022' }} />
+                    <span style={{ backgroundColor: '#7fba00' }} />
+                    <span style={{ backgroundColor: '#00a4ef' }} />
+                    <span style={{ backgroundColor: '#ffb900' }} />
+                  </div>
+                )}
                 <div className="ms-box-labels">
-                  <span className="ms-box-sub">Login with:</span>
-                  <span className="ms-box-title">Microsoft</span>
+                  <span className="ms-box-sub">
+                    {activeLogin === 'microsoft' ? t.login.msConnecting : t.login.loginWith}
+                  </span>
+                  <span className="ms-box-title">
+                    {activeLogin === 'microsoft' ? t.login.msLoggingIn : t.login.microsoftTitle}
+                  </span>
                 </div>
               </button>
             </div>
@@ -249,7 +308,38 @@ export const LoginView: React.FC = () => {
         ) : (
           <>
             {/* CrystalTides SMP Official Web Login View */}
-            <div className="login-header-text" style={{ alignItems: 'center', textAlign: 'center' }}>
+            <div
+              className="login-header-text"
+              style={{ alignItems: 'center', textAlign: 'center', position: 'relative' }}
+            >
+              <div style={{ position: 'absolute', top: 0, left: 0 }}>
+                <div
+                  className="login-lang-segmented"
+                  role="group"
+                  aria-label="Selector de idioma / Language selector"
+                >
+                  <button
+                    type="button"
+                    onClick={() => launcherActions.setLanguage('es')}
+                    className={`login-lang-btn ${language === 'es' ? 'active' : ''}`}
+                    title={t.login.langSpanish}
+                    aria-label={t.login.langSpanish}
+                  >
+                    <SpainFlag size={14} />
+                    <span>ES</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => launcherActions.setLanguage('en')}
+                    className={`login-lang-btn ${language === 'en' ? 'active' : ''}`}
+                    title={t.login.langEnglish}
+                    aria-label={t.login.langEnglish}
+                  >
+                    <UsaFlag size={14} />
+                    <span>EN</span>
+                  </button>
+                </div>
+              </div>
               <img
                 src={logoImg}
                 alt="Octopus Mascot"
@@ -261,9 +351,14 @@ export const LoginView: React.FC = () => {
                   filter: 'drop-shadow(0 2px 10px rgba(0, 229, 255, 0.6))',
                 }}
               />
-              <h1 className="login-main-title" style={{ fontSize: '22px' }}>CrystalTides SMP</h1>
+              <h1 className="login-main-title" style={{ fontSize: '22px' }}>
+                CrystalTides SMP
+              </h1>
               <p className="login-sub-title">
-                Inicia sesión con tu cuenta web de <span className="login-link-highlight" style={{ color: '#00e5ff' }}>crystaltidessmp.net</span>
+                {t.login.crystalSubTitlePrefix}{' '}
+                <span className="login-link-highlight" style={{ color: '#00e5ff' }}>
+                  crystaltidessmp.net
+                </span>
               </p>
             </div>
 
@@ -271,8 +366,8 @@ export const LoginView: React.FC = () => {
               <div className="login-fields-col">
                 <input
                   type="email"
-                  placeholder="Correo Electrónico (Web)"
-                  aria-label="Correo Electrónico"
+                  placeholder={t.login.crystalEmailPlaceholder}
+                  aria-label={t.login.crystalEmailPlaceholder}
                   value={crystalEmail}
                   onChange={(e) => setCrystalEmail(e.target.value)}
                   className="login-text-input"
@@ -281,8 +376,8 @@ export const LoginView: React.FC = () => {
 
                 <input
                   type="password"
-                  placeholder="Contraseña de crystaltidessmp.net"
-                  aria-label="Contraseña"
+                  placeholder={t.login.crystalPasswordPlaceholder}
+                  aria-label={t.login.crystalPasswordPlaceholder}
                   value={crystalPassword}
                   onChange={(e) => setCrystalPassword(e.target.value)}
                   className="login-text-input"
@@ -299,21 +394,33 @@ export const LoginView: React.FC = () => {
                   onChange={(e) => setRememberAccount(e.target.checked)}
                   className="login-custom-checkbox"
                 />
-                <span className="login-checkbox-text">Recordar mi cuenta de CrystalTides.</span>
+                <span className="login-checkbox-text">{t.login.rememberCrystal}</span>
               </label>
 
               {/* Cyan Glowing CrystalTides Submit Button */}
-              <button type="submit" disabled={isLoggingIn} className="login-crystal-btn">
-                {isLoggingIn ? (
+              <button
+                type="submit"
+                disabled={Boolean(activeLogin)}
+                className="login-crystal-btn"
+              >
+                {activeLogin === 'crystaltides' ? (
                   <Loader2 className="login-btn-spinner" />
                 ) : (
                   <>
-                    Conectar e Iniciar Sesión <ArrowRight style={{ width: '16px', height: '16px', strokeWidth: 2.5 }} />
+                    {t.login.crystalConnectBtn}{' '}
+                    <ArrowRight style={{ width: '16px', height: '16px', strokeWidth: 2.5 }} />
                   </>
                 )}
               </button>
 
-              <div style={{ display: 'flex', justifyContent: 'center', width: '100%', marginTop: '4px' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'center',
+                  width: '100%',
+                  marginTop: '4px',
+                }}
+              >
                 <button
                   type="button"
                   onClick={() => {
@@ -322,7 +429,7 @@ export const LoginView: React.FC = () => {
                   }}
                   className="login-back-btn"
                 >
-                  <ArrowLeft style={{ width: '14px', height: '14px' }} /> Volver a No-Premium / Microsoft
+                  <ArrowLeft style={{ width: '14px', height: '14px' }} /> {t.login.backToOffline}
                 </button>
               </div>
             </form>

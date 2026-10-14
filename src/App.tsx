@@ -24,10 +24,18 @@ import { UpdaterModal } from './components/modals/UpdaterModal';
 import { SplashScreen } from './components/SplashScreen';
 import { GameLaunchOverlay } from './components/GameLaunchOverlay';
 import { checkForAppUpdates, AppUpdateInfo } from './services/updateService';
-import { loadActiveWallpaper, loadAllButtonMedia } from './utils/wallpaperStorage';
-import { initializeBuiltinModules } from './modules';
+import {
+  loadActiveWallpaper,
+  loadAllButtonMedia,
+  loadDockPanorama,
+} from './utils/wallpaperStorage';
+import { initializeBuiltinModules, useModuleStore } from './modules';
 import { ModuleModalRenderer } from './components/modals/ModuleModalRenderer';
 import { GuiHintToast } from './components/GuiHintToast';
+import { OutOfMemoryScreen } from './components/OutOfMemoryScreen';
+import { ErrorBoundary } from './components/common/ErrorBoundary';
+import { CrashDiagnosis } from './services/crashDoctorService';
+import { resolveInstanceGameDir } from './services/instanceService';
 
 interface BootContext {
   mode: 'install' | 'launcher' | 'uninstall';
@@ -39,10 +47,17 @@ interface BootContext {
 
 export const App: React.FC = () => {
   const [bootContext, setBootContext] = useState<BootContext | null>(null);
-  const [bootLoading, setBootLoading] = useState(true);
   const [updateInfo, setUpdateInfo] = useState<AppUpdateInfo | null>(null);
   const [crashModalOpen, setCrashModalOpen] = useState(false);
-  const [crashData, setCrashData] = useState<{ reason: string; details: string; code: number }>({
+  const [oomScreenOpen, setOomScreenOpen] = useState(false);
+  const [crashData, setCrashData] = useState<{
+    reason: string;
+    details: string;
+    code?: number;
+    gameDir?: string;
+    offendingMod?: string;
+    suggestedAction?: CrashDiagnosis['suggested_action'];
+  }>({
     reason: 'Incompatibilidad de mods o fallo de memoria de Java',
     details: 'java.lang.OutOfMemoryError: Java heap space',
     code: 1,
@@ -51,7 +66,6 @@ export const App: React.FC = () => {
   const currentView = useLauncherStore((s: LauncherState) => s.currentView);
   const activeModal = useLauncherStore((s: LauncherState) => s.activeModal);
   const customizingButtonId = useLauncherStore((s: LauncherState) => s.customizingButtonId);
-  const isEditingHud = useLauncherStore((s: LauncherState) => s.isEditingHud);
 
   // Revelar la ventana de forma fluida una vez montado el DOM (Zero White Flash)
   useEffect(() => {
@@ -68,36 +82,46 @@ export const App: React.FC = () => {
     revealWindow();
   }, []);
 
-  // Cargar fondo personalizado y medias de botones persistentes desde IndexedDB
+  // Cargar fondo personalizado, panorama de dock y medias de botones persistentes desde IndexedDB
   useEffect(() => {
-    loadActiveWallpaper().then((meta) => {
-      if (meta) {
-        launcherActions.setCustomWallpaper(meta.url, meta.isVideo);
-      }
-    });
+    loadActiveWallpaper()
+      .then((meta) => {
+        if (meta) {
+          launcherActions.setCustomWallpaper(meta.url, meta.isVideo);
+        }
+      })
+      .catch((err) => console.warn('[App] Failed loading active wallpaper:', err));
 
-    loadAllButtonMedia().then(({ backgrounds, icons }) => {
-      Object.entries(backgrounds).forEach(([btnId, meta]) => {
-        launcherActions.setDockButtonCustomization(btnId as DockButtonId, {
-          bgType: meta.isVideo ? 'video' : 'image',
-          bgVideo: meta.isVideo ? meta.url : undefined,
-          bgImage: !meta.isVideo ? meta.url : undefined,
+    loadDockPanorama()
+      .then((meta) => {
+        if (meta) {
+          launcherActions.setDockBackground(meta.isVideo ? 'video' : 'image', meta.url);
+        }
+      })
+      .catch((err) => console.warn('[App] Failed loading dock panorama:', err));
+
+    loadAllButtonMedia()
+      .then(({ backgrounds, icons }) => {
+        Object.entries(backgrounds).forEach(([btnId, meta]) => {
+          launcherActions.setDockButtonCustomization(btnId as DockButtonId, {
+            bgType: meta.isVideo ? 'video' : 'image',
+            bgVideo: meta.isVideo ? meta.url : undefined,
+            bgImage: !meta.isVideo ? meta.url : undefined,
+          });
         });
-      });
-      Object.entries(icons).forEach(([btnId, url]) => {
-        launcherActions.setDockButtonCustomization(btnId as DockButtonId, {
-          iconType: 'custom_image',
-          customIconUrl: url,
+        Object.entries(icons).forEach(([btnId, url]) => {
+          launcherActions.setDockButtonCustomization(btnId as DockButtonId, {
+            iconType: 'custom_image',
+            customIconUrl: url,
+          });
         });
-      });
-    });
+      })
+      .catch((err) => console.warn('[App] Failed loading button media:', err));
   }, []);
 
-  // 1. Detección inicial de modo (Bootstrapping) con SplashScreen suave
+  // 1. Detección inicial de modo (Bootstrapping Instant-Launch - Cero esperas artificiales)
   useEffect(() => {
-    let timerId: ReturnType<typeof setTimeout> | undefined;
     const initBoot = async () => {
-      const startTime = Date.now();
       try {
         const ctx = await invoke<BootContext>('get_boot_context');
         setBootContext(ctx);
@@ -110,28 +134,22 @@ export const App: React.FC = () => {
           isInstalled: true,
           os: 'windows',
         });
-      } finally {
-        const elapsed = Date.now() - startTime;
-        const minDisplayTime = 1200;
-        const remaining = Math.max(0, minDisplayTime - elapsed);
-        timerId = setTimeout(() => setBootLoading(false), remaining);
       }
     };
     initBoot();
-    return () => {
-      if (timerId) clearTimeout(timerId);
-    };
   }, []);
 
   // 2. Cargar cuentas, listeners y verificación autónoma de actualizaciones en modo Launcher
   useEffect(() => {
     if (bootContext?.mode === 'launcher') {
+      let cancelled = false;
       launcherActions.loadAccountsFromVault();
-      launcherActions.setupTauriListeners();
+      const setupPromise = launcherActions.setupTauriListeners();
 
       // Chequeo autónomo de actualizaciones
       checkForAppUpdates()
         .then((info) => {
+          if (cancelled) return;
           if (info.available) {
             console.log('[App] Auto-updater found update:', info.version);
             setUpdateInfo(info);
@@ -140,64 +158,214 @@ export const App: React.FC = () => {
         .catch((err) => {
           console.warn('[App] Auto-updater background check error:', err);
         });
+
+      return () => {
+        cancelled = true;
+        void setupPromise.then((unlisten: (() => void) | void) => {
+          if (typeof unlisten === 'function') {
+            unlisten();
+          }
+        });
+      };
     }
   }, [bootContext?.mode]);
 
-  // Listener de crashes del juego
+interface CrashPayload {
+  data: {
+    reason: string;
+    details: string;
+    code?: number;
+    gameDir?: string;
+    offendingMod?: string;
+    suggestedAction?: CrashDiagnosis['suggested_action'];
+  };
+  isOom: boolean;
+}
+
+const formatCrashDetails = (diagnosis: CrashDiagnosis, isOom: boolean): string => {
+  const snippet = diagnosis.log_snippet;
+  if (isOom) {
+    return snippet ? `${diagnosis.explanation}\n\n${snippet}` : diagnosis.explanation;
+  }
+  const base = `${diagnosis.explanation}\n\nRecomendación: ${diagnosis.recommendation}`;
+  return snippet ? `${base}\n\n[Detalle Forense]:\n${snippet}` : base;
+};
+
+const buildCrashPayload = async (
+  exitCode: number,
+  defaultInstallDir?: string,
+): Promise<CrashPayload> => {
+  const { analyzeLatestCrash } = await import('./services/crashDoctorService');
+  const storeState = useLauncherStore.getState();
+  const instances = storeState.instances;
+  const activeInst = instances.find((i) => i.id === storeState.activeInstanceId) ?? instances[0];
+  const gameDir = activeInst
+    ? await resolveInstanceGameDir(activeInst)
+    : (defaultInstallDir ?? 'C:/.crystaltides');
+
+  const diagnosis = await analyzeLatestCrash(gameDir, exitCode);
+  const isOom = diagnosis.crash_type === 'OUT_OF_MEMORY';
+  const details = formatCrashDetails(diagnosis, isOom);
+
+  return {
+    isOom,
+    data: {
+      reason: diagnosis.title,
+      details,
+      code: exitCode,
+      gameDir,
+      offendingMod: diagnosis.offending_mod,
+      suggestedAction: diagnosis.suggested_action,
+    },
+  };
+};
+
+  // Listener de crashes del juego con diagnóstico forense de Crash Doctor
   useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    const bindCrash = async () => {
-      try {
-        const { listen } = await import('@tauri-apps/api/event');
-        unlisten = await listen<{ exit_code: number | null; success: boolean }>(
+    let cancelled = false;
+    let unlistenFn: (() => void) | undefined;
+
+    import('@tauri-apps/api/event')
+      .then(({ listen }) => {
+        if (cancelled) return;
+        return listen<{ exit_code: number | null; success: boolean }>(
           'game-stopped',
-          (event) => {
-            if (
-              !event.payload.success &&
-              event.payload.exit_code &&
-              event.payload.exit_code !== 0
-            ) {
-              setCrashData({
-                reason: `El proceso de Minecraft se detuvo inesperadamente (Código: ${event.payload.exit_code})`,
-                details: `Salida con código de error ${event.payload.exit_code}. Revisa logs/latest.log o la pestaña de Registros.`,
-                code: event.payload.exit_code,
-              });
-              setCrashModalOpen(true);
+          async (event) => {
+            if (cancelled) return;
+            const exitCode = event.payload.exit_code;
+            if (!event.payload.success && exitCode && exitCode !== 0) {
+              const crash = await buildCrashPayload(exitCode, bootContext?.defaultInstallDir);
+              if (cancelled) return;
+              setCrashData(crash.data);
+              if (crash.isOom) {
+                setOomScreenOpen(true);
+              } else {
+                setCrashModalOpen(true);
+              }
             }
           },
         );
-      } catch {
+      })
+      .then((fn) => {
+        if (!fn) return;
+        if (cancelled) {
+          fn();
+        } else {
+          unlistenFn = fn;
+        }
+      })
+      .catch(() => {
         // Dev mode
-      }
-    };
-    bindCrash();
+      });
+
     return () => {
-      if (unlisten) unlisten();
+      cancelled = true;
+      if (unlistenFn) unlistenFn();
     };
-  }, []);
+  }, [bootContext?.defaultInstallDir]);
 
   // 3. Listener global de teclado (Escape cierra modales, F8 alterna edición GUI)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'F8') {
+      const isF8 = e.key === 'F8' || e.code === 'F8' || e.key === 'f8';
+      if (isF8) {
         e.preventDefault();
-        launcherActions.setEditingHud(!isEditingHud);
+        e.stopPropagation();
+        useModuleStore.getState().closeModal();
+        launcherActions.closeModal();
+        const currentEditing = useLauncherStore.getState().isEditingHud;
+        launcherActions.setEditingHud(!currentEditing);
         return;
       }
       if (e.key === 'Escape') {
-        if (customizingButtonId) {
+        if (updateInfo?.available) {
+          setUpdateInfo(null);
+        } else if (customizingButtonId) {
           launcherActions.closeButtonCustomizer();
+        } else if (useModuleStore.getState().activeModalModuleId) {
+          useModuleStore.getState().closeModal();
         } else if (activeModal !== 'none') {
           launcherActions.closeModal();
         }
       }
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeModal, customizingButtonId, isEditingHud]);
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [activeModal, customizingButtonId, updateInfo]);
 
-  if (bootLoading) {
+  const isSplashPreview =
+    typeof window !== 'undefined' && window.location.search.includes('preview=splash');
+
+  if (isSplashPreview) {
     return <SplashScreen />;
+  }
+
+  const isOomPreview =
+    typeof window !== 'undefined' &&
+    (window.location.search.includes('preview=oom') ||
+      window.location.search.includes('preview=ram'));
+
+  if (isOomPreview) {
+    return (
+      <OutOfMemoryScreen
+        onRetry={() => {
+          if (typeof window !== 'undefined') window.location.href = window.location.pathname;
+        }}
+        onClose={() => {
+          if (typeof window !== 'undefined') window.location.href = window.location.pathname;
+        }}
+        crashReason="java.lang.OutOfMemoryError: Java heap space"
+        crashDetails="Exception in thread 'main' java.lang.OutOfMemoryError: Java heap space&#10;    at net.minecraft.client.renderer.texture.TextureAtlas.load(TextureAtlas.java:142)&#10;    at net.minecraft.client.Minecraft.run(Minecraft.java:940)"
+        exitCode={137}
+      />
+    );
+  }
+
+  const isCrashPreview =
+    typeof window !== 'undefined' && window.location.search.includes('preview=crash');
+
+  if (isCrashPreview) {
+    return (
+      <div style={{ position: 'relative', width: '100vw', height: '100vh', background: '#0a0d14' }}>
+        <CrashReportModal
+          isOpen={true}
+          onClose={() => {
+            if (typeof window !== 'undefined') window.location.href = window.location.pathname;
+          }}
+          onRetry={() => {
+            if (typeof window !== 'undefined') window.location.href = window.location.pathname;
+          }}
+          onOpenOomAssistant={() => {
+            if (typeof window !== 'undefined')
+              window.location.href = `${window.location.pathname}?preview=oom`;
+          }}
+          exitCode={1}
+          crashReason="Fallo al inicializar renderizador gráfico (GLFW error 65542: The driver does not appear to support OpenGL)"
+          crashDetails="[18:42:10] [Render thread/INFO]: Setting user: Steve&#10;[18:42:11] [Render thread/ERROR]: Minecraft has stopped running because it couldn't find a compatible graphics driver.&#10;org.lwjgl.LWJGLException: Could not find OpenGL driver.&#10;    at org.lwjgl.opengl.WindowsPeerInfo.nChoosePixelFormat(Native Method)&#10;    at net.minecraft.client.main.Main.main(Main.java:214)"
+        />
+      </div>
+    );
+  }
+
+  const isInstallPreview =
+    typeof window !== 'undefined' && window.location.search.includes('preview=install');
+
+  if (isInstallPreview) {
+    return (
+      <InstallerView
+        defaultInstallDir="C:/.crystaltides"
+        onLaunchMain={() => {
+          if (typeof window !== 'undefined') window.location.href = window.location.pathname;
+        }}
+      />
+    );
+  }
+
+  const isUninstallPreview =
+    typeof window !== 'undefined' && window.location.search.includes('preview=uninstall');
+
+  if (isUninstallPreview) {
+    return <UninstallerView installDir="C:/.crystaltides" />;
   }
 
   // Vista del Instalador
@@ -217,50 +385,79 @@ export const App: React.FC = () => {
 
   // Vista Principal del Launcher
   return (
-    <div className="app-viewport">
-      {/* Fondo con blur dinámico en modales */}
-      <WallpaperBackground />
+    <ErrorBoundary>
+      <div className="app-viewport">
+        {/* Fondo con blur dinámico en modales */}
+        <WallpaperBackground />
 
-      {/* Controles de Ventana y Drag Region Global */}
-      <WindowHeader />
+        {/* Controles de Ventana y Drag Region Global */}
+        <WindowHeader />
 
-      {/* Switcher de vistas: Login vs Home */}
-      {currentView === 'login' ? (
-        <LoginView />
-      ) : (
-        <>
-          <HudEditorOverlay />
-          <HomeDock />
-          <BottomBar />
-          <GuiHintToast />
+        {/* Switcher de vistas: Login vs Home */}
+        {currentView === 'login' ? (
+          <LoginView />
+        ) : (
+          <>
+            <HudEditorOverlay />
+            <HomeDock />
+            <BottomBar />
+            <GuiHintToast />
 
-          {/* Modales */}
-          <InstancesModal />
-          <SettingsModal />
-          <AccountsModal />
-          <AboutModal />
-          <ModuleModalRenderer />
-          <CrashReportModal
-            isOpen={crashModalOpen}
-            onClose={() => setCrashModalOpen(false)}
-            onRetry={() => {
-              setCrashModalOpen(false);
-              launcherActions.startLaunchFlow();
-            }}
-            crashReason={crashData.reason}
-            crashDetails={crashData.details}
-            exitCode={crashData.code}
-          />
-        </>
-      )}
+            {/* Modales */}
+            <InstancesModal />
+            <SettingsModal />
+            <AccountsModal />
+            <AboutModal />
+            <ModuleModalRenderer />
+            <CrashReportModal
+              isOpen={crashModalOpen}
+              onClose={() => {
+                setCrashModalOpen(false);
+                launcherActions.cancelLaunchFlow();
+              }}
+              onRetry={() => {
+                setCrashModalOpen(false);
+                launcherActions.startLaunchFlow();
+              }}
+              onOpenOomAssistant={() => {
+                setCrashModalOpen(false);
+                setOomScreenOpen(true);
+              }}
+              crashReason={crashData.reason}
+              crashDetails={crashData.details}
+              exitCode={crashData.code}
+              gameDir={crashData.gameDir}
+              offendingMod={crashData.offendingMod}
+              suggestedAction={crashData.suggestedAction}
+            />
 
-      {/* Pantalla de carga interactiva al iniciar el juego */}
-      <GameLaunchOverlay />
+            {/* Pantalla Especial de Falta de RAM (La Nubecita) */}
+            {oomScreenOpen && (
+              <OutOfMemoryScreen
+                onClose={() => {
+                  setOomScreenOpen(false);
+                  launcherActions.cancelLaunchFlow();
+                }}
+                onRetry={() => {
+                  setOomScreenOpen(false);
+                  launcherActions.startLaunchFlow();
+                }}
+                crashReason={crashData.reason}
+                crashDetails={crashData.details}
+                exitCode={crashData.code}
+              />
+            )}
+          </>
+        )}
 
-      {/* Modal de Actualización Autónoma */}
-      {updateInfo?.available && (
-        <UpdaterModal updateInfo={updateInfo} onClose={() => setUpdateInfo(null)} />
-      )}
-    </div>
+        {/* Pantalla de carga interactiva al iniciar el juego */}
+        <GameLaunchOverlay />
+
+        {/* Modal de Actualización Autónoma */}
+        {updateInfo?.available && (
+          <UpdaterModal updateInfo={updateInfo} onClose={() => setUpdateInfo(null)} />
+        )}
+      </div>
+    </ErrorBoundary>
   );
 };

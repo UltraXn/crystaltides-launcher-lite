@@ -5,6 +5,8 @@ interface CustomColorPickerProps {
   color: string;
   onChange: (hex: string) => void;
   label?: string;
+  compact?: boolean;
+  alignRight?: boolean;
 }
 
 // Convert HSV to RGB [0-255, 0-255, 0-255]
@@ -13,11 +15,7 @@ function hsvToRgb(h: number, s: number, v: number): [number, number, number] {
     const k = (n + h / 60) % 6;
     return v - v * s * Math.max(Math.min(k, 4 - k, 1), 0);
   };
-  return [
-    Math.round(f(5) * 255),
-    Math.round(f(3) * 255),
-    Math.round(f(1) * 255),
-  ];
+  return [Math.round(f(5) * 255), Math.round(f(3) * 255), Math.round(f(1) * 255)];
 }
 
 // Convert RGB to HEX #rrggbb
@@ -30,10 +28,13 @@ function rgbToHex(r: number, g: number, b: number): string {
 function hexToHsv(hexStr: string): { h: number; s: number; v: number } {
   let clean = hexStr.replace(/^#/, '').trim();
   if (clean.length === 3) {
-    clean = clean.split('').map((c) => c + c).join('');
+    clean = clean
+      .split('')
+      .map((c) => c + c)
+      .join('');
   }
   if (!/^[0-9A-Fa-f]{6}$/.test(clean)) {
-    return { h: 186, s: 1, v: 1 };
+    return { h: 215, s: 0.15, v: 0.95 };
   }
   const r = parseInt(clean.substring(0, 2), 16) / 255;
   const g = parseInt(clean.substring(2, 4), 16) / 255;
@@ -58,22 +59,24 @@ function hexToHsv(hexStr: string): { h: number; s: number; v: number } {
 }
 
 const PRESET_SWATCHES = [
-  '#00e5ff',
-  '#38bdf8',
-  '#3b82f6',
-  '#8b5cf6',
-  '#d946ef',
-  '#ec4899',
-  '#ef4444',
-  '#f97316',
-  '#f59e0b',
-  '#22c55e',
+  '#f8fafc', // Blanco Cristal / Frost
+  '#94a3b8', // Plata Pizarra / Slate
+  '#475569', // Titanio Grafito
+  '#38bdf8', // Azul Éter Suave
+  '#818cf8', // Índigo Crepúsculo
+  '#c084fc', // Lavanda Satinado
+  '#fb7185', // Rosa Cuarzo Cálido
+  '#fb923c', // Ámbar Crepúsculo
+  '#eab308', // Oro Champagne
+  '#34d399', // Salvia Esmeralda
 ];
 
 export const CustomColorPicker: React.FC<CustomColorPickerProps> = ({
   color,
   onChange,
   label = 'Personalizado',
+  compact = false,
+  alignRight = false,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [prevColor, setPrevColor] = useState(color);
@@ -95,8 +98,15 @@ export const CustomColorPicker: React.FC<CustomColorPickerProps> = ({
   // Sync state if color changes externally
   if (color !== prevColor) {
     setPrevColor(color);
-    const newHsv = hexToHsv(color);
-    setHsv(newHsv);
+    const isDragging = isDraggingSvRef.current || isDraggingHueRef.current;
+    const [r, g, b] = hsvToRgb(hsv.h, hsv.s, hsv.v);
+    const currentHex = rgbToHex(r, g, b);
+    const isSameColor = color.toLowerCase() === currentHex.toLowerCase();
+
+    if (!isDragging && !isSameColor) {
+      const newHsv = hexToHsv(color);
+      setHsv(newHsv);
+    }
     setInputHex(color.toUpperCase());
   }
 
@@ -132,10 +142,10 @@ export const CustomColorPicker: React.FC<CustomColorPickerProps> = ({
       setInputHex(hex.toUpperCase());
       onChange(hex);
     },
-    [onChange]
+    [onChange],
   );
 
-  const handleSvMouseDown = (e: React.MouseEvent) => {
+  const handleSvMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     isDraggingSvRef.current = true;
     updateSvFromCoords(e.clientX, e.clientY);
@@ -153,7 +163,7 @@ export const CustomColorPicker: React.FC<CustomColorPickerProps> = ({
 
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
-  };
+  }, [updateSvFromCoords]);
 
   // Handle Hue spectrum bar drag or click (pure updater + external side effect)
   const updateHueFromCoords = useCallback(
@@ -174,10 +184,10 @@ export const CustomColorPicker: React.FC<CustomColorPickerProps> = ({
       setInputHex(hex.toUpperCase());
       onChange(hex);
     },
-    [onChange]
+    [onChange],
   );
 
-  const handleHueMouseDown = (e: React.MouseEvent) => {
+  const handleHueMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     isDraggingHueRef.current = true;
     updateHueFromCoords(e.clientX);
@@ -195,7 +205,7 @@ export const CustomColorPicker: React.FC<CustomColorPickerProps> = ({
 
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
-  };
+  }, [updateHueFromCoords]);
 
   // Handle HEX typing in text box
   const handleHexChange = (val: string) => {
@@ -219,32 +229,62 @@ export const CustomColorPicker: React.FC<CustomColorPickerProps> = ({
     onChange(hex.toLowerCase());
   };
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const svBox = svBoxRef.current;
+    const onSvDown = (e: MouseEvent) => {
+      handleSvMouseDown(e as unknown as React.MouseEvent);
+    };
+    if (svBox) svBox.addEventListener('mousedown', onSvDown);
+
+    const hueBar = hueBarRef.current;
+    const onHueDown = (e: MouseEvent) => {
+      handleHueMouseDown(e as unknown as React.MouseEvent);
+    };
+    if (hueBar) hueBar.addEventListener('mousedown', onHueDown);
+
+    return () => {
+      if (svBox) svBox.removeEventListener('mousedown', onSvDown);
+      if (hueBar) hueBar.removeEventListener('mousedown', onHueDown);
+    };
+  }, [isOpen, handleSvMouseDown, handleHueMouseDown]);
+
   return (
     <div style={{ position: 'relative', display: 'inline-block' }} ref={popoverRef}>
       {/* Trigger Button */}
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="accent-custom-picker-btn"
+        className={`accent-custom-picker-btn ${compact ? 'compact' : ''}`}
+        title={compact ? `${label} (${color.toUpperCase()})` : undefined}
         style={{
-          border: isOpen ? '1px solid #38bdf8' : '1px solid rgba(255, 255, 255, 0.14)',
-          background: isOpen ? 'rgba(56, 189, 248, 0.12)' : 'rgba(255, 255, 255, 0.06)',
+          border: isOpen
+            ? '1px solid rgba(56, 189, 248, 0.45)'
+            : '1px solid rgba(255, 255, 255, 0.12)',
+          background: isOpen ? 'rgba(56, 189, 248, 0.12)' : 'rgba(255, 255, 255, 0.05)',
+          gap: compact ? '2px' : '6px',
         }}
       >
         <div
           style={{
-            width: '14px',
-            height: '14px',
-            borderRadius: '4px',
+            width: compact ? '10px' : '14px',
+            height: compact ? '10px' : '14px',
+            borderRadius: compact ? '3px' : '4px',
             backgroundColor: color,
-            boxShadow: `0 0 8px ${color}80`,
-            border: '1px solid rgba(255, 255, 255, 0.3)',
+            boxShadow: `0 0 4px ${color}60`,
+            border: '1px solid rgba(255, 255, 255, 0.25)',
+            flexShrink: 0,
           }}
         />
-        <Pipette size={13} style={{ color }} />
-        <span>
-          {label} ({color.toUpperCase()})
-        </span>
+        <Pipette
+          size={compact ? 10 : 13}
+          style={{ color: compact ? '#cbd5e1' : color, flexShrink: 0 }}
+        />
+        {!compact && (
+          <span>
+            {label} ({color.toUpperCase()})
+          </span>
+        )}
       </button>
 
       {/* Modern HSV 2D Board + Hue Bar Popover */}
@@ -253,14 +293,15 @@ export const CustomColorPicker: React.FC<CustomColorPickerProps> = ({
           style={{
             position: 'absolute',
             top: 'calc(100% + 8px)',
-            left: 0,
+            left: alignRight ? 'auto' : 0,
+            right: alignRight ? 0 : 'auto',
             zIndex: 1500,
             width: '264px',
             backgroundColor: '#0c1017',
-            border: '1px solid rgba(255, 255, 255, 0.16)',
+            border: '1px solid rgba(255, 255, 255, 0.14)',
             borderRadius: '12px',
             padding: '12px',
-            boxShadow: '0 20px 50px rgba(0, 0, 0, 0.85), 0 0 25px rgba(56, 189, 248, 0.18)',
+            boxShadow: '0 20px 50px rgba(0, 0, 0, 0.9), 0 0 20px rgba(56, 189, 248, 0.08)',
             backdropFilter: 'blur(20px)',
             animation: 'fadeIn 0.18s ease-out',
             userSelect: 'none',
@@ -300,8 +341,6 @@ export const CustomColorPicker: React.FC<CustomColorPickerProps> = ({
           {/* 1. Saturation / Value 2D Gradient Canvas */}
           <div
             ref={svBoxRef}
-            role="presentation"
-            onMouseDown={handleSvMouseDown}
             style={{
               position: 'relative',
               width: '100%',
@@ -334,8 +373,6 @@ export const CustomColorPicker: React.FC<CustomColorPickerProps> = ({
           {/* 2. Rainbow Hue Slider Bar */}
           <div
             ref={hueBarRef}
-            role="presentation"
-            onMouseDown={handleHueMouseDown}
             style={{
               position: 'relative',
               width: '100%',

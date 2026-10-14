@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Loader2, FileText, Minimize2 } from "lucide-react";
 import { useLauncherStore, LauncherState } from "../store/launcherStore";
 import { LogViewerModal } from "./modals/LogViewerModal";
@@ -7,18 +7,34 @@ import logoImg from "../assets/logo.png";
 export const GameLaunchOverlay: React.FC = () => {
   const launch = useLauncherStore((s: LauncherState) => s.launch);
   const settings = useLauncherStore((s: LauncherState) => s.settings);
+  const instances = useLauncherStore((s: LauncherState) => s.instances);
+  const activeInstanceId = useLauncherStore((s: LauncherState) => s.activeInstanceId);
   const [isLogViewerOpen, setIsLogViewerOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
 
   const isLaunching = launch.status !== "IDLE" && launch.status !== "RUNNING";
 
+  useEffect(() => {
+    if (!isLaunching) {
+      setIsMinimized(false);
+    }
+  }, [isLaunching]);
+
   if (!isLaunching) return null;
+
+  const activeInst =
+    instances.find((i) => i.id === activeInstanceId) ||
+    instances[0];
+
+  const targetMcVersion = activeInst?.mcVersion || settings.mcVersion || "1.21.1";
+  const targetLoader = (activeInst?.loaderType || settings.loaderType || "vanilla").toUpperCase();
+  const targetLoaderVer = activeInst?.loaderVersion || settings.loaderVersion;
+  const isVanilla = targetLoader === "VANILLA";
 
   if (isMinimized) {
     return (
-      <div
-        role="button"
-        tabIndex={0}
+      <button
+        type="button"
         style={{
           position: "fixed",
           bottom: "70px",
@@ -34,14 +50,10 @@ export const GameLaunchOverlay: React.FC = () => {
           gap: "12px",
           color: "#F8FAFC",
           cursor: "pointer",
+          textAlign: "left",
+          fontFamily: "inherit",
         }}
         onClick={() => setIsMinimized(false)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            setIsMinimized(false);
-          }
-        }}
         title="Click para expandir pantalla de carga"
       >
         <Loader2 size={16} color="#38bdf8" style={{ animation: "spin 1s linear infinite" }} />
@@ -51,7 +63,7 @@ export const GameLaunchOverlay: React.FC = () => {
             {launch.message}
           </span>
         </div>
-      </div>
+      </button>
     );
   }
 
@@ -160,7 +172,9 @@ export const GameLaunchOverlay: React.FC = () => {
             textAlign: "center",
           }}
         >
-          {settings.mcVersion} • {settings.loaderType.toUpperCase()} {settings.loaderVersion ? `(${settings.loaderVersion})` : ""}
+          {activeInst?.name ? `${activeInst.name} • ` : ""}
+          {targetMcVersion} • {targetLoader}
+          {!isVanilla && targetLoaderVer ? ` (${targetLoaderVer})` : ""}
         </span>
 
         {/* Progress bar container */}
