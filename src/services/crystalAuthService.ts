@@ -72,6 +72,7 @@ async function fetchUserProfile(
           apikey: SUPABASE_ANON_KEY,
           Authorization: `Bearer ${accessToken}`,
         },
+        signal: AbortSignal.timeout(10000),
       },
     );
     if (profileRes.ok) {
@@ -155,6 +156,7 @@ export async function loginWithCrystalTides(
         apikey: SUPABASE_ANON_KEY,
       },
       body: JSON.stringify({ email, password }),
+      signal: AbortSignal.timeout(15000),
     });
   } catch (netErr: unknown) {
     console.error('[CrystalAuth] Network error:', netErr);

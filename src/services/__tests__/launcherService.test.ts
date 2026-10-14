@@ -31,20 +31,42 @@ describe('launcherService pure helpers', () => {
       expect(isLibraryAllowed({ rules: [] })).toBe(true);
     });
 
-    it('aplica reglas allow generales y específicas de windows', () => {
+    it('aplica reglas allow generales y específicas del OS actual', () => {
+      // Vitest jsdom userAgent usually contains "linux" or doesn't contain "win"/"mac"
+      // We will mock the userAgent for these tests to ensure consistent "windows" behavior
+      const originalNavigator = globalThis.navigator;
+      Object.defineProperty(globalThis, 'navigator', {
+        value: { userAgent: 'Windows NT 10.0; Win64; x64' },
+        configurable: true,
+      });
+
       expect(isLibraryAllowed({ rules: [{ action: 'allow' }] })).toBe(true);
       expect(isLibraryAllowed({ rules: [{ action: 'allow', os: { name: 'windows' } }] })).toBe(
         true,
       );
       expect(isLibraryAllowed({ rules: [{ action: 'allow', os: { name: 'osx' } }] })).toBe(false);
+
+      Object.defineProperty(globalThis, 'navigator', {
+        value: originalNavigator,
+        configurable: true,
+      });
     });
 
     it('aplica reglas disallow específicas de plataforma', () => {
+      const originalNavigator = globalThis.navigator;
+      Object.defineProperty(globalThis, 'navigator', {
+        value: { userAgent: 'Windows NT 10.0; Win64; x64' },
+        configurable: true,
+      });
       expect(
         isLibraryAllowed({
           rules: [{ action: 'allow' }, { action: 'disallow', os: { name: 'windows' } }],
         }),
       ).toBe(false);
+      Object.defineProperty(globalThis, 'navigator', {
+        value: originalNavigator,
+        configurable: true,
+      });
     });
   });
 
@@ -475,6 +497,11 @@ describe('launcherService pure helpers', () => {
 
   describe('processManifestJvmArgs & extractCustomGameArgs Phase 5 fixes', () => {
     it('soporta reglas OS en objetos JVM args y evalua platform allow/disallow', () => {
+      const originalNavigator = globalThis.navigator;
+      Object.defineProperty(globalThis, 'navigator', {
+        value: { userAgent: 'Windows NT 10.0; Win64; x64' },
+        configurable: true,
+      });
       const manifestJvm = [
         '-Dcommon=true',
         {
@@ -492,6 +519,10 @@ describe('launcherService pure helpers', () => {
       expect(args).toContain('-Dcommon=true');
       expect(args).toContain('-XX:HeapDumpPath=C:/dumps');
       expect(args).not.toContain('-XstartOnFirstThread');
+      Object.defineProperty(globalThis, 'navigator', {
+        value: originalNavigator,
+        configurable: true,
+      });
     });
 
     it('añade ,${mcVersion}.jar a -DignoreList cuando versionId !== mcVersion', () => {
