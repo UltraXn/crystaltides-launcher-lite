@@ -843,7 +843,8 @@ async fn open_microsoft_auth_window(app_handle: tauri::AppHandle) -> Result<Stri
     .always_on_top(true)
     .on_navigation(move |url| {
         if let Some(auth_result) = parse_oauth_query(url) {
-            if let Some(sender) = tx_nav.lock().unwrap().take() {
+            let mut lock = tx_nav.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(sender) = lock.take() {
                 let _ = sender.send(auth_result);
             }
             return false;
@@ -857,7 +858,8 @@ async fn open_microsoft_auth_window(app_handle: tauri::AppHandle) -> Result<Stri
     let tx_close = tx_mutex.clone();
     window.on_window_event(move |event| {
         if let tauri::WindowEvent::CloseRequested { .. } = event {
-            if let Some(sender) = tx_close.lock().unwrap().take() {
+            let mut lock = tx_close.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(sender) = lock.take() {
                 let _ = sender.send(Err("El usuario cerró la ventana de inicio de sesión.".to_string()));
             }
         }

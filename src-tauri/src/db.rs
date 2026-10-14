@@ -125,7 +125,7 @@ pub fn get_connection() -> Result<&'static Mutex<Connection>, String> {
 #[tauri::command]
 pub fn db_get_profiles() -> Result<Vec<ProfileRecord>, String> {
     let mutex = get_connection()?;
-    let conn = mutex.lock().unwrap_or_else(|e| e.into_inner());
+    let conn = mutex.lock().unwrap_or_else(|e| { crate::logger::log("WARN", "DB", &format!("Mutex envenenado, recuperando lock... {}", e)); e.into_inner() });
 
     let mut stmt = conn
         .prepare("SELECT id, name, mc_version, loader_type, loader_version, min_ram, max_ram, jvm_args, game_dir, resolution_width, resolution_height, fullscreen, pre_launch_command, wrapper_command, post_exit_command, environment_variables, created_at, updated_at FROM profiles ORDER BY updated_at DESC")
@@ -167,7 +167,7 @@ pub fn db_get_profiles() -> Result<Vec<ProfileRecord>, String> {
 #[tauri::command]
 pub fn db_save_profile(profile: ProfileRecord) -> Result<(), String> {
     let mutex = get_connection()?;
-    let conn = mutex.lock().unwrap_or_else(|e| e.into_inner());
+    let conn = mutex.lock().unwrap_or_else(|e| { crate::logger::log("WARN", "DB", &format!("Mutex envenenado, recuperando lock... {}", e)); e.into_inner() });
 
     conn.execute(
         "INSERT INTO profiles (id, name, mc_version, loader_type, loader_version, min_ram, max_ram, jvm_args, game_dir, resolution_width, resolution_height, fullscreen, pre_launch_command, wrapper_command, post_exit_command, environment_variables, created_at, updated_at)
@@ -218,7 +218,7 @@ pub fn db_save_profile(profile: ProfileRecord) -> Result<(), String> {
 #[tauri::command]
 pub fn db_delete_profile(id: String) -> Result<(), String> {
     let mutex = get_connection()?;
-    let conn = mutex.lock().unwrap_or_else(|e| e.into_inner());
+    let conn = mutex.lock().unwrap_or_else(|e| { crate::logger::log("WARN", "DB", &format!("Mutex envenenado, recuperando lock... {}", e)); e.into_inner() });
 
     conn.execute("DELETE FROM profiles WHERE id = ?1", params![id])
         .map_err(|e| format!("Error eliminando perfil: {}", e))?;
@@ -229,7 +229,7 @@ pub fn db_delete_profile(id: String) -> Result<(), String> {
 #[tauri::command]
 pub fn db_get_accounts() -> Result<Vec<AccountRecord>, String> {
     let mutex = get_connection()?;
-    let conn = mutex.lock().unwrap_or_else(|e| e.into_inner());
+    let conn = mutex.lock().unwrap_or_else(|e| { crate::logger::log("WARN", "DB", &format!("Mutex envenenado, recuperando lock... {}", e)); e.into_inner() });
 
     let mut stmt = conn
         .prepare("SELECT id, username, uuid, account_type, access_token, skin_url, is_active, created_at FROM accounts ORDER BY is_active DESC, created_at DESC")
@@ -261,7 +261,7 @@ pub fn db_get_accounts() -> Result<Vec<AccountRecord>, String> {
 #[tauri::command]
 pub fn db_save_account(account: AccountRecord) -> Result<(), String> {
     let mutex = get_connection()?;
-    let conn = mutex.lock().unwrap_or_else(|e| e.into_inner());
+    let conn = mutex.lock().unwrap_or_else(|e| { crate::logger::log("WARN", "DB", &format!("Mutex envenenado, recuperando lock... {}", e)); e.into_inner() });
 
     let tx = conn
         .unchecked_transaction()
@@ -304,7 +304,7 @@ pub fn db_save_account(account: AccountRecord) -> Result<(), String> {
 #[tauri::command]
 pub fn db_delete_account(id: String) -> Result<(), String> {
     let mutex = get_connection()?;
-    let conn = mutex.lock().unwrap_or_else(|e| e.into_inner());
+    let conn = mutex.lock().unwrap_or_else(|e| { crate::logger::log("WARN", "DB", &format!("Mutex envenenado, recuperando lock... {}", e)); e.into_inner() });
 
     conn.execute("DELETE FROM accounts WHERE id = ?1", params![id])
         .map_err(|e| format!("Error eliminando cuenta: {}", e))?;
@@ -315,7 +315,7 @@ pub fn db_delete_account(id: String) -> Result<(), String> {
 #[tauri::command]
 pub fn db_set_active_account(id: String) -> Result<(), String> {
     let mutex = get_connection()?;
-    let conn = mutex.lock().unwrap_or_else(|e| e.into_inner());
+    let conn = mutex.lock().unwrap_or_else(|e| { crate::logger::log("WARN", "DB", &format!("Mutex envenenado, recuperando lock... {}", e)); e.into_inner() });
 
     conn.execute(
         "UPDATE accounts SET is_active = CASE WHEN id = ?1 THEN 1 ELSE 0 END",
