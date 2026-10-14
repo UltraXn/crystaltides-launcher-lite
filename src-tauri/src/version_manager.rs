@@ -43,6 +43,36 @@ pub struct MojangDownloads {
 pub struct MojangLibrary {
     pub name: Option<String>,
     pub downloads: Option<MojangLibraryDownloads>,
+    pub rules: Option<Vec<serde_json::Value>>,
+}
+
+pub fn is_library_allowed_on_current_os(rules: &Option<Vec<serde_json::Value>>) -> bool {
+    let rules = match rules {
+        Some(r) if !r.is_empty() => r,
+        _ => return true,
+    };
+
+    let current_os = match std::env::consts::OS {
+        "windows" => "windows",
+        "macos" => "osx",
+        "linux" => "linux",
+        other => other,
+    };
+
+    let mut allowed = false;
+    for rule in rules {
+        let action = rule.get("action").and_then(|a| a.as_str()).unwrap_or("disallow");
+        if let Some(os) = rule.get("os").and_then(|o| o.as_object()) {
+            if let Some(os_name) = os.get("name").and_then(|n| n.as_str()) {
+                if os_name == current_os {
+                    allowed = action == "allow";
+                }
+            }
+        } else {
+            allowed = action == "allow";
+        }
+    }
+    allowed
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
@@ -89,6 +119,46 @@ fn get_appdata_minecraft_dir() -> Option<PathBuf> {
     })
 }
 
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+enum VersionChunk<'a> {
+    Num(u64),
+    Str(&'a str),
+}
+
+fn to_natural_chunks(s: &str) -> Vec<VersionChunk<'_>> {
+    let mut chunks = Vec::new();
+    let mut chars = s.char_indices().peekable();
+
+    while let Some(&(i, c)) = chars.peek() {
+        if c.is_ascii_digit() {
+            let start = i;
+            while let Some(&(_, next_c)) = chars.peek() {
+                if next_c.is_ascii_digit() {
+                    chars.next();
+                } else {
+                    break;
+                }
+            }
+            let end = chars.peek().map(|&(idx, _)| idx).unwrap_or(s.len());
+            let num = s[start..end].parse::<u64>().unwrap_or(0);
+            chunks.push(VersionChunk::Num(num));
+        } else {
+            let start = i;
+            while let Some(&(_, next_c)) = chars.peek() {
+                if !next_c.is_ascii_digit() {
+                    chars.next();
+                } else {
+                    break;
+                }
+            }
+            let end = chars.peek().map(|&(idx, _)| idx).unwrap_or(s.len());
+            chunks.push(VersionChunk::Str(&s[start..end]));
+        }
+    }
+
+    chunks
+}
+
 /// Scans local directories for all installed versions with a .json file
 pub fn get_installed_versions() -> Vec<String> {
     let mut versions = Vec::new();
@@ -106,9 +176,9 @@ pub fn get_installed_versions() -> Vec<String> {
         }
     }
 
-    versions.sort();
+    // Ordenamiento natural semántico descendente (ej. 1.21.1 > 1.20 > 1.9 > 1.8.9)
+    versions.sort_by(|a, b| to_natural_chunks(b).cmp(&to_natural_chunks(a)));
     versions.dedup();
-    versions.reverse(); // newer first
 
     // Prioritize 1.21.1 at the top of Minecraft versions
     if let Some(pos) = versions.iter().position(|v| v == "1.21.1") {
@@ -119,19 +189,409 @@ pub fn get_installed_versions() -> Vec<String> {
     versions
 }
 
+fn check_version_entry(entry: &fs::DirEntry) -> Option<String> {
+    let file_type = entry.file_type().ok()?;
+    if !file_type.is_dir() {
+        return None;
+    }
+    let folder_name = entry.file_name().to_string_lossy().to_string();
+    let json_path = entry.path().join(format!("{}.json", folder_name));
+    if json_path.exists() {
+        Some(folder_name)
+    } else {
+        None
+    }
+}
+
 fn scan_versions_in_dir(dir: &Path, versions: &mut Vec<String>) {
     if !dir.is_dir() {
         return;
     }
     if let Ok(entries) = fs::read_dir(dir) {
         for entry in entries.flatten() {
-            if let Ok(file_type) = entry.file_type() {
-                if file_type.is_dir() {
-                    let folder_name = entry.file_name().to_string_lossy().to_string();
-                    let json_path = entry.path().join(format!("{}.json", folder_name));
-                    if json_path.exists() {
-                        versions.push(folder_name);
+            if let Some(folder_name) = check_version_entry(&entry) {
+                versions.push(folder_name);
+            }
+        }
+    }
+}
+
+fn try_copy_from_local_minecraft(version_id: &str, target_jar: &Path, target_json: &Path) -> bool {
+    if let Some(mc_dir) = get_appdata_minecraft_dir() {
+        let mc_ver_dir = mc_dir.join("versions").join(version_id);
+        let mc_jar = mc_ver_dir.join(format!("{}.jar", version_id));
+        let mc_json = mc_ver_dir.join(format!("{}.json", version_id));
+
+        if mc_json.exists() && !target_json.exists() {
+            let _ = fs::copy(&mc_json, target_json);
+        }
+        if mc_jar.exists() && !target_jar.exists() {
+            let _ = fs::copy(&mc_jar, target_jar);
+            println!("[VersionManager] Copied {} jar and json from .minecraft", version_id);
+            return true;
+        }
+    }
+    false
+}
+
+async fn fetch_mojang_version_detail(
+    client: &reqwest::Client,
+    version_id: &str,
+    target_json: &Path,
+) -> Result<MojangVersionDetail, String> {
+    println!("[VersionManager] Downloading manifest for {} from Mojang...", version_id);
+    let manifest_url = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
+    let manifest_resp = client.get(manifest_url).send().await
+        .map_err(|e| format!("Error conectando con Mojang: {}", e))?
+        .error_for_status()
+        .map_err(|e| format!("Error HTTP en manifiesto de Mojang: {}", e))?;
+    let manifest: MojangVersionManifest = manifest_resp.json().await
+        .map_err(|e| format!("Error parseando manifiesto de Mojang: {}", e))?;
+
+    let version_entry = manifest.versions.iter().find(|v| v.id == version_id)
+        .ok_or_else(|| format!("Versión '{}' no encontrada en el catálogo oficial de Mojang ni en instalaciones locales.", version_id))?;
+
+    println!("[VersionManager] Found version entry URL: {}", version_entry.url);
+    let detail_resp = client.get(&version_entry.url).send().await
+        .map_err(|e| format!("Error descargando json de versión: {}", e))?
+        .error_for_status()
+        .map_err(|e| format!("Error HTTP al descargar json de versión: {}", e))?;
+    let detail_bytes = detail_resp.bytes().await.map_err(|e| e.to_string())?;
+
+    fs::write(target_json, &detail_bytes)
+        .map_err(|e| format!("Error guardando {}.json: {}", version_id, e))?;
+
+    let detail: MojangVersionDetail = serde_json::from_slice(&detail_bytes)
+        .map_err(|e| format!("Error parseando detalle de versión: {}", e))?;
+
+    Ok(detail)
+}
+
+async fn download_client_jar(
+    client: &reqwest::Client,
+    version_id: &str,
+    detail: &MojangVersionDetail,
+    target_jar: &Path,
+) -> Result<(), String> {
+    let client_download = detail.downloads.as_ref().and_then(|d| d.client.as_ref());
+    let url = match client_download.and_then(|c| c.url.as_ref()) {
+        Some(u) => u,
+        None => return Ok(()),
+    };
+    let sha1_expected = client_download.and_then(|c| c.sha1.as_deref());
+
+    println!("[VersionManager] Downloading client.jar from {}...", url);
+    let jar_resp = client.get(url).send().await
+        .map_err(|e| format!("Error descargando client.jar: {}", e))?
+        .error_for_status()
+        .map_err(|e| format!("Error HTTP descargando client.jar: {}", e))?;
+    let jar_bytes = jar_resp.bytes().await.map_err(|e| e.to_string())?;
+
+    if let Some(expected_hash) = sha1_expected {
+        use sha1::Digest;
+        let mut hasher = sha1::Sha1::new();
+        hasher.update(&jar_bytes);
+        let computed = format!("{:x}", hasher.finalize());
+        if !computed.eq_ignore_ascii_case(expected_hash) {
+            return Err(format!(
+                "SHA-1 mismatch para client.jar ({}): esperada {}, obtenida {}",
+                version_id, expected_hash, computed
+            ));
+        }
+    }
+
+    fs::write(target_jar, &jar_bytes)
+        .map_err(|e| format!("Error guardando {}.jar: {}", version_id, e))?;
+    println!("[VersionManager] client.jar downloaded successfully ({} bytes).", jar_bytes.len());
+    Ok(())
+}
+
+async fn download_single_library(
+    client: reqwest::Client,
+    rel_path: String,
+    url: String,
+    sha1_expected: Option<String>,
+    libraries_dir: PathBuf,
+    mc_lib_dir: Option<PathBuf>,
+) {
+    let rel_p = Path::new(&rel_path);
+    if rel_p.is_absolute() || rel_p.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+        eprintln!(
+            "[VersionManager] rel_path inválido o intento de path traversal: {}",
+            rel_path
+        );
+        return;
+    }
+
+    let target_lib_path = libraries_dir.join(&rel_path);
+    if target_lib_path.exists() {
+        return;
+    }
+
+    if let Some(ref mc_libs) = mc_lib_dir {
+        let mc_lib_path = mc_libs.join(&rel_path);
+        if mc_lib_path.exists() {
+            if let Some(parent) = target_lib_path.parent() {
+                let _ = fs::create_dir_all(parent);
+            }
+            let _ = fs::copy(&mc_lib_path, &target_lib_path);
+            return;
+        }
+    }
+
+    if let Some(parent) = target_lib_path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    if let Ok(resp) = client.get(&url).send().await {
+        if resp.status().is_success() {
+            if let Ok(bytes) = resp.bytes().await {
+                if let Some(ref expected_hash) = sha1_expected {
+                    use sha1::Digest;
+                    let mut hasher = sha1::Sha1::new();
+                    hasher.update(&bytes);
+                    let computed = format!("{:x}", hasher.finalize());
+                    if !computed.eq_ignore_ascii_case(expected_hash) {
+                        eprintln!(
+                            "[VersionManager] SHA-1 mismatch para biblioteca {}: esperada {}, obtenida {}",
+                            rel_path, expected_hash, computed
+                        );
+                        return;
                     }
+                }
+                let _ = fs::write(&target_lib_path, bytes);
+            }
+        }
+    }
+}
+
+async fn download_missing_libraries(
+    client: &reqwest::Client,
+    game_dir: &Path,
+    detail: &MojangVersionDetail,
+) {
+    let libraries = match &detail.libraries {
+        Some(libs) => libs,
+        None => return,
+    };
+
+    let libraries_dir = game_dir.join("libraries");
+    let mc_lib_dir = get_appdata_minecraft_dir().map(|d| d.join("libraries"));
+
+    let mut missing_libs = Vec::new();
+    for lib in libraries {
+        if !is_library_allowed_on_current_os(&lib.rules) {
+            continue;
+        }
+        if let Some(downloads) = &lib.downloads {
+            if let Some(artifact) = &downloads.artifact {
+                if let (Some(rel_path), Some(url)) = (&artifact.path, &artifact.url) {
+                    missing_libs.push((rel_path.clone(), url.clone(), artifact.sha1.clone()));
+                }
+            }
+        }
+    }
+
+    for chunk in missing_libs.chunks(15) {
+        let mut handles = Vec::new();
+        for (rel_path, url, sha1) in chunk {
+            let c = client.clone();
+            let rp = rel_path.clone();
+            let u = url.clone();
+            let s = sha1.clone();
+            let ld = libraries_dir.clone();
+            let mc = mc_lib_dir.clone();
+            handles.push(tokio::spawn(download_single_library(c, rp, u, s, ld, mc)));
+        }
+        for h in handles {
+            let _ = h.await;
+        }
+    }
+}
+
+fn read_cached_asset_index(
+    target_index_file: &Path,
+    mc_index_file: Option<&PathBuf>,
+) -> Option<String> {
+    if target_index_file.exists() {
+        return fs::read_to_string(target_index_file).ok();
+    }
+    let mc_idx = mc_index_file?;
+    if !mc_idx.exists() {
+        return None;
+    }
+    let content = fs::read_to_string(mc_idx).ok()?;
+    let _ = fs::write(target_index_file, &content);
+    Some(content)
+}
+
+async fn download_asset_index_content(
+    client: &reqwest::Client,
+    asset_ref: &MojangAssetIndexRef,
+    target_index_file: &Path,
+    mc_index_file: Option<&PathBuf>,
+) -> Option<String> {
+    println!("[VersionManager] Downloading asset index {} from {}...", asset_ref.id, asset_ref.url);
+    let resp = client.get(&asset_ref.url).send().await.ok()?;
+    if !resp.status().is_success() {
+        return None;
+    }
+    let text = resp.text().await.ok()?;
+    let _ = fs::write(target_index_file, &text);
+    if let Some(mc_idx) = mc_index_file {
+        if let Some(parent) = mc_idx.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        let _ = fs::write(mc_idx, &text);
+    }
+    Some(text)
+}
+
+async fn resolve_asset_index_content(
+    client: &reqwest::Client,
+    asset_ref: &MojangAssetIndexRef,
+    target_index_file: &Path,
+    mc_index_file: Option<&PathBuf>,
+) -> Option<String> {
+    if let Some(cached) = read_cached_asset_index(target_index_file, mc_index_file) {
+        return Some(cached);
+    }
+    download_asset_index_content(client, asset_ref, target_index_file, mc_index_file).await
+}
+
+fn collect_missing_asset_objects(
+    objects: &serde_json::Map<String, serde_json::Value>,
+    objects_dir: &Path,
+    mc_objects_dir: Option<&PathBuf>,
+) -> Vec<(String, String)> {
+    let mut missing_objects = Vec::new();
+    for (_obj_name, obj_val) in objects {
+        let hash = match obj_val.get("hash").and_then(|h| h.as_str()) {
+            Some(h) if h.len() == 40 && h.bytes().all(|b| b.is_ascii_hexdigit()) => h,
+            _ => continue,
+        };
+
+        let prefix = &hash[..2];
+        let target_obj = objects_dir.join(prefix).join(hash);
+        if target_obj.exists() {
+            continue;
+        }
+
+        if let Some(mc_objs) = mc_objects_dir {
+            let mc_obj = mc_objs.join(prefix).join(hash);
+            if mc_obj.exists() {
+                if let Some(parent) = target_obj.parent() {
+                    let _ = fs::create_dir_all(parent);
+                }
+                let _ = fs::copy(&mc_obj, &target_obj);
+                continue;
+            }
+        }
+
+        missing_objects.push((prefix.to_string(), hash.to_string()));
+    }
+    missing_objects
+}
+
+fn write_asset_file_copies(target_file: &Path, mc_file: Option<&PathBuf>, bytes: &[u8]) {
+    if let Some(p) = target_file.parent() {
+        let _ = fs::create_dir_all(p);
+    }
+    let _ = fs::write(target_file, bytes);
+    if let Some(mc_f) = mc_file {
+        if let Some(p) = mc_f.parent() {
+            let _ = fs::create_dir_all(p);
+        }
+        let _ = fs::write(mc_f, bytes);
+    }
+}
+
+async fn fetch_single_asset_object(
+    client: reqwest::Client,
+    url: String,
+    expected_hash: String,
+    target_file: PathBuf,
+    mc_file: Option<PathBuf>,
+) {
+    if let Ok(resp) = client.get(&url).send().await {
+        if resp.status().is_success() {
+            if let Ok(bytes) = resp.bytes().await {
+                use sha1::Digest;
+                let mut hasher = sha1::Sha1::new();
+                hasher.update(&bytes);
+                let computed = format!("{:x}", hasher.finalize());
+                if computed.eq_ignore_ascii_case(&expected_hash) {
+                    write_asset_file_copies(&target_file, mc_file.as_ref(), &bytes);
+                } else {
+                    eprintln!(
+                        "[VersionManager] SHA-1 mismatch para asset {}: esperada {}, obtenida {}",
+                        expected_hash, expected_hash, computed
+                    );
+                }
+            }
+        }
+    }
+}
+
+async fn download_missing_asset_objects_parallel(
+    client: &reqwest::Client,
+    missing_objects: &[(String, String)],
+    objects_dir: &Path,
+    mc_objects_dir: Option<&PathBuf>,
+) {
+    for chunk in missing_objects.chunks(25) {
+        let mut handles = Vec::new();
+        for (prefix, hash) in chunk {
+            let url = format!("https://resources.download.minecraft.net/{}/{}", prefix, hash);
+            let target_file = objects_dir.join(prefix).join(hash);
+            let mc_file = mc_objects_dir.map(|d| d.join(prefix).join(hash));
+            let c = client.clone();
+            let expected_hash = hash.clone();
+            handles.push(tokio::spawn(fetch_single_asset_object(
+                c,
+                url,
+                expected_hash,
+                target_file,
+                mc_file,
+            )));
+        }
+        for h in handles {
+            let _ = h.await;
+        }
+    }
+    println!("[VersionManager] Asset objects downloaded successfully.");
+}
+
+async fn download_missing_assets(
+    client: &reqwest::Client,
+    game_dir: &Path,
+    detail: &MojangVersionDetail,
+) {
+    let asset_ref = match &detail.asset_index {
+        Some(r) => r,
+        None => return,
+    };
+
+    let assets_dir = game_dir.join("assets");
+    let indexes_dir = assets_dir.join("indexes");
+    let objects_dir = assets_dir.join("objects");
+    let _ = fs::create_dir_all(&indexes_dir);
+    let _ = fs::create_dir_all(&objects_dir);
+    let target_index_file = indexes_dir.join(format!("{}.json", asset_ref.id));
+
+    let mc_assets_dir = get_appdata_minecraft_dir().map(|d| d.join("assets"));
+    let mc_index_file = mc_assets_dir.as_ref().map(|a| a.join("indexes").join(format!("{}.json", asset_ref.id)));
+
+    let index_content = resolve_asset_index_content(client, asset_ref, &target_index_file, mc_index_file.as_ref()).await;
+
+    if let Some(content) = index_content {
+        if let Ok(parsed_idx) = serde_json::from_str::<serde_json::Value>(&content) {
+            if let Some(objects) = parsed_idx.get("objects").and_then(|o| o.as_object()) {
+                let mc_objects_dir = mc_assets_dir.as_ref().map(|a| a.join("objects"));
+                let missing_objects = collect_missing_asset_objects(objects, &objects_dir, mc_objects_dir.as_ref());
+
+                if !missing_objects.is_empty() {
+                    println!("[VersionManager] Downloading {} missing assets for index {}...", missing_objects.len(), asset_ref.id);
+                    download_missing_asset_objects_parallel(client, &missing_objects, &objects_dir, mc_objects_dir.as_ref()).await;
                 }
             }
         }
@@ -146,214 +606,67 @@ pub async fn prepare_version(version_id: &str, game_dir_str: &str) -> Result<Str
     let target_jar = target_ver_dir.join(format!("{}.jar", version_id));
     let target_json = target_ver_dir.join(format!("{}.json", version_id));
 
-    // If both jar and json already exist in game_dir, we're ready
-    if target_jar.exists() && target_json.exists() {
-        return Ok(format!("Version {} ya lista en {}", version_id, game_dir_str));
-    }
-
     fs::create_dir_all(&target_ver_dir)
         .map_err(|e| format!("No se pudo crear carpeta de versión {}: {}", version_id, e))?;
 
-    // 1. Try copying from local .minecraft
-    if let Some(mc_dir) = get_appdata_minecraft_dir() {
-        let mc_ver_dir = mc_dir.join("versions").join(version_id);
-        let mc_jar = mc_ver_dir.join(format!("{}.jar", version_id));
-        let mc_json = mc_ver_dir.join(format!("{}.json", version_id));
+    // 1. Try copying from local .minecraft (no retornar prematuramente para asegurar librerías y assets)
+    let _ = try_copy_from_local_minecraft(version_id, &target_jar, &target_json);
 
-        if mc_json.exists() && !target_json.exists() {
-            let _ = fs::copy(&mc_json, &target_json);
-        }
-        if mc_jar.exists() && !target_jar.exists() {
-            let _ = fs::copy(&mc_jar, &target_jar);
-            println!("[VersionManager] Copied {} jar and json from .minecraft", version_id);
-            return Ok(format!("Version {} copiada desde .minecraft", version_id));
-        }
-    }
-
-    // 2. Download from Mojang Piston Meta
-    println!("[VersionManager] Downloading manifest for {} from Mojang...", version_id);
+    // 2. Download from Mojang Piston Meta or load existing version JSON
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
         .build()
         .map_err(|e| e.to_string())?;
 
-    let manifest_url = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
-    let manifest_resp = client.get(manifest_url).send().await.map_err(|e| format!("Error conectando con Mojang: {}", e))?;
-    let manifest: MojangVersionManifest = manifest_resp.json().await.map_err(|e| format!("Error parseando manifiesto de Mojang: {}", e))?;
-
-    let version_entry = manifest.versions.iter().find(|v| v.id == version_id)
-        .ok_or_else(|| format!("Versión '{}' no encontrada en el catálogo oficial de Mojang ni en instalaciones locales.", version_id))?;
-
-    println!("[VersionManager] Found version entry URL: {}", version_entry.url);
-    let detail_resp = client.get(&version_entry.url).send().await.map_err(|e| format!("Error descargando json de versión: {}", e))?;
-    let detail_bytes = detail_resp.bytes().await.map_err(|e| e.to_string())?;
-
-    // Save version json
-    fs::write(&target_json, &detail_bytes).map_err(|e| format!("Error guardando {}.json: {}", version_id, e))?;
-
-    let detail: MojangVersionDetail = serde_json::from_slice(&detail_bytes)
-        .map_err(|e| format!("Error parseando detalle de versión: {}", e))?;
-
-    // Download client.jar
-    if let Some(downloads) = detail.downloads {
-        if let Some(client_artifact) = downloads.client {
-            if let Some(url) = client_artifact.url {
-                println!("[VersionManager] Downloading client.jar from {}...", url);
-                let jar_resp = client.get(&url).send().await.map_err(|e| format!("Error descargando client.jar: {}", e))?;
-                let jar_bytes = jar_resp.bytes().await.map_err(|e| e.to_string())?;
-                fs::write(&target_jar, &jar_bytes).map_err(|e| format!("Error guardando {}.jar: {}", version_id, e))?;
-                println!("[VersionManager] client.jar downloaded successfully ({} bytes).", jar_bytes.len());
-            }
+    let detail = if target_json.exists() {
+        if let Ok(bytes) = fs::read(&target_json) {
+            serde_json::from_slice(&bytes).ok()
+        } else {
+            None
         }
+    } else {
+        None
+    };
+
+    let detail = match detail {
+        Some(d) => d,
+        None => fetch_mojang_version_detail(&client, version_id, &target_json).await?,
+    };
+
+    let client_sha1 = detail.downloads.as_ref()
+        .and_then(|d| d.client.as_ref())
+        .and_then(|c| c.sha1.as_deref());
+
+    let need_download_jar = if !target_jar.exists() {
+        true
+    } else if let Some(expected_hash) = client_sha1 {
+        if let Ok(bytes) = fs::read(&target_jar) {
+            use sha1::Digest;
+            let mut hasher = sha1::Sha1::new();
+            hasher.update(&bytes);
+            let computed = format!("{:x}", hasher.finalize());
+            if !computed.eq_ignore_ascii_case(expected_hash) {
+                println!(
+                    "[VersionManager] Hash SHA-1 de client.jar corrupto o desactualizado (esperado: {}, actual: {}). Re-descargando...",
+                    expected_hash, computed
+                );
+                true
+            } else {
+                false
+            }
+        } else {
+            true
+        }
+    } else {
+        false
+    };
+
+    if need_download_jar {
+        download_client_jar(&client, version_id, &detail, &target_jar).await?;
     }
 
-    // Also download essential libraries if missing
-    if let Some(libraries) = detail.libraries {
-        let libraries_dir = game_dir.join("libraries");
-        let mc_lib_dir = get_appdata_minecraft_dir().map(|d| d.join("libraries"));
-
-        for lib in libraries {
-            if let Some(downloads) = lib.downloads {
-                if let Some(artifact) = downloads.artifact {
-                    if let (Some(rel_path), Some(url)) = (artifact.path, artifact.url) {
-                        let target_lib_path = libraries_dir.join(&rel_path);
-                        if target_lib_path.exists() {
-                            continue;
-                        }
-
-                        // Check if present in .minecraft/libraries
-                        if let Some(ref mc_libs) = mc_lib_dir {
-                            let mc_lib_path = mc_libs.join(&rel_path);
-                            if mc_lib_path.exists() {
-                                if let Some(parent) = target_lib_path.parent() {
-                                    let _ = fs::create_dir_all(parent);
-                                }
-                                let _ = fs::copy(&mc_lib_path, &target_lib_path);
-                                continue;
-                            }
-                        }
-
-                        // Download missing library in background/sync
-                        if let Some(parent) = target_lib_path.parent() {
-                            let _ = fs::create_dir_all(parent);
-                        }
-                        if let Ok(resp) = client.get(&url).send().await {
-                            if let Ok(bytes) = resp.bytes().await {
-                                let _ = fs::write(&target_lib_path, bytes);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // 3. Download asset index and missing asset objects (sounds, languages, textures)
-    if let Some(asset_ref) = detail.asset_index {
-        let assets_dir = game_dir.join("assets");
-        let indexes_dir = assets_dir.join("indexes");
-        let objects_dir = assets_dir.join("objects");
-        let _ = fs::create_dir_all(&indexes_dir);
-        let _ = fs::create_dir_all(&objects_dir);
-        let target_index_file = indexes_dir.join(format!("{}.json", asset_ref.id));
-
-        let mc_assets_dir = get_appdata_minecraft_dir().map(|d| d.join("assets"));
-        let mc_index_file = mc_assets_dir.as_ref().map(|a| a.join("indexes").join(format!("{}.json", asset_ref.id)));
-
-        let mut index_content = None;
-        if target_index_file.exists() {
-            index_content = fs::read_to_string(&target_index_file).ok();
-        } else if let Some(ref mc_idx) = mc_index_file {
-            if mc_idx.exists() {
-                if let Ok(content) = fs::read_to_string(mc_idx) {
-                    let _ = fs::write(&target_index_file, &content);
-                    index_content = Some(content);
-                }
-            }
-        }
-
-        if index_content.is_none() {
-            println!("[VersionManager] Downloading asset index {} from {}...", asset_ref.id, asset_ref.url);
-            if let Ok(resp) = client.get(&asset_ref.url).send().await {
-                if let Ok(text) = resp.text().await {
-                    let _ = fs::write(&target_index_file, &text);
-                    if let Some(ref mc_idx) = mc_index_file {
-                        if let Some(parent) = mc_idx.parent() {
-                            let _ = fs::create_dir_all(parent);
-                        }
-                        let _ = fs::write(mc_idx, &text);
-                    }
-                    index_content = Some(text);
-                }
-            }
-        }
-
-        if let Some(content) = index_content {
-            if let Ok(parsed_idx) = serde_json::from_str::<serde_json::Value>(&content) {
-                if let Some(objects) = parsed_idx.get("objects").and_then(|o| o.as_object()) {
-                    let mc_objects_dir = mc_assets_dir.as_ref().map(|a| a.join("objects"));
-
-                    let mut missing_objects = Vec::new();
-                    for (_obj_name, obj_val) in objects {
-                        if let Some(hash) = obj_val.get("hash").and_then(|h| h.as_str()) {
-                            if hash.len() < 2 {
-                                continue;
-                            }
-                            let prefix = &hash[..2];
-                            let target_obj = objects_dir.join(prefix).join(hash);
-                            if target_obj.exists() {
-                                continue;
-                            }
-                            if let Some(ref mc_objs) = mc_objects_dir {
-                                let mc_obj = mc_objs.join(prefix).join(hash);
-                                if mc_obj.exists() {
-                                    if let Some(parent) = target_obj.parent() {
-                                        let _ = fs::create_dir_all(parent);
-                                    }
-                                    let _ = fs::copy(&mc_obj, &target_obj);
-                                    continue;
-                                }
-                            }
-                            missing_objects.push((prefix.to_string(), hash.to_string()));
-                        }
-                    }
-
-                    if !missing_objects.is_empty() {
-                        println!("[VersionManager] Downloading {} missing assets for index {}...", missing_objects.len(), asset_ref.id);
-                        for chunk in missing_objects.chunks(25) {
-                            let mut handles = Vec::new();
-                            for (prefix, hash) in chunk {
-                                let url = format!("https://resources.download.minecraft.net/{}/{}", prefix, hash);
-                                let target_file = objects_dir.join(prefix).join(hash);
-                                let mc_file = mc_objects_dir.as_ref().map(|d| d.join(prefix).join(hash));
-                                let c = client.clone();
-                                handles.push(tokio::spawn(async move {
-                                    if let Ok(resp) = c.get(&url).send().await {
-                                        if let Ok(bytes) = resp.bytes().await {
-                                            if let Some(p) = target_file.parent() {
-                                                let _ = fs::create_dir_all(p);
-                                            }
-                                            let _ = fs::write(&target_file, &bytes);
-                                            if let Some(mc_f) = mc_file {
-                                                if let Some(p) = mc_f.parent() {
-                                                    let _ = fs::create_dir_all(p);
-                                                }
-                                                let _ = fs::write(&mc_f, &bytes);
-                                            }
-                                        }
-                                    }
-                                }));
-                            }
-                            for h in handles {
-                                let _ = h.await;
-                            }
-                        }
-                        println!("[VersionManager] Asset objects downloaded successfully.");
-                    }
-                }
-            }
-        }
-    }
+    download_missing_libraries(&client, game_dir, &detail).await;
+    download_missing_assets(&client, game_dir, &detail).await;
 
     Ok(format!("Versión {} preparada exitosamente.", version_id))
 }
@@ -388,38 +701,90 @@ fn ensure_launcher_profiles(game_dir: &Path) {
 }
 
 fn resolve_java_path(provided: &str, game_dir: &str) -> PathBuf {
-    if !provided.is_empty() {
-        let p = PathBuf::from(provided);
-        if p.exists() {
-            return p;
+    let candidate = (|| {
+        if !provided.is_empty() {
+            let p = PathBuf::from(provided);
+            if p.exists() {
+                return p;
+            }
         }
-    }
-    // 1. Search in game_dir / runtimes
-    let runtimes_dir = Path::new(game_dir).join("runtimes");
-    if let Some(found) = crate::java_manager::find_java_binary(&runtimes_dir) {
-        return found;
-    }
-    // 2. Search in default ~/.crystaltides/runtimes
-    if let Some(home) = dirs::home_dir() {
-        let ct_runtimes = home.join(".crystaltides").join("runtimes");
-        if let Some(found) = crate::java_manager::find_java_binary(&ct_runtimes) {
+        // 1. Search in game_dir / runtimes
+        let runtimes_dir = Path::new(game_dir).join("runtimes");
+        if let Some(found) = crate::java_manager::find_java_binary(&runtimes_dir) {
             return found;
         }
-    }
-    // 3. Search common system Java directories on Windows
+        // 2. Search in default ~/.crystaltides/runtimes
+        if let Some(home) = dirs::home_dir() {
+            let ct_runtimes = home.join(".crystaltides").join("runtimes");
+            if let Some(found) = crate::java_manager::find_java_binary(&ct_runtimes) {
+                return found;
+            }
+        }
+        // 3. Search common system Java directories on Windows
+        #[cfg(target_os = "windows")]
+        {
+            for vendor_parent in &[r"C:\Program Files\Java", r"C:\Program Files\Eclipse Adoptium", r"C:\Program Files\Microsoft"] {
+                let p = Path::new(vendor_parent);
+                if p.is_dir() {
+                    if let Some(found) = crate::java_manager::find_java_binary(p) {
+                        return found;
+                    }
+                }
+            }
+        }
+        // Fallback to "java" on system PATH
+        PathBuf::from("java")
+    })();
+
     #[cfg(target_os = "windows")]
     {
-        for vendor_parent in &[r"C:\Program Files\Java", r"C:\Program Files\Eclipse Adoptium", r"C:\Program Files\Microsoft"] {
-            let p = Path::new(vendor_parent);
-            if p.is_dir() {
-                if let Some(found) = crate::java_manager::find_java_binary(p) {
-                    return found;
+        let file_name = candidate.file_name().and_then(|f| f.to_str()).unwrap_or("");
+        if file_name.eq_ignore_ascii_case("javaw.exe") {
+            if let Some(parent) = candidate.parent() {
+                let java_exe = parent.join("java.exe");
+                if java_exe.exists() {
+                    return java_exe;
                 }
             }
         }
     }
-    // Fallback to "java" on system PATH
-    PathBuf::from("java")
+
+    candidate
+}
+
+fn is_disposable_artifact(name_lower: &str) -> bool {
+    let is_jar = name_lower.ends_with(".jar") && name_lower.contains("installer");
+    let is_log = (name_lower.ends_with(".log") || name_lower.ends_with(".txt")) && name_lower.contains("installer");
+    let is_crash = (name_lower.starts_with("hs_err_pid") || name_lower.starts_with("replay_pid"))
+        && name_lower.ends_with(".log");
+    is_jar || is_log || is_crash
+}
+
+fn remove_artifact_entry(entry: fs::DirEntry) {
+    let path = entry.path();
+    if !path.is_file() {
+        return;
+    }
+
+    let file_name = entry.file_name();
+    let name_str = file_name.to_string_lossy().to_lowercase();
+    if !is_disposable_artifact(&name_str) {
+        return;
+    }
+
+    if let Err(e) = fs::remove_file(&path) {
+        crate::logger::log(
+            "WARN",
+            "VersionManager",
+            &format!("No se pudo eliminar residuo temporal {:?}: {}", path, e),
+        );
+    } else {
+        crate::logger::log(
+            "INFO",
+            "VersionManager",
+            &format!("Residuo de instalación eliminado automáticamente: {:?}", file_name),
+        );
+    }
 }
 
 /// Limpia automáticamente archivos temporales de instalación y volcados de fallos de la JVM
@@ -429,39 +794,9 @@ pub fn cleanup_installer_artifacts(game_dir: &Path) {
         return;
     }
 
-    let entries = match fs::read_dir(game_dir) {
-        Ok(e) => e,
-        Err(_) => return,
-    };
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
-
-        let file_name = entry.file_name();
-        let name_str = file_name.to_string_lossy().to_lowercase();
-
-        let is_installer_jar = name_str.ends_with(".jar") && name_str.contains("installer");
-        let is_installer_log = (name_str.ends_with(".log") || name_str.ends_with(".txt")) && name_str.contains("installer");
-        let is_crash_log = (name_str.starts_with("hs_err_pid") || name_str.starts_with("replay_pid"))
-            && name_str.ends_with(".log");
-
-        if is_installer_jar || is_installer_log || is_crash_log {
-            if let Err(e) = fs::remove_file(&path) {
-                crate::logger::log(
-                    "WARN",
-                    "VersionManager",
-                    &format!("No se pudo eliminar residuo temporal {:?}: {}", path, e),
-                );
-            } else {
-                crate::logger::log(
-                    "INFO",
-                    "VersionManager",
-                    &format!("Residuo de instalación eliminado automáticamente: {:?}", file_name),
-                );
-            }
+    if let Ok(entries) = fs::read_dir(game_dir) {
+        for entry in entries.flatten() {
+            remove_artifact_entry(entry);
         }
     }
 }
@@ -484,7 +819,7 @@ pub async fn install_mod_loader(
         "fabric" => install_fabric(loader_version, mc_version, game_dir, java_path).await,
         "quilt" => install_quilt(loader_version, mc_version, game_dir, java_path).await,
         "neoforge" | "forge" => {
-            install_forge_family(loader_type, loader_version, game_dir, java_path).await
+            install_forge_family(loader_type, loader_version, mc_version, game_dir, java_path).await
         }
         _ => Err(format!("Tipo de cargador desconocido: {}", loader_type)),
     };
@@ -540,12 +875,20 @@ async fn install_fabric(
     #[cfg(target_os = "windows")]
     cmd.creation_flags(CREATE_NO_WINDOW);
 
-    let output = cmd.output().map_err(|e| {
-        let _ = fs::remove_file(&installer_path);
-        let err_str = format!("Fallo al ejecutar instalador Fabric: {}", e);
-        crate::logger::log("ERROR", "VersionManager", &err_str);
-        err_str
-    })?;
+    let output = tokio::task::spawn_blocking(move || cmd.output())
+        .await
+        .map_err(|e| {
+            let _ = fs::remove_file(&installer_path);
+            let err_str = format!("Fallo en hilo de ejecución de Fabric: {}", e);
+            crate::logger::log("ERROR", "VersionManager", &err_str);
+            err_str
+        })?
+        .map_err(|e| {
+            let _ = fs::remove_file(&installer_path);
+            let err_str = format!("Fallo al ejecutar instalador Fabric: {}", e);
+            crate::logger::log("ERROR", "VersionManager", &err_str);
+            err_str
+        })?;
     let _ = fs::remove_file(&installer_path);
 
     if !output.status.success() {
@@ -580,21 +923,27 @@ async fn install_quilt(
         .arg("install")
         .arg("client")
         .arg(mc_version)
-        .arg("--loader-version")
         .arg(loader_version)
-        .arg("--install-dir")
-        .arg(game_dir)
+        .arg(format!("--install-dir={}", game_dir))
         .arg("--no-profile");
 
     #[cfg(target_os = "windows")]
     cmd.creation_flags(CREATE_NO_WINDOW);
 
-    let output = cmd.output().map_err(|e| {
-        let _ = fs::remove_file(&installer_path);
-        let err_str = format!("Fallo al ejecutar instalador Quilt: {}", e);
-        crate::logger::log("ERROR", "VersionManager", &err_str);
-        err_str
-    })?;
+    let output = tokio::task::spawn_blocking(move || cmd.output())
+        .await
+        .map_err(|e| {
+            let _ = fs::remove_file(&installer_path);
+            let err_str = format!("Fallo en hilo de ejecución de Quilt: {}", e);
+            crate::logger::log("ERROR", "VersionManager", &err_str);
+            err_str
+        })?
+        .map_err(|e| {
+            let _ = fs::remove_file(&installer_path);
+            let err_str = format!("Fallo al ejecutar instalador Quilt: {}", e);
+            crate::logger::log("ERROR", "VersionManager", &err_str);
+            err_str
+        })?;
     let _ = fs::remove_file(&installer_path);
 
     if !output.status.success() {
@@ -612,6 +961,7 @@ async fn install_quilt(
 async fn install_forge_family(
     loader_type: &str,
     version: &str,
+    mc_version: &str,
     game_dir: &str,
     java_path: &str,
 ) -> Result<String, String> {
@@ -627,14 +977,17 @@ async fn install_forge_family(
             )
         }
         "forge" => {
-            let name = format!("forge-{}-installer.jar", version);
-            (
-                format!(
-                    "https://maven.minecraftforge.net/net/minecraftforge/forge/{}/{}",
-                    version, name
-                ),
-                name,
-            )
+            let full_forge_ver = if version.starts_with(&format!("{}-", mc_version)) {
+                version.to_string()
+            } else {
+                format!("{}-{}", mc_version, version)
+            };
+            let name = format!("forge-{}-installer.jar", full_forge_ver);
+            let url = format!(
+                "https://maven.minecraftforge.net/net/minecraftforge/forge/{}/{}",
+                full_forge_ver, name
+            );
+            (url, name)
         }
         _ => return Err("Loader no soportado en familia Forge.".to_string()),
     };
@@ -655,12 +1008,20 @@ async fn install_forge_family(
     #[cfg(target_os = "windows")]
     cmd.creation_flags(CREATE_NO_WINDOW);
 
-    let output = cmd.output().map_err(|e| {
-        let _ = fs::remove_file(&installer_path);
-        let err_str = format!("Fallo al ejecutar instalador {}: {}", loader_type, e);
-        crate::logger::log("ERROR", "VersionManager", &err_str);
-        err_str
-    })?;
+    let output = tokio::task::spawn_blocking(move || cmd.output())
+        .await
+        .map_err(|e| {
+            let _ = fs::remove_file(&installer_path);
+            let err_str = format!("Fallo en hilo de ejecución de instalador: {}", e);
+            crate::logger::log("ERROR", "VersionManager", &err_str);
+            err_str
+        })?
+        .map_err(|e| {
+            let _ = fs::remove_file(&installer_path);
+            let err_str = format!("Fallo al ejecutar instalador {}: {}", loader_type, e);
+            crate::logger::log("ERROR", "VersionManager", &err_str);
+            err_str
+        })?;
     let _ = fs::remove_file(&installer_path);
 
     if !output.status.success() {
@@ -673,5 +1034,66 @@ async fn install_forge_family(
     let ok_msg = format!("{} {} instalado exitosamente.", loader_type, version);
     crate::logger::log("INFO", "VersionManager", &ok_msg);
     Ok(ok_msg)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_minecraft_version_natural_sorting() {
+        let mut versions = vec![
+            "1.8.9".to_string(),
+            "1.9".to_string(),
+            "1.12.2".to_string(),
+            "1.16.5".to_string(),
+            "1.20.1".to_string(),
+            "1.21".to_string(),
+            "1.21.1".to_string(),
+        ];
+        versions.sort_by(|a, b| to_natural_chunks(b).cmp(&to_natural_chunks(a)));
+        assert_eq!(
+            versions,
+            vec![
+                "1.21.1",
+                "1.21",
+                "1.20.1",
+                "1.16.5",
+                "1.12.2",
+                "1.9",
+                "1.8.9"
+            ]
+        );
+    }
+
+    #[test]
+    fn test_is_library_allowed_on_current_os() {
+        let none_rules = None;
+        assert!(is_library_allowed_on_current_os(&none_rules));
+
+        let empty_rules = Some(vec![]);
+        assert!(is_library_allowed_on_current_os(&empty_rules));
+
+        let allow_all = Some(vec![serde_json::json!({"action": "allow"})]);
+        assert!(is_library_allowed_on_current_os(&allow_all));
+
+        let allow_windows = Some(vec![serde_json::json!({
+            "action": "allow",
+            "os": {"name": "windows"}
+        })]);
+        #[cfg(target_os = "windows")]
+        assert!(is_library_allowed_on_current_os(&allow_windows));
+        #[cfg(not(target_os = "windows"))]
+        assert!(!is_library_allowed_on_current_os(&allow_windows));
+
+        let disallow_current_os = Some(vec![
+            serde_json::json!({"action": "allow"}),
+            serde_json::json!({
+                "action": "disallow",
+                "os": {"name": match std::env::consts::OS { "windows" => "windows", "macos" => "osx", "linux" => "linux", o => o }}
+            })
+        ]);
+        assert!(!is_library_allowed_on_current_os(&disallow_current_os));
+    }
 }
 

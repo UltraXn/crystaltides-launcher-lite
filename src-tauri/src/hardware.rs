@@ -15,26 +15,9 @@ pub struct CpuInfo {
     pub jvm_recommended_flags: Vec<String>,
 }
 
-/// Pure calculation function for hardware profiling, enabling unit testing
-pub fn calculate_hardware_profile(
-    brand: &str,
-    vendor: &str,
-    physical_cores: usize,
-    logical_cores: usize,
-    total_memory_mb: u64,
-    java_version: Option<u8>,
-) -> CpuInfo {
-    let brand_lower = brand.to_lowercase();
-    let has_hyperthreading = logical_cores > physical_cores;
-    let is_xeon_or_legacy = brand_lower.contains("xeon")
-        || brand_lower.contains("v3")
-        || brand_lower.contains("v4")
-        || brand_lower.contains("fx-")
-        || brand_lower.contains("opteron");
-
-    // Detect Intel Hybrid P/E Core architecture (12th, 13th, 14th Gen, Core Ultra)
+fn is_intel_hybrid(brand_lower: &str, vendor: &str) -> bool {
     let is_intel = brand_lower.contains("intel") || vendor.to_lowercase().contains("intel");
-    let is_hybrid = is_intel
+    is_intel
         && (brand_lower.contains("12th")
             || brand_lower.contains("13th")
             || brand_lower.contains("14th")
@@ -47,77 +30,145 @@ pub fn calculate_hardware_profile(
             || brand_lower.contains("i9-14")
             || brand_lower.contains("i5-12")
             || brand_lower.contains("i5-13")
-            || brand_lower.contains("i5-14"));
+            || brand_lower.contains("i5-14"))
+}
 
-    // Detect AMD Ryzen Dual-CCD X3D processors (e.g. 7900X3D, 7950X3D, 9900X3D, 9950X3D)
-    // where only CCD0 has 3D V-Cache (physical_cores >= 12 and contains x3d)
-    let is_amd = brand_lower.contains("amd") || brand_lower.contains("ryzen") || vendor.to_lowercase().contains("amd");
-    let is_ryzen_x3d_dual_ccd = is_amd && brand_lower.contains("x3d") && physical_cores >= 12;
+fn is_ryzen_dual_ccd_x3d(brand_lower: &str, vendor: &str, physical_cores: usize) -> bool {
+    let is_amd = brand_lower.contains("amd")
+        || brand_lower.contains("ryzen")
+        || vendor.to_lowercase().contains("amd");
+    is_amd && brand_lower.contains("x3d") && physical_cores >= 12
+}
 
-    // Calculate optimal CPU Affinity mask
-    let mut mask: u64 = 0;
-    if is_ryzen_x3d_dual_ccd {
-        // Pin strictly to CCD0 (first half of cores, e.g. 6 or 8 cores + SMT) with 3D V-Cache
-        // to avoid cross-CCD Infinity Fabric latency penalties (up to 35% FPS gain)
-        let ccd0_cores = physical_cores / 2;
-        let ccd0_threads = ccd0_cores * 2;
-        for i in 0..ccd0_threads.min(32) {
-            mask |= 1 << i;
-        }
-    } else if is_hybrid {
-        // For Intel hybrid, assign first N physical performance cores (even thread indices: 0, 2, 4, 6...)
-        let target_p_cores = (physical_cores / 2).clamp(4, 8);
-        for i in 0..target_p_cores {
-            mask |= 1 << (i * 2);
-        }
-    } else if has_hyperthreading && (is_xeon_or_legacy || physical_cores >= 16) {
-        // For Xeon / High Core count servers, use primary physical threads to avoid cache contention
-        let target_cores = physical_cores.min(8);
-        for i in 0..target_cores {
-            mask |= 1 << (i * 2);
-        }
-    } else {
-        // Standard CPUs / Single-CCD X3D (like 7800X3D, 5800X3D, 9800X3D): use all cores
-        for i in 0..logical_cores.min(64) {
-            mask |= 1 << i;
+fn is_xeon_or_legacy_cpu(brand_lower: &str) -> bool {
+    brand_lower.contains("xeon")
+        || brand_lower.contains("v3")
+        || brand_lower.contains("v4")
+        || brand_lower.contains("fx-")
+        || brand_lower.contains("opteron")
+}
+
+fn mask_range(count: usize) -> u64 {
+    let mut mask = 0u64;
+    for i in 0..count.min(64) {
+        mask |= 1u64 << i;
+    }
+    mask
+}
+
+fn mask_even_threads(core_count: usize, safe_logical: usize) -> u64 {
+    let mut mask = 0u64;
+    for i in 0..core_count {
+        let thread_idx = i * 2;
+        if thread_idx < safe_logical && thread_idx < 64 {
+            mask |= 1u64 << thread_idx;
         }
     }
+    mask
+}
 
-    // Recommended JVM Flags tailored for the detected architecture, Java version and RAM
+fn calculate_cpu_affinity_mask(
+    physical_cores: usize,
+    safe_logical: usize,
+    is_ryzen_x3d: bool,
+    is_hybrid: bool,
+    has_ht: bool,
+    is_xeon: bool,
+) -> u64 {
+    let mask = if is_ryzen_x3d {
+        let ccd0_threads = (physical_cores / 2).max(1) * 2;
+        mask_range(ccd0_threads.min(safe_logical))
+    } else if is_hybrid {
+        let p_cores = if safe_logical > physical_cores {
+            (safe_logical - physical_cores).clamp(1, 8)
+        } else {
+            physical_cores.min(8)
+        };
+        if has_ht {
+            mask_even_threads(p_cores, safe_logical)
+        } else {
+            mask_range(p_cores)
+        }
+    } else if has_ht && (is_xeon || physical_cores >= 16) {
+        mask_even_threads(physical_cores.min(8), safe_logical)
+    } else {
+        mask_range(safe_logical)
+    };
+
+    if mask == 0 {
+        mask_range(safe_logical)
+    } else {
+        mask
+    }
+}
+
+fn build_recommended_jvm_flags(
+    is_xeon_or_legacy: bool,
+    total_memory_mb: u64,
+    java_version: Option<u8>,
+) -> Vec<String> {
+    let jv = java_version.unwrap_or(21);
     let mut jvm_flags = Vec::new();
-    let current_java = java_version.unwrap_or(21);
 
-    // If running on Java 21+ and with sufficient RAM (>= 10 GB), enable Generational ZGC for <1ms pauses
-    if current_java >= 21 && total_memory_mb >= 10240 {
+    if jv >= 21 && total_memory_mb >= 4096 {
         jvm_flags.push("-XX:+UseZGC".to_string());
         jvm_flags.push("-XX:+ZGenerational".to_string());
-        jvm_flags.push("-XX:+AlwaysPreTouch".to_string());
+        jvm_flags.push("-XX:ZAllocationSpikeTolerance=5".to_string());
     } else {
-        // Production-tuned G1GC
         jvm_flags.push("-XX:+UseG1GC".to_string());
         jvm_flags.push("-XX:+ParallelRefProcEnabled".to_string());
-        jvm_flags.push("-XX:MaxGCPauseMillis=100".to_string());
+        jvm_flags.push("-XX:MaxGCPauseMillis=50".to_string());
         jvm_flags.push("-XX:+UnlockExperimentalVMOptions".to_string());
-        jvm_flags.push("-XX:+AlwaysPreTouch".to_string());
 
         if is_xeon_or_legacy {
             jvm_flags.push("-XX:G1ReservePercent=20".to_string());
             jvm_flags.push("-XX:InitiatingHeapOccupancyPercent=15".to_string());
             jvm_flags.push("-XX:G1MixedGCLiveThresholdPercent=90".to_string());
         } else {
-            jvm_flags.push("-XX:G1NewSizePercent=30".to_string());
-            jvm_flags.push("-XX:G1MaxNewSizePercent=40".to_string());
-            jvm_flags.push("-XX:G1HeapRegionSize=8M".to_string());
+            jvm_flags.push("-XX:G1NewSizePercent=20".to_string());
+            jvm_flags.push("-XX:G1MaxNewSizePercent=35".to_string());
+            if total_memory_mb < 8192 {
+                jvm_flags.push("-XX:G1HeapRegionSize=4M".to_string());
+            } else {
+                jvm_flags.push("-XX:G1HeapRegionSize=8M".to_string());
+            }
             jvm_flags.push("-XX:G1ReservePercent=15".to_string());
         }
     }
 
-    // Hardware-accelerated instruction sets & networking optimizations
-    jvm_flags.push("-XX:+UseFMA".to_string());
     jvm_flags.push("-XX:+UseAES".to_string());
     jvm_flags.push("-XX:+UseSHA".to_string());
     jvm_flags.push("-XX:CICompilerCount=4".to_string());
     jvm_flags.push("-Djava.net.preferIPv4Stack=true".to_string());
+    jvm_flags
+}
+
+/// Pure calculation function for hardware profiling, enabling unit testing
+pub fn calculate_hardware_profile(
+    brand: &str,
+    vendor: &str,
+    physical_cores: usize,
+    logical_cores: usize,
+    total_memory_mb: u64,
+    java_version: Option<u8>,
+) -> CpuInfo {
+    let brand_lower = brand.to_lowercase();
+    let has_hyperthreading = logical_cores > physical_cores;
+    let is_xeon_or_legacy = is_xeon_or_legacy_cpu(&brand_lower);
+    let is_hybrid = is_intel_hybrid(&brand_lower, vendor);
+    let is_ryzen_x3d_dual_ccd = is_ryzen_dual_ccd_x3d(&brand_lower, vendor, physical_cores);
+
+    let safe_logical = logical_cores.clamp(1, 64);
+    let mask = calculate_cpu_affinity_mask(
+        physical_cores,
+        safe_logical,
+        is_ryzen_x3d_dual_ccd,
+        is_hybrid,
+        has_hyperthreading,
+        is_xeon_or_legacy,
+    );
+
+    let jvm_flags = build_recommended_jvm_flags(is_xeon_or_legacy, total_memory_mb, java_version);
 
     CpuInfo {
         brand: brand.to_string(),
@@ -134,7 +185,7 @@ pub fn calculate_hardware_profile(
 }
 
 #[tauri::command]
-pub fn detect_hardware_profile() -> CpuInfo {
+pub fn detect_hardware_profile(java_version: Option<u8>) -> CpuInfo {
     let sys = System::new_with_specifics(
         RefreshKind::new()
             .with_cpu(CpuRefreshKind::everything())
@@ -164,7 +215,7 @@ pub fn detect_hardware_profile() -> CpuInfo {
         physical_cores,
         logical_cores,
         total_memory_mb,
-        Some(21), // Default assumed Java 21 for modern launcher
+        java_version,
     )
 }
 
@@ -187,6 +238,23 @@ mod tests {
         // Should have affinity only for even threads of physical P-cores
         assert_eq!(info.recommended_affinity_mask & 0b1010101010101010, 0);
         assert!(info.recommended_affinity_mask > 0);
+    }
+
+    #[test]
+    fn test_intel_hybrid_asymmetric_p_cores() {
+        // i5-13400 has 10 physical cores (6 P-cores + 4 E-cores) and 16 logical threads
+        let info = calculate_hardware_profile(
+            "13th Gen Intel(R) Core(TM) i5-13400",
+            "GenuineIntel",
+            10,
+            16,
+            16384,
+            Some(21),
+        );
+        assert!(info.is_hybrid);
+        // Even threads for 6 P-cores: bits 0, 2, 4, 6, 8, 10
+        let expected_mask = (1 << 0) | (1 << 2) | (1 << 4) | (1 << 6) | (1 << 8) | (1 << 10);
+        assert_eq!(info.recommended_affinity_mask, expected_mask);
     }
 
     #[test]
@@ -222,7 +290,7 @@ mod tests {
     }
 
     #[test]
-    fn test_generational_zgc_on_high_ram_java21() {
+    fn test_generational_zgc_on_java21_high_ram() {
         let info = calculate_hardware_profile(
             "AMD Ryzen 7 7800X3D 8-Core Processor",
             "AuthenticAMD",
@@ -233,19 +301,52 @@ mod tests {
         );
         assert!(info.jvm_recommended_flags.contains(&"-XX:+UseZGC".to_string()));
         assert!(info.jvm_recommended_flags.contains(&"-XX:+ZGenerational".to_string()));
+        assert!(info.jvm_recommended_flags.contains(&"-XX:ZAllocationSpikeTolerance=5".to_string()));
+        assert!(!info.jvm_recommended_flags.contains(&"-XX:+UseG1GC".to_string()));
+        assert!(!info.jvm_recommended_flags.contains(&"-XX:+UnlockExperimentalVMOptions".to_string()));
     }
 
     #[test]
-    fn test_g1gc_fallback_on_low_ram() {
+    fn test_g1gc_retained_on_java17() {
+        let info = calculate_hardware_profile(
+            "AMD Ryzen 7 7800X3D 8-Core Processor",
+            "AuthenticAMD",
+            8,
+            16,
+            32768,
+            Some(17),
+        );
+        assert!(info.jvm_recommended_flags.contains(&"-XX:+UseG1GC".to_string()));
+        assert!(!info.jvm_recommended_flags.contains(&"-XX:+UseZGC".to_string()));
+    }
+
+    #[test]
+    fn test_g1gc_fallback_on_low_ram_even_on_java21() {
         let info = calculate_hardware_profile(
             "Intel Core i5-10400",
             "GenuineIntel",
             6,
             12,
-            8192,
+            3072, // 3GB RAM
             Some(21),
         );
         assert!(info.jvm_recommended_flags.contains(&"-XX:+UseG1GC".to_string()));
         assert!(!info.jvm_recommended_flags.contains(&"-XX:+UseZGC".to_string()));
+    }
+
+    #[test]
+    fn test_intel_core_ultra_no_ht_p_cores() {
+        // Intel Core Ultra 9 285K: 8 P-cores + 16 E-cores = 24 físicos, 24 lógicos (Sin HT)
+        let info = calculate_hardware_profile(
+            "Intel Core Ultra 9 285K",
+            "GenuineIntel",
+            24,
+            24,
+            32768,
+            Some(21),
+        );
+        assert!(info.is_hybrid);
+        // Sin HT: debe tomar los primeros 8 P-cores correlativos (bits 0..7 = 0xFF), sin saltar con hilos pares
+        assert_eq!(info.recommended_affinity_mask, 0xFF);
     }
 }

@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
@@ -13,21 +14,14 @@ struct LoggerState {
     minecraft_file: Option<File>,
 }
 
-fn format_timestamp() -> String {
-    let now = SystemTime::now();
-    let duration = now.duration_since(SystemTime::UNIX_EPOCH).unwrap_or_default();
-    let total_secs = duration.as_secs();
-    let millis = duration.subsec_millis();
+fn is_leap_year(year: i32) -> bool {
+    (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
+}
 
-    let secs = total_secs % 60;
-    let mins = (total_secs / 60) % 60;
-    let hours = (total_secs / 3600) % 24;
-
-    let mut days = (total_secs / 86400) as i64;
+fn compute_year_and_remaining_days(mut days: i64) -> (i32, i64) {
     let mut year = 1970;
     loop {
-        let leap = if (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0) { 1 } else { 0 };
-        let days_in_year = 365 + leap;
+        let days_in_year = if is_leap_year(year) { 366 } else { 365 };
         if days >= days_in_year {
             days -= days_in_year;
             year += 1;
@@ -35,7 +29,11 @@ fn format_timestamp() -> String {
             break;
         }
     }
-    let leap = if (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0) { 1 } else { 0 };
+    (year, days)
+}
+
+fn compute_month_and_day(year: i32, mut days: i64) -> (i32, i64) {
+    let leap = if is_leap_year(year) { 1 } else { 0 };
     let month_days = [31, 28 + leap, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
     let mut month = 1;
     for &m_days in &month_days {
@@ -46,7 +44,22 @@ fn format_timestamp() -> String {
             break;
         }
     }
-    let day = days + 1;
+    (month, days + 1)
+}
+
+pub fn format_timestamp() -> String {
+    let now = SystemTime::now();
+    let duration = now.duration_since(SystemTime::UNIX_EPOCH).unwrap_or_default();
+    let total_secs = duration.as_secs();
+    let millis = duration.subsec_millis();
+
+    let secs = total_secs % 60;
+    let mins = (total_secs / 60) % 60;
+    let hours = (total_secs / 3600) % 24;
+
+    let days = (total_secs / 86400) as i64;
+    let (year, rem_days) = compute_year_and_remaining_days(days);
+    let (month, day) = compute_month_and_day(year, rem_days);
 
     format!(
         "{:04}-{:02}-{:02} {:02}:{:02}:{:02}.{:03}",
@@ -146,31 +159,41 @@ pub fn log_minecraft(line: &str, level: &str) {
     if let Ok(mut state) = state_arc.lock() {
         if let Some(ref mut file) = state.minecraft_file {
             let _ = file.write_all(formatted_mc.as_bytes());
-            let _ = file.flush();
+            if level == "ERROR" {
+                let _ = file.flush();
+            }
         }
         if let Some(ref mut file) = state.launcher_file {
             let _ = file.write_all(formatted_launcher.as_bytes());
-            let _ = file.flush();
+            if level == "ERROR" {
+                let _ = file.flush();
+            }
         }
     }
 }
 
 pub fn read_recent_lines(file_path: &Path, max_lines: usize) -> Result<String, String> {
+    if max_lines == 0 {
+        return Ok(String::new());
+    }
+
     if !file_path.exists() {
         return Ok("No hay registros disponibles aún.".to_string());
     }
 
     let file = File::open(file_path).map_err(|e| format!("Error abriendo log: {}", e))?;
     let reader = BufReader::new(file);
-    let all_lines: Vec<String> = reader.lines().map_while(Result::ok).collect();
+    let mut ring_buffer = VecDeque::with_capacity(max_lines);
 
-    let start = if all_lines.len() > max_lines {
-        all_lines.len() - max_lines
-    } else {
-        0
-    };
+    for line in reader.lines().map_while(Result::ok) {
+        if ring_buffer.len() >= max_lines {
+            ring_buffer.pop_front();
+        }
+        ring_buffer.push_back(line);
+    }
 
-    Ok(all_lines[start..].join("\n"))
+    let lines_vec: Vec<String> = ring_buffer.into();
+    Ok(lines_vec.join("\n"))
 }
 
 pub fn get_launcher_logs(max_lines: Option<usize>) -> Result<String, String> {

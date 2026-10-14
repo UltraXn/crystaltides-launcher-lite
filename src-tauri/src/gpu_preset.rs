@@ -1,6 +1,4 @@
 use serde::{Serialize, Deserialize};
-use std::fs;
-use std::path::Path;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct GpuProfile {
@@ -8,141 +6,217 @@ pub struct GpuProfile {
     pub model: String,
     pub tier: String, // "ULTRA", "HIGH", "MEDIUM", "LOW", "INTEGRATED"
     pub vram_mb: Option<u64>,
-    pub recommended_render_distance: u32,
-    pub recommended_shader: String,
-    pub recommended_simulation_distance: u32,
-    pub max_fps: u32,
-    pub recommended_render_scale: f32,
-    pub enable_temporal_upscaling: bool,
 }
 
-/// Evaluates the GPU model name and VRAM size to produce an optimal tuning profile
+fn detect_vendor(model: &str) -> &'static str {
+    if model.contains("nvidia") || model.contains("rtx") || model.contains("geforce") || model.contains("gtx") {
+        "NVIDIA GeForce"
+    } else if model.contains("amd") || model.contains("radeon") || model.contains("rx ") {
+        "AMD Radeon"
+    } else if model.contains("intel") || model.contains("arc") {
+        "Intel"
+    } else {
+        "Graphics Adapter"
+    }
+}
+
+fn is_ultra_tier(model: &str, vram: u64) -> bool {
+    model.contains("rtx 409")
+        || model.contains("rtx 408")
+        || model.contains("rtx 407")
+        || model.contains("rtx 309")
+        || model.contains("rtx 308")
+        || model.contains("rtx 307")
+        || model.contains("rx 7900")
+        || model.contains("rx 7800")
+        || model.contains("rx 6900")
+        || model.contains("rx 6800")
+        || model.contains("arc a770")
+        || model.contains("arc b580")
+        || vram >= 12288
+}
+
+fn is_high_tier(model: &str, vram: u64) -> bool {
+    model.contains("rtx")
+        || model.contains("gtx 108")
+        || model.contains("rx 7600")
+        || model.contains("rx 6700")
+        || model.contains("rx 6600")
+        || model.contains("rx 5700")
+        || model.contains("arc a750")
+        || model.contains("arc a580")
+        || vram >= 6144
+}
+
+fn is_medium_tier(model: &str, vram: u64) -> bool {
+    model.contains("gtx")
+        || model.contains("rx 5")
+        || model.contains("rx 4")
+        || model.contains("radeon rx")
+        || model.contains("rx ")
+        || model.contains("arc a380")
+        || vram >= 3500
+}
+
+fn is_low_tier(model: &str, vram: u64) -> bool {
+    model.contains("gt ")
+        || model.contains("radeon hd")
+        || model.contains("radeon r5")
+        || model.contains("radeon r7")
+        || model.contains("radeon r9")
+        || model.contains("radeon pro")
+        || model.contains("geforce gt")
+        || vram >= 1024
+}
+
+/// Evaluates the GPU model name and VRAM size to produce an informative profile without enforcing graphic limits
 pub fn evaluate_gpu_tier(model: &str, vram_mb: Option<u64>) -> GpuProfile {
     let lower_model = model.to_lowercase();
     let vram = vram_mb.unwrap_or(0);
 
-    let (tier, vendor, render_dist, sim_dist, max_fps, shader, render_scale, upscaling) = if lower_model.contains("rtx 409")
-        || lower_model.contains("rtx 408")
-        || lower_model.contains("rtx 407")
-        || lower_model.contains("rtx 309")
-        || lower_model.contains("rtx 308")
-        || lower_model.contains("rtx 307")
-        || lower_model.contains("rx 7900")
-        || lower_model.contains("rx 7800")
-        || lower_model.contains("rx 6900")
-        || lower_model.contains("rx 6800")
-        || lower_model.contains("arc a770")
-        || lower_model.contains("arc b580")
-        || vram >= 12288
-    {
-        (
-            "ULTRA",
-            if lower_model.contains("nvidia") || lower_model.contains("rtx") || lower_model.contains("geforce") {
-                "NVIDIA GeForce"
-            } else if lower_model.contains("amd") || lower_model.contains("radeon") || lower_model.contains("rx ") {
-                "AMD Radeon"
-            } else if lower_model.contains("intel") || lower_model.contains("arc") {
-                "Intel Arc"
-            } else {
-                "High-End Dedicated GPU"
-            },
-            18,
-            12,
-            165,
-            "ComplementaryShaders_Ultra.zip",
-            1.0,
-            false,
-        )
-    } else if lower_model.contains("rtx")
-        || lower_model.contains("gtx 108")
-        || lower_model.contains("rx 7600")
-        || lower_model.contains("rx 6700")
-        || lower_model.contains("rx 6600")
-        || lower_model.contains("rx 5700")
-        || lower_model.contains("arc a750")
-        || lower_model.contains("arc a580")
-        || vram >= 6144
-    {
-        (
-            "HIGH",
-            if lower_model.contains("nvidia") || lower_model.contains("geforce") {
-                "NVIDIA GeForce"
-            } else if lower_model.contains("amd") || lower_model.contains("radeon") {
-                "AMD Radeon"
-            } else if lower_model.contains("intel") || lower_model.contains("arc") {
-                "Intel Arc"
-            } else {
-                "Performance Dedicated GPU"
-            },
-            14,
-            10,
-            144,
-            "ComplementaryReimagined_Medium.zip",
-            0.85,
-            true,
-        )
-    } else if lower_model.contains("gtx")
-        || lower_model.contains("rx 5")
-        || lower_model.contains("rx 4")
-        || lower_model.contains("arc a380")
-        || vram >= 3500
-    {
-        (
-            "MEDIUM",
-            if lower_model.contains("nvidia") || lower_model.contains("geforce") {
-                "NVIDIA GeForce"
-            } else {
-                "AMD / Intel Discrete GPU"
-            },
-            10,
-            8,
-            90,
-            "MakeUp_UltraFast_Medium.zip",
-            0.75,
-            true,
-        )
+    let tier = if is_ultra_tier(&lower_model, vram) {
+        "ULTRA"
+    } else if is_high_tier(&lower_model, vram) {
+        "HIGH"
+    } else if is_medium_tier(&lower_model, vram) {
+        "MEDIUM"
+    } else if is_low_tier(&lower_model, vram) {
+        "LOW"
     } else {
-        (
-            "INTEGRATED",
-            if lower_model.contains("intel") {
-                "Intel Integrated Graphics"
-            } else if lower_model.contains("amd") || lower_model.contains("radeon") {
-                "AMD Radeon Graphics (iGPU)"
-            } else {
-                "Integrated / Basic Graphics"
-            },
-            8,
-            6,
-            60,
-            "MakeUp_UltraFast_Low.zip",
-            0.67,
-            true,
-        )
+        "INTEGRATED"
     };
+
+    let vendor = detect_vendor(&lower_model);
 
     GpuProfile {
         vendor: vendor.to_string(),
         model: model.to_string(),
         tier: tier.to_string(),
         vram_mb: if vram > 0 { Some(vram) } else { None },
-        recommended_render_distance: render_dist,
-        recommended_shader: shader.to_string(),
-        recommended_simulation_distance: sim_dist,
-        max_fps,
-        recommended_render_scale: render_scale,
-        enable_temporal_upscaling: upscaling,
+    }
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_code)]
+unsafe fn read_driver_desc(sub_key: windows::Win32::System::Registry::HKEY) -> String {
+    use std::ffi::OsString;
+    use std::os::windows::ffi::OsStringExt;
+    use windows::core::PCWSTR;
+    use windows::Win32::System::Registry::{RegQueryValueExW, REG_SZ, REG_VALUE_TYPE};
+
+    let desc_key: Vec<u16> = "DriverDesc\0".encode_utf16().collect();
+    let mut data_type = REG_VALUE_TYPE::default();
+    let mut data_buf = [0u16; 256];
+    let mut data_len = (data_buf.len() * std::mem::size_of::<u16>()) as u32;
+
+    if RegQueryValueExW(
+        sub_key,
+        PCWSTR(desc_key.as_ptr()),
+        None,
+        Some(&mut data_type),
+        Some(data_buf.as_mut_ptr() as *mut u8),
+        Some(&mut data_len),
+    )
+    .is_ok()
+        && data_type == REG_SZ
+    {
+        let u16_slice = &data_buf[..(data_len as usize / 2)];
+        let os_str = OsString::from_wide(u16_slice);
+        os_str.to_string_lossy().trim_matches('\0').trim().to_string()
+    } else {
+        String::new()
+    }
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_code)]
+unsafe fn read_vram_bytes(sub_key: windows::Win32::System::Registry::HKEY) -> u64 {
+    use windows::core::PCWSTR;
+    use windows::Win32::System::Registry::{RegQueryValueExW, REG_DWORD, REG_QWORD, REG_VALUE_TYPE};
+
+    let qw_key: Vec<u16> = "HardwareInformation.qwMemorySize\0".encode_utf16().collect();
+    let mut qw_val: u64 = 0;
+    let mut qw_len = std::mem::size_of::<u64>() as u32;
+    let mut data_type = REG_VALUE_TYPE::default();
+
+    if RegQueryValueExW(
+        sub_key,
+        PCWSTR(qw_key.as_ptr()),
+        None,
+        Some(&mut data_type),
+        Some(&mut qw_val as *mut u64 as *mut u8),
+        Some(&mut qw_len),
+    )
+    .is_ok()
+        && data_type == REG_QWORD
+    {
+        return qw_val;
+    }
+
+    let dword_key: Vec<u16> = "HardwareInformation.MemorySize\0".encode_utf16().collect();
+    let mut dword_val: u32 = 0;
+    let mut dword_len = std::mem::size_of::<u32>() as u32;
+    if RegQueryValueExW(
+        sub_key,
+        PCWSTR(dword_key.as_ptr()),
+        None,
+        Some(&mut data_type),
+        Some(&mut dword_val as *mut u32 as *mut u8),
+        Some(&mut dword_len),
+    )
+    .is_ok()
+        && data_type == REG_DWORD
+    {
+        dword_val as u64
+    } else {
+        0
+    }
+}
+
+#[cfg(target_os = "windows")]
+#[allow(unsafe_code)]
+unsafe fn query_gpu_entry(
+    class_key: windows::Win32::System::Registry::HKEY,
+    subkey_name: &[u16],
+) -> Option<(String, u64)> {
+    use windows::core::PCWSTR;
+    use windows::Win32::System::Registry::{RegCloseKey, RegOpenKeyExW, HKEY, KEY_READ};
+
+    let mut sub_key = HKEY::default();
+    if RegOpenKeyExW(
+        class_key,
+        PCWSTR(subkey_name.as_ptr()),
+        0,
+        KEY_READ,
+        &mut sub_key,
+    )
+    .is_err()
+    {
+        return None;
+    }
+
+    let driver_desc = read_driver_desc(sub_key);
+    let vram_bytes = read_vram_bytes(sub_key);
+    let _ = RegCloseKey(sub_key);
+
+    if !driver_desc.is_empty()
+        && !driver_desc.contains("Basic Render")
+        && !driver_desc.contains("Remote Desktop")
+    {
+        let vram_mb = vram_bytes / 1024 / 1024;
+        Some((driver_desc, vram_mb))
+    } else {
+        None
     }
 }
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_code)]
 fn scan_windows_gpus() -> Vec<(String, u64)> {
-    use std::ffi::OsString;
-    use std::os::windows::ffi::OsStringExt;
     use windows::core::PCWSTR;
     use windows::Win32::System::Registry::{
-        RegCloseKey, RegEnumKeyExW, RegOpenKeyExW, RegQueryValueExW, HKEY,
-        HKEY_LOCAL_MACHINE, KEY_READ, REG_DWORD, REG_QWORD, REG_SZ, REG_VALUE_TYPE,
+        RegCloseKey, RegEnumKeyExW, RegOpenKeyExW, HKEY,
+        HKEY_LOCAL_MACHINE, KEY_READ,
     };
 
     let mut gpus = Vec::new();
@@ -186,89 +260,8 @@ fn scan_windows_gpus() -> Vec<(String, u64)> {
 
             index += 1;
 
-            // Open subkey (0000, 0001, etc.)
-            let mut sub_key = HKEY::default();
-            if RegOpenKeyExW(
-                class_key,
-                PCWSTR(subkey_name.as_ptr()),
-                0,
-                KEY_READ,
-                &mut sub_key,
-            )
-            .is_ok()
-            {
-                // Query DriverDesc
-                let desc_key: Vec<u16> = "DriverDesc\0".encode_utf16().collect();
-                let mut data_type = REG_VALUE_TYPE::default();
-                let mut data_buf = [0u8; 512];
-                let mut data_len = data_buf.len() as u32;
-
-                let mut driver_desc = String::new();
-                if RegQueryValueExW(
-                    sub_key,
-                    PCWSTR(desc_key.as_ptr()),
-                    None,
-                    Some(&mut data_type),
-                    Some(data_buf.as_mut_ptr()),
-                    Some(&mut data_len),
-                )
-                .is_ok()
-                    && data_type == REG_SZ
-                {
-                    let u16_slice = std::slice::from_raw_parts(
-                        data_buf.as_ptr() as *const u16,
-                        (data_len / 2) as usize,
-                    );
-                    let os_str = OsString::from_wide(u16_slice);
-                    driver_desc = os_str.to_string_lossy().trim_matches('\0').trim().to_string();
-                }
-
-                // Query VRAM size: HardwareInformation.qwMemorySize (64-bit) or HardwareInformation.MemorySize (32-bit)
-                let mut vram_bytes: u64 = 0;
-                let qw_key: Vec<u16> = "HardwareInformation.qwMemorySize\0".encode_utf16().collect();
-                let mut qw_val: u64 = 0;
-                let mut qw_len = std::mem::size_of::<u64>() as u32;
-
-                if RegQueryValueExW(
-                    sub_key,
-                    PCWSTR(qw_key.as_ptr()),
-                    None,
-                    Some(&mut data_type),
-                    Some(&mut qw_val as *mut u64 as *mut u8),
-                    Some(&mut qw_len),
-                )
-                .is_ok()
-                    && data_type == REG_QWORD
-                {
-                    vram_bytes = qw_val;
-                } else {
-                    let dword_key: Vec<u16> = "HardwareInformation.MemorySize\0".encode_utf16().collect();
-                    let mut dword_val: u32 = 0;
-                    let mut dword_len = std::mem::size_of::<u32>() as u32;
-                    if RegQueryValueExW(
-                        sub_key,
-                        PCWSTR(dword_key.as_ptr()),
-                        None,
-                        Some(&mut data_type),
-                        Some(&mut dword_val as *mut u32 as *mut u8),
-                        Some(&mut dword_len),
-                    )
-                    .is_ok()
-                        && data_type == REG_DWORD
-                    {
-                        vram_bytes = dword_val as u64;
-                    }
-                }
-
-                let _ = RegCloseKey(sub_key);
-
-                if !driver_desc.is_empty()
-                    && !driver_desc.contains("Basic Render")
-                    && !driver_desc.contains("Remote Desktop")
-                {
-                    let vram_mb = vram_bytes / 1024 / 1024;
-                    gpus.push((driver_desc, vram_mb));
-                }
+            if let Some(entry) = query_gpu_entry(class_key, &subkey_name) {
+                gpus.push(entry);
             }
         }
 
@@ -291,60 +284,9 @@ pub fn detect_gpu_profile() -> Result<GpuProfile, String> {
         }
     }
 
-    // Fallback detection via sysinfo or environment
-    let mut system = sysinfo::System::new_all();
-    system.refresh_all();
-
+    // Fallback detection
     let fallback_model = "Generic Graphics Adapter".to_string();
     Ok(evaluate_gpu_tier(&fallback_model, None))
-}
-
-/// Applies recommended graphics settings directly to options.txt and config/iris.properties
-#[tauri::command]
-pub fn apply_gpu_options(
-    game_dir: String,
-    render_distance: u32,
-    max_fps: u32,
-    shader_name: Option<String>,
-    render_scale: Option<f32>,
-) -> Result<(), String> {
-    let base_path = Path::new(&game_dir);
-    let options_path = base_path.join("options.txt");
-    let mut options_content = String::new();
-
-    if options_path.exists() {
-        if let Ok(existing) = fs::read_to_string(&options_path) {
-            options_content = existing;
-        }
-    }
-
-    let mut lines: Vec<String> = options_content
-        .lines()
-        .filter(|l| !l.starts_with("renderDistance:") && !l.starts_with("maxFps:"))
-        .map(|l| l.to_string())
-        .collect();
-
-    lines.push(format!("renderDistance:{}", render_distance));
-    lines.push(format!("maxFps:{}", max_fps));
-
-    fs::write(&options_path, lines.join("\n")).map_err(|e| e.to_string())?;
-
-    // Auto-configure Iris shaderpack and render scale if specified
-    if let Some(shader) = shader_name {
-        let config_dir = base_path.join("config");
-        let _ = fs::create_dir_all(&config_dir);
-        let iris_path = config_dir.join("iris.properties");
-
-        let scale = render_scale.unwrap_or(1.0);
-        let iris_config = format!(
-            "# CrystalTides Auto-Tuned Iris Configuration\nenableShaders=true\ncurrentShaderpack={}\nrenderScale={:.2}\n",
-            shader,
-            scale
-        );
-        let _ = fs::write(&iris_path, iris_config);
-    }
-
-    Ok(())
 }
 
 #[cfg(test)]
@@ -356,11 +298,7 @@ mod tests {
         let profile = evaluate_gpu_tier("NVIDIA GeForce RTX 4080", Some(16384));
         assert_eq!(profile.tier, "ULTRA");
         assert_eq!(profile.vendor, "NVIDIA GeForce");
-        assert_eq!(profile.recommended_render_distance, 18);
-        assert_eq!(profile.max_fps, 165);
-        assert_eq!(profile.recommended_shader, "ComplementaryShaders_Ultra.zip");
-        assert_eq!(profile.recommended_render_scale, 1.0);
-        assert!(!profile.enable_temporal_upscaling);
+        assert_eq!(profile.vram_mb, Some(16384));
     }
 
     #[test]
@@ -368,27 +306,45 @@ mod tests {
         let profile = evaluate_gpu_tier("AMD Radeon RX 6700 XT", Some(12288));
         assert_eq!(profile.tier, "ULTRA");
         assert_eq!(profile.vendor, "AMD Radeon");
-        assert_eq!(profile.recommended_render_distance, 18);
-        assert_eq!(profile.recommended_render_scale, 1.0);
-        assert!(!profile.enable_temporal_upscaling);
+        assert_eq!(profile.vram_mb, Some(12288));
     }
 
     #[test]
     fn test_intel_integrated_profile() {
         let profile = evaluate_gpu_tier("Intel(R) UHD Graphics 770", Some(128));
         assert_eq!(profile.tier, "INTEGRATED");
-        assert_eq!(profile.recommended_render_distance, 8);
-        assert_eq!(profile.max_fps, 60);
-        assert_eq!(profile.recommended_render_scale, 0.67);
-        assert!(profile.enable_temporal_upscaling);
+        assert_eq!(profile.vram_mb, Some(128));
     }
 
     #[test]
     fn test_midrange_gtx_1660_profile() {
         let profile = evaluate_gpu_tier("NVIDIA GeForce GTX 1660 SUPER", Some(6144));
         assert_eq!(profile.tier, "HIGH");
-        assert_eq!(profile.recommended_render_distance, 14);
-        assert_eq!(profile.recommended_render_scale, 0.85);
-        assert!(profile.enable_temporal_upscaling);
+        assert_eq!(profile.vendor, "NVIDIA GeForce");
+        assert_eq!(profile.vram_mb, Some(6144));
+    }
+
+    #[test]
+    fn test_legacy_low_tier_profile() {
+        let profile = evaluate_gpu_tier("NVIDIA GeForce GT 730", Some(2048));
+        assert_eq!(profile.tier, "LOW");
+        assert_eq!(profile.vendor, "NVIDIA GeForce");
+        assert_eq!(profile.vram_mb, Some(2048));
+    }
+
+    #[test]
+    fn test_amd_rx_dedicated_zero_vram_profile() {
+        let profile = evaluate_gpu_tier("AMD Radeon RX 6500 XT", None);
+        assert_eq!(profile.tier, "MEDIUM");
+        assert_eq!(profile.vendor, "AMD Radeon");
+        assert_eq!(profile.vram_mb, None);
+    }
+
+    #[test]
+    fn test_amd_integrated_radeon_graphics_profile() {
+        let profile = evaluate_gpu_tier("AMD Radeon(TM) Graphics", Some(512));
+        assert_eq!(profile.tier, "INTEGRATED");
+        assert_eq!(profile.vendor, "AMD Radeon");
+        assert_eq!(profile.vram_mb, Some(512));
     }
 }

@@ -1,8 +1,10 @@
 use serde_json::json;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 static DISCORD_CLIENT: Mutex<Option<DiscordPipeClient>> = Mutex::new(None);
+static PLAY_START_TIMESTAMP: AtomicU64 = AtomicU64::new(0);
 
 pub struct DiscordPipeClient {
     #[cfg(target_os = "windows")]
@@ -40,7 +42,7 @@ impl DiscordPipeClient {
         None
     }
 
-    pub fn update_presence(&mut self, state: &str, details: &str, start_timestamp: Option<u64>) {
+    pub fn update_presence(&mut self, state: &str, details: &str, start_timestamp: Option<u64>) -> std::io::Result<()> {
         #[cfg(target_os = "windows")]
         {
             let mut activity = json!({
@@ -67,11 +69,14 @@ impl DiscordPipeClient {
                 "nonce": format!("{}", SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis())
             }).to_string();
 
-            let _ = send_ipc_frame(&mut self.pipe, 1, &payload);
+            send_ipc_frame(&mut self.pipe, 1, &payload)?;
+            let mut buf = [0u8; 1024];
+            let _ = std::io::Read::read(&mut self.pipe, &mut buf);
         }
+        Ok(())
     }
 
-    pub fn clear_presence(&mut self) {
+    pub fn clear_presence(&mut self) -> std::io::Result<()> {
         #[cfg(target_os = "windows")]
         {
             let payload = json!({
@@ -83,8 +88,11 @@ impl DiscordPipeClient {
                 "nonce": format!("{}", SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis())
             }).to_string();
 
-            let _ = send_ipc_frame(&mut self.pipe, 1, &payload);
+            send_ipc_frame(&mut self.pipe, 1, &payload)?;
+            let mut buf = [0u8; 1024];
+            let _ = std::io::Read::read(&mut self.pipe, &mut buf);
         }
+        Ok(())
     }
 }
 
@@ -111,13 +119,47 @@ pub fn set_discord_presence(state: String, details: String, is_playing: bool) ->
         *lock = DiscordPipeClient::connect(DEFAULT_DISCORD_APP_ID);
     }
 
-    if let Some(ref mut client) = *lock {
-        let start_time = if is_playing {
-            Some(SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs())
+    let start_time = if is_playing {
+        let existing = PLAY_START_TIMESTAMP.load(Ordering::SeqCst);
+        if existing > 0 {
+            Some(existing)
         } else {
-            None
-        };
-        client.update_presence(&state, &details, start_time);
+            let now_secs = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            PLAY_START_TIMESTAMP.store(now_secs, Ordering::SeqCst);
+            Some(now_secs)
+        }
+    } else {
+        PLAY_START_TIMESTAMP.store(0, Ordering::SeqCst);
+        None
+    };
+
+    if let Some(ref mut client) = *lock {
+        if let Err(e) = client.update_presence(&state, &details, start_time) {
+            crate::logger::log(
+                "WARN",
+                "DiscordRPC",
+                &format!("Error enviando presencia a Discord IPC ({}), reintentando reconexión inmediata...", e),
+            );
+            *lock = None;
+        }
+    }
+
+    // Si falló o el cliente no estaba conectado, intentar reconectar y enviar de inmediato
+    if lock.is_none() {
+        *lock = DiscordPipeClient::connect(DEFAULT_DISCORD_APP_ID);
+        if let Some(ref mut client) = *lock {
+            if let Err(e) = client.update_presence(&state, &details, start_time) {
+                crate::logger::log(
+                    "WARN",
+                    "DiscordRPC",
+                    &format!("Fallo al reconectar y enviar presencia a Discord: {}", e),
+                );
+                *lock = None;
+            }
+        }
     }
 
     Ok(())
@@ -125,9 +167,35 @@ pub fn set_discord_presence(state: String, details: String, is_playing: bool) ->
 
 #[tauri::command]
 pub fn clear_discord_presence() -> Result<(), String> {
+    PLAY_START_TIMESTAMP.store(0, Ordering::SeqCst);
     let mut lock = DISCORD_CLIENT.lock().map_err(|e| e.to_string())?;
     if let Some(ref mut client) = *lock {
-        client.clear_presence();
+        if let Err(e) = client.clear_presence() {
+            crate::logger::log(
+                "WARN",
+                "DiscordRPC",
+                &format!("Error limpiando presencia en Discord IPC, liberando cliente: {}", e),
+            );
+            *lock = None;
+        }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_play_start_timestamp_lifecycle() {
+        PLAY_START_TIMESTAMP.store(0, Ordering::SeqCst);
+        assert_eq!(PLAY_START_TIMESTAMP.load(Ordering::SeqCst), 0);
+
+        let t1 = 12345678u64;
+        PLAY_START_TIMESTAMP.store(t1, Ordering::SeqCst);
+        assert_eq!(PLAY_START_TIMESTAMP.load(Ordering::SeqCst), t1);
+
+        let _ = clear_discord_presence();
+        assert_eq!(PLAY_START_TIMESTAMP.load(Ordering::SeqCst), 0);
+    }
 }
