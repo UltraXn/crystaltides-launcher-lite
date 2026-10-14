@@ -323,16 +323,36 @@ async function main() {
     console.log('\x1b[32mIniciando despacho de sesiones en Google Jules...\x1b[0m');
     console.log(`Aprobación de plan requerida: \x1b[1m${!noApproval}\x1b[0m\n`);
 
+    let existingSessions = [];
+    try {
+      existingSessions = await listSessions();
+    } catch {
+      // Continuar si falla la consulta previa
+    }
+
     for (const source of targetSources) {
       const repoName = source.id || source.name;
       const branch = customBranch || source.githubRepo?.defaultBranch?.displayName || 'main';
-      console.log(`\x1b[1m\x1b[34m>> Despachando ${specsToRun.length} agente(s) hacia ${repoName} (branch: ${branch})...\x1b[0m`);
+      console.log(`\x1b[1m\x1b[34m>> Coordinando ${specsToRun.length} agente(s) hacia ${repoName} (branch: ${branch})...\x1b[0m`);
 
       for (const spec of specsToRun) {
-        process.stdout.write(`   → Despachando [${spec.id}] ${spec.title.slice(0, 45)}... `);
+        process.stdout.write(`   → [${spec.id}] ${spec.title.slice(0, 48)}... `);
+
+        // Verificar si este agente ya está activo investigando
+        const alreadyRunning = existingSessions.find(s => 
+          (s.state === 'IN_PROGRESS' || s.state === 'QUEUED') && 
+          s.title?.includes(`[${spec.id}]`)
+        );
+
+        if (alreadyRunning) {
+          console.log(`\x1b[33mYA EN PROGRESO\x1b[0m (Session: ${alreadyRunning.id || alreadyRunning.name})`);
+          if (alreadyRunning.url) console.log(`     Link: ${alreadyRunning.url}`);
+          continue;
+        }
+
         try {
           const session = await dispatchAgent(source, branch, spec, !noApproval);
-          console.log(`\x1b[32mOK\x1b[0m (Session: ${session.id || session.name})`);
+          console.log(`\x1b[32mDESPACHADO\x1b[0m (Session: ${session.id || session.name})`);
           if (session.url) console.log(`     Link: ${session.url}`);
         } catch (err) {
           console.log(`\x1b[31mFALLÓ\x1b[0m (${err.message})`);
