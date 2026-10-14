@@ -8,16 +8,16 @@ describe('crystalAuthService', () => {
 
   it('throws an error if email is empty or invalid', async () => {
     await expect(loginWithCrystalTides('', 'password123')).rejects.toThrow(
-      'Por favor introduce un correo electrónico válido'
+      'Por favor introduce un correo electrónico válido',
     );
     await expect(loginWithCrystalTides('invalid-email', 'password123')).rejects.toThrow(
-      'Por favor introduce un correo electrónico válido'
+      'Por favor introduce un correo electrónico válido',
     );
   });
 
   it('throws an error if password is empty', async () => {
     await expect(loginWithCrystalTides('user@example.com', '')).rejects.toThrow(
-      'Por favor introduce tu contraseña'
+      'Por favor introduce tu contraseña',
     );
   });
 
@@ -25,7 +25,7 @@ describe('crystalAuthService', () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValueOnce(new Error('Network offline')));
 
     await expect(loginWithCrystalTides('user@example.com', 'secret123')).rejects.toThrow(
-      'No se pudo conectar con el servidor de CrystalTidesSMP'
+      'No se pudo conectar con el servidor de CrystalTidesSMP',
     );
   });
 
@@ -36,11 +36,11 @@ describe('crystalAuthService', () => {
         ok: false,
         status: 400,
         json: async () => ({ error_description: 'Invalid login credentials' }),
-      })
+      }),
     );
 
     await expect(loginWithCrystalTides('user@example.com', 'wrongpass')).rejects.toThrow(
-      'Correo o contraseña incorrectos'
+      'Correo o contraseña incorrectos',
     );
   });
 
@@ -51,11 +51,11 @@ describe('crystalAuthService', () => {
         ok: false,
         status: 400,
         json: async () => ({ msg: 'Email not confirmed' }),
-      })
+      }),
     );
 
     await expect(loginWithCrystalTides('user@example.com', 'mypass')).rejects.toThrow(
-      'Debes confirmar tu correo electrónico'
+      'Debes confirmar tu correo electrónico',
     );
   });
 
@@ -66,15 +66,27 @@ describe('crystalAuthService', () => {
         ok: false,
         status: 429,
         json: async () => ({ message: 'Too many requests' }),
-      })
+      }),
     );
 
     await expect(loginWithCrystalTides('user@example.com', 'mypass')).rejects.toThrow(
-      'Demasiados intentos fallidos'
+      'Demasiados intentos fallidos',
     );
   });
 
+  const createMockToken = (userId: string): string => {
+    const header = btoa(JSON.stringify({ alg: 'HS256' })).replace(/=/g, '');
+    const payload = btoa(
+      JSON.stringify({
+        sub: userId,
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      }),
+    ).replace(/=/g, '');
+    return `${header}.${payload}.mock_sig`;
+  };
+
   it('successfully logs in and resolves profile with custom username and skin', async () => {
+    const expectedToken = createMockToken('supabase-user-123');
     const authSuccessPayload = {
       user: {
         id: 'supabase-user-123',
@@ -82,7 +94,7 @@ describe('crystalAuthService', () => {
           username: 'MetadataUser',
         },
       },
-      access_token: 'eyJhbGciOiJIUzI1NiJ9.eyJ1cm46ZXhhbXBsZTpjbGFpbSI6dHJ1ZSwic3ViIjoic3VwYWJhc2UtdXNlci0xMjMifQ.WdgB1wu-A1uQ1RAPepMpu8uGHC3WDaM49AEIXq5k7Hs',
+      access_token: expectedToken,
       refresh_token: 'fake-refresh-token',
     };
 
@@ -106,7 +118,7 @@ describe('crystalAuthService', () => {
           ok: true,
           status: 200,
           json: async () => [profileRow],
-        })
+        }),
     );
 
     const profile = await loginWithCrystalTides('gamer@crystaltides.net', 'validPassword');
@@ -116,7 +128,7 @@ describe('crystalAuthService', () => {
     expect(profile.uuid).toBe('11111111-2222-3333-4444-555555555555');
     expect(profile.skinUrl).toBe('https://example.com/skin.png');
     expect(profile.role).toBe('vip');
-    expect(profile.accessToken).toBe('eyJhbGciOiJIUzI1NiJ9.eyJ1cm46ZXhhbXBsZTpjbGFpbSI6dHJ1ZSwic3ViIjoic3VwYWJhc2UtdXNlci0xMjMifQ.WdgB1wu-A1uQ1RAPepMpu8uGHC3WDaM49AEIXq5k7Hs');
+    expect(profile.accessToken).toBe(expectedToken);
     expect(profile.refreshToken).toBe('fake-refresh-token');
   });
 
@@ -126,7 +138,7 @@ describe('crystalAuthService', () => {
         id: 'no-uuid-user',
         user_metadata: {},
       },
-      access_token: 'eyJhbGciOiJIUzI1NiJ9.eyJ1cm46ZXhhbXBsZTpjbGFpbSI6dHJ1ZSwic3ViIjoibm8tdXVpZC11c2VyIn0.BL16ek-UThnN1TgnCxc5ezTSHNrYKkjjQe_110clHsc',
+      access_token: createMockToken('no-uuid-user'),
       refresh_token: 'refresh-abc',
     };
 
@@ -143,7 +155,7 @@ describe('crystalAuthService', () => {
           ok: false,
           status: 404,
           json: async () => [],
-        })
+        }),
     );
 
     const profile = await loginWithCrystalTides('steve@crystaltides.net', 'validPassword');
@@ -160,7 +172,7 @@ describe('crystalAuthService', () => {
           username: 'al',
         },
       },
-      access_token: 'eyJhbGciOiJIUzI1NiJ9.eyJ1cm46ZXhhbXBsZTpjbGFpbSI6dHJ1ZSwic3ViIjoic2hvcnQtdXNlci1pZCJ9.nuIZSjxZwKwG4MN87TR9sxau1A-CVIVjEFtdVvVEx0Q',
+      access_token: createMockToken('short-user-id'),
       refresh_token: 'refresh-short',
     };
 
@@ -177,7 +189,7 @@ describe('crystalAuthService', () => {
           ok: true,
           status: 200,
           json: async () => [],
-        })
+        }),
     );
 
     const profile = await loginWithCrystalTides('al@crystaltides.net', 'validPassword');
