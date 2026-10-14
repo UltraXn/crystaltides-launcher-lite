@@ -89,6 +89,16 @@ export const CustomColorPicker: React.FC<CustomColorPickerProps> = ({
   const isDraggingSvRef = useRef(false);
   const isDraggingHueRef = useRef(false);
   const hsvRef = useRef(hsv);
+  const cleanupSvDragRef = useRef<(() => void) | null>(null);
+  const cleanupHueDragRef = useRef<(() => void) | null>(null);
+
+  // Guarantee all window drag listeners are detached when component unmounts
+  useEffect(() => {
+    return () => {
+      cleanupSvDragRef.current?.();
+      cleanupHueDragRef.current?.();
+    };
+  }, []);
 
   // Keep hsvRef in sync with state outside of render
   useEffect(() => {
@@ -150,17 +160,23 @@ export const CustomColorPicker: React.FC<CustomColorPickerProps> = ({
     isDraggingSvRef.current = true;
     updateSvFromCoords(e.clientX, e.clientY);
 
+    const cleanup = () => {
+      isDraggingSvRef.current = false;
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+      cleanupSvDragRef.current = null;
+    };
+
     const onMouseMove = (ev: MouseEvent) => {
       if (isDraggingSvRef.current) {
         updateSvFromCoords(ev.clientX, ev.clientY);
       }
     };
     const onMouseUp = () => {
-      isDraggingSvRef.current = false;
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
+      cleanup();
     };
 
+    cleanupSvDragRef.current = cleanup;
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
   }, [updateSvFromCoords]);
@@ -192,17 +208,23 @@ export const CustomColorPicker: React.FC<CustomColorPickerProps> = ({
     isDraggingHueRef.current = true;
     updateHueFromCoords(e.clientX);
 
+    const cleanup = () => {
+      isDraggingHueRef.current = false;
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+      cleanupHueDragRef.current = null;
+    };
+
     const onMouseMove = (ev: MouseEvent) => {
       if (isDraggingHueRef.current) {
         updateHueFromCoords(ev.clientX);
       }
     };
     const onMouseUp = () => {
-      isDraggingHueRef.current = false;
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
+      cleanup();
     };
 
+    cleanupHueDragRef.current = cleanup;
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
   }, [updateHueFromCoords]);
