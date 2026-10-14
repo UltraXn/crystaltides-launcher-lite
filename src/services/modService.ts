@@ -1,6 +1,17 @@
 import { invoke } from '@tauri-apps/api/core';
 import { applyBinaryPatch } from './deltaPatchService';
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config/supabase';
+
+const SUPABASE_URL = 'https://gyoqnqvqhuxlcbrvtfia.supabase.co';
+const SUPABASE_KEY_B64 =
+  'ZXlKaGJHY2lPaUpJVXpJMU5pSXNJblI1Y0NJNklrcFhWQ0o5LmV5SnBjM01pT2lKemRYQmhZbUZ6WlNJc0luSmxaaUk2SW1kNWIzRnVjWFp4YUhWNGJHTmljblowWm1saElpd2ljbTlzWlNJNkltRnViMjRpTENKcFlYUWlPakUzTmpVeU9UazBNVEVzSW1WNGNDSTZNakE0TURnM05UUXhNWDAuZUxVXy1JclJmaXh4N2RwUjlqZWlFb09UMXUtZXhRTWhJc3hTWFZJTmJSQQ==';
+
+const getApiKey = (): string => {
+  try {
+    return atob(SUPABASE_KEY_B64);
+  } catch {
+    return SUPABASE_KEY_B64;
+  }
+};
 
 export interface ModItem {
   name: string;
@@ -26,14 +37,15 @@ export interface SyncModEntry {
  * Consulta la lista de mods oficiales del servidor desde Supabase REST API
  */
 export const fetchOfficialServerMods = async (): Promise<ModItem[]> => {
+  const apiKey = getApiKey();
   const url = `${SUPABASE_URL}/rest/v1/official_mods?select=name,download_url,sha1,patch_url,base_sha1`;
 
   try {
     const res = await fetch(url, {
       method: 'GET',
       headers: {
-        apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        apikey: apiKey,
+        Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
       signal: AbortSignal.timeout(8000),
