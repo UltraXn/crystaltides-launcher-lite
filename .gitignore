@@ -2,6 +2,7 @@
 node_modules/
 dist/
 .turbo/
+.scannerwork
 
 # Tauri Rust target
 src-tauri/target/
@@ -15,3 +16,23 @@ target/
 # Release artifacts
 release/
 release-artifacts/
+dist-package/
+coverage/
+
+# Native intermediate build outputs
+native/**/*.dll
+native/**/*.exp
+native/**/*.lib
+native/**/*.obj
+
+# Signing keys
+*.key
+*.key.pub
+crystaltides.key
+
+# Export dumps for AI context
+dumps/
+*.dump.txt
+repo_completo.txt
+frontend_limpio.txt
+frontend_parte2.txt

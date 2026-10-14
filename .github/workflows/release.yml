@@ -52,12 +52,16 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
-      - name: Prepare Release Artifacts
+      - name: Prepare Release Artifacts & Sign Updater
         shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          RELEASE_TAG: ${{ github.ref_name != '' && github.ref_name || inputs.tag_name }}
         run: |
           New-Item -ItemType Directory -Force -Path release-artifacts | Out-Null
           
-          # 1. Encontrar el ejecutable compilado
+          # 1. Localizar binario generado
           $exeSource = Get-ChildItem -Path "src-tauri/target/release", "target/release" -Filter "*.exe" -Recurse -ErrorAction SilentlyContinue |
             Where-Object { $_.Name -like "*launcher*" -and $_.Name -notlike "*.build*" -and $_.Name -notlike "*deps*" } |
             Select-Object -First 1
@@ -67,17 +71,51 @@ jobs:
             exit 1
           }
 
-          Write-Host "Encontrado binario: $($exeSource.FullName) ($($exeSource.Length) bytes)"
+          Write-Host "✓ Binario localizado: $($exeSource.FullName) ($($exeSource.Length) bytes)"
           Copy-Item -Path $exeSource.FullName -Destination "release-artifacts/CrystalTidesLauncher.exe" -Force
+          Copy-Item -Path $exeSource.FullName -Destination "release-artifacts/CrystalTides-Setup.exe" -Force
 
-          # 2. Copiar archivos de updater si existen (latest.json, firmas .sig)
-          Get-ChildItem -Path "src-tauri/target/release", "target/release" -Include "*.sig", "latest.json" -Recurse -ErrorAction SilentlyContinue |
-            ForEach-Object {
-              Write-Host "Adjuntando artefacto de update: $($_.Name)"
-              Copy-Item -Path $_.FullName -Destination "release-artifacts/$($_.Name)" -Force
+          # 2. Generar archivo .zip para el AutoUpdater
+          $zipPath = "release-artifacts/CrystalTidesLauncher-windows-x86_64.zip"
+          Write-Host "📦 Creando paquete de actualización: $zipPath"
+          Compress-Archive -Path $exeSource.FullName -DestinationPath $zipPath -Force
+
+          # 3. Firmar paquete de actualización y generar latest.json
+          if ($env:TAURI_SIGNING_PRIVATE_KEY) {
+            Write-Host "🔐 Firmando archivo para AutoUpdater con Tauri Signer..."
+            npx tauri signer sign -k "$env:TAURI_SIGNING_PRIVATE_KEY" -p "$($env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD)" $zipPath
+
+            $sigFile = "$zipPath.sig"
+            if (Test-Path $sigFile) {
+              $sigContent = (Get-Content -Path $sigFile -Raw).Trim()
+              $tag = if ($env:RELEASE_TAG) { $env:RELEASE_TAG } else { "v0.1.0" }
+              $cleanVersion = $tag -replace '^v', ''
+              $pubDate = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+
+              $latestManifest = @{
+                version = $cleanVersion
+                notes = "Actualización de CrystalTides Launcher ($tag)"
+                pub_date = $pubDate
+                platforms = @{
+                  "windows-x86_64" = @{
+                    signature = $sigContent
+                    url = "https://github.com/UltraXn/crystaltides-launcher-lite/releases/download/$tag/CrystalTidesLauncher-windows-x86_64.zip"
+                  }
+                }
+              }
+
+              $manifestJson = $latestManifest | ConvertTo-Json -Depth 5
+              $manifestJson | Set-Content -Path "release-artifacts/latest.json" -Encoding utf8
+              Write-Host "✓ latest.json generado con éxito:"
+              Write-Host $manifestJson
+            } else {
+              Write-Warning "No se pudo encontrar el archivo de firma $sigFile"
             }
+          } else {
+            Write-Warning "⚠️ TAURI_SIGNING_PRIVATE_KEY no está configurado en los Secrets. Se omitió la firma y latest.json."
+          }
 
-          # 3. Generar Checksums SHA256
+          # 4. Generar Checksums SHA256
           Get-ChildItem -Path release-artifacts -File | ForEach-Object {
             $hash = (Get-FileHash -Path $_.FullName -Algorithm SHA256).Hash
             "$hash  $($_.Name)" | Out-File -FilePath release-artifacts/SHA256SUMS.txt -Append -Encoding utf8

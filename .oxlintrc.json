@@ -37,6 +37,14 @@
     "react-doctor/no-fetch-in-effect": "warn",
     "react-doctor/effect-needs-cleanup": "warn"
   },
+  "overrides": [
+    {
+      "files": ["**/__tests__/**", "**/*.test.ts", "**/*.test.tsx"],
+      "rules": {
+        "typescript/no-explicit-any": "off"
+      }
+    }
+  ],
   "ignorePatterns": [
     "**/dist/**",
     "**/build/**",
