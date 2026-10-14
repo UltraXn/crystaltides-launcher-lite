@@ -74,16 +74,16 @@ Tu misión es explorar todo el repositorio para identificar y erradicar código 
 5. Poda de forma limpia y segura el código muerto garantizando que el build, los tipos y los tests sigan funcionando al 100%.`
   },
   {
-    id: 'HUNT-ROBUST-04',
-    category: 'Robustez de Acceso',
-    title: 'Exploración de Robustez en Autenticación, Sesión y Manejo de Tokens',
-    prompt: `Actúa como un Especialista en Arquitectura Defensiva e Integridad de Sesión.
-Tu misión es explorar los flujos de autenticación, sesión y comunicación del proyecto:
-1. Explora los módulos de autenticación (OAuth, Discord, sesión de usuario, almacenamiento de perfiles).
-2. Verifica cómo se manejan y validan los tokens y credenciales de sesión: busca posibles estados donde tokens expirados no se refresquen adecuadamente o provoquen fallos silenciosos.
-3. Revisa que no existan credenciales sensibles o tokens de prueba expuestos en código fuente o persistidos en logs de depuración.
-4. Comprueba que las operaciones que acceden a recursos protegidos o datos privados validen siempre la identidad del contexto de la sesión activa.
-5. Aplica las mejoras necesarias para garantizar un manejo limpio, robusto y confiable de la sesión.`
+    id: 'HUNT-PROFILE-04',
+    category: 'Perfiles y Estado',
+    title: 'Caza de Bugs en Gestión de Perfiles, Cuentas y Sincronización Local',
+    prompt: `Actúa como un Cazador Autónomo de Bugs enfocado en Gestión de Perfiles y Cuentas de Usuario.
+Tu misión es explorar libremente los módulos de perfil de jugador, sincronización de cuentas y persistencia de configuración:
+1. Explora el código que gestiona los perfiles locales (ProfileStore, AccountManager, selección de avatares, skins y cuentas activas).
+2. Analiza qué ocurre cuando un perfil se corrompe, se borra o contiene datos inconsistentes (ej. nombres inválidos, UUIDs ausentes, estados no sincronizados).
+3. Revisa la sincronización entre el estado global de cuentas y los componentes de la interfaz de usuario.
+4. Identifica estados donde un perfil activo no se actualice correctamente en la UI tras un cambio de configuración o cierre de sesión.
+5. Si descubres un fallo o desajuste en la gestión de perfiles, formula la solución mínima y aplica el parche asegurando la consistencia del sistema.`
   },
   {
     id: 'HUNT-FAIL-05',
