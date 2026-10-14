@@ -1,11 +1,7 @@
 import React, { useState } from 'react';
-import { X, ArrowRight, ArrowLeft, Loader2, Globe } from 'lucide-react';
+import { X, ArrowRight, Loader2, Globe } from 'lucide-react';
 import { DiscordIcon } from './icons/DiscordIcon';
-import { SpainFlag, UsaFlag } from './icons/FlagIcons';
-import logoImg from '../assets/logo.png';
-import { launcherActions, useLauncherStore, useT } from '../store/launcherStore';
-import { validateMinecraftUsername, generateOfflineUuid } from '../services/offlineAuth';
-import { loginWithCrystalTides } from '../services/crystalAuthService';
+import { useLauncherStore, launcherActions, LauncherState } from '../store/launcherStore';
 
 const YoutubeIcon: React.FC<{ style?: React.CSSProperties }> = ({ style }) => (
   <svg style={style} viewBox="0 0 24 24" fill="currentColor">
@@ -14,24 +10,30 @@ const YoutubeIcon: React.FC<{ style?: React.CSSProperties }> = ({ style }) => (
 );
 
 export const LoginView: React.FC = () => {
-  const language = useLauncherStore((s) => s.language);
-  const t = useT();
-  const [authMode, setAuthMode] = useState<'offline' | 'crystaltides'>('offline');
+  const accounts = useLauncherStore((s: LauncherState) => s.accounts);
   const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [rememberAccount, setRememberAccount] = useState(true);
-
-  // CrystalTides Web Account state
-  const [crystalEmail, setCrystalEmail] = useState('');
-  const [crystalPassword, setCrystalPassword] = useState('');
-
-  type ActiveLogin = 'offline' | 'microsoft' | 'crystaltides' | null;
-  const [activeLogin, setActiveLogin] = useState<ActiveLogin>(null);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const handleClose = async () => {
+    if (accounts.length > 0) {
+      launcherActions.setView('home');
+    } else {
+      try {
+        const { getCurrentWindow } = await import('@tauri-apps/api/window');
+        getCurrentWindow().close();
+      } catch {
+        // web mode
+      }
+    }
+  };
 
   // Microsoft OAuth Login flow
   const handleMicrosoftLogin = async () => {
     try {
-      setActiveLogin('microsoft');
+      setIsLoggingIn(true);
       setErrorMsg(null);
 
       // Try real Microsoft OAuth authentication via Tauri backend
@@ -67,72 +69,37 @@ export const LoginView: React.FC = () => {
         lastUsed: Date.now(),
       });
     } catch (e) {
-      setErrorMsg(e instanceof Error ? e.message : t.login.msLoginError);
+      setErrorMsg(e instanceof Error ? e.message : 'Error al iniciar sesión con Microsoft.');
     } finally {
-      setActiveLogin(null);
+      setIsLoggingIn(false);
     }
   };
 
-  // Direct login / Offline username login (No-Premium)
-  const handleDirectLogin = async (e: React.SyntheticEvent) => {
+  // Direct login / Offline username login
+  const handleDirectLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    const val = validateMinecraftUsername(username);
-    if (!val.valid) {
-      setErrorMsg(val.error ?? t.login.invalidUsername);
+    if (!username.trim()) {
+      setErrorMsg('Por favor, introduce tu nombre de usuario.');
       return;
     }
 
     try {
-      setActiveLogin('offline');
+      setIsLoggingIn(true);
       setErrorMsg(null);
 
-      const cleanName = username.trim();
-      const offlineUuid = generateOfflineUuid(cleanName);
-
       const userAccount = {
-        id: `guest_${cleanName.toLowerCase()}`,
-        username: cleanName,
-        uuid: offlineUuid,
+        id: `user_${Date.now()}`,
+        username: username.trim(),
+        uuid: '00000000-0000-0000-0000-000000000000',
         type: 'guest' as const,
         lastUsed: Date.now(),
       };
 
-      await launcherActions.addAccount(userAccount, rememberAccount);
+      await launcherActions.addAccount(userAccount);
     } catch {
-      setErrorMsg(t.login.saveAccountError);
+      setErrorMsg('Error al guardar la cuenta.');
     } finally {
-      setActiveLogin(null);
-    }
-  };
-
-  // CrystalTides SMP Official Web Account Login
-  const handleCrystalLogin = async (e: React.SyntheticEvent) => {
-    e.preventDefault();
-    try {
-      setActiveLogin('crystaltides');
-      setErrorMsg(null);
-
-      const profile = await loginWithCrystalTides(crystalEmail, crystalPassword);
-
-      await launcherActions.addAccount(
-        {
-          id: profile.id,
-          username: profile.username,
-          uuid: profile.uuid,
-          role: profile.role,
-          email: profile.email,
-          skinUrl: profile.skinUrl,
-          accessToken: profile.accessToken,
-          refreshToken: profile.refreshToken,
-          type: 'crystaltides',
-          lastUsed: Date.now(),
-        },
-        rememberAccount,
-      );
-    } catch (e) {
-      setErrorMsg(e instanceof Error ? e.message : t.login.crystalLoginError);
-    } finally {
-      setActiveLogin(null);
+      setIsLoggingIn(false);
     }
   };
 
@@ -141,300 +108,91 @@ export const LoginView: React.FC = () => {
       {/* Centered Login Card */}
       <div className="login-card-container">
         {/* Close button on top-right of card */}
-        {authMode === 'crystaltides' && (
-          <button
-            className="login-card-close"
-            title="Volver"
-            onClick={() => {
-              setAuthMode('offline');
-              setErrorMsg(null);
-            }}
-          >
-            <X style={{ width: '16px', height: '16px' }} />
-          </button>
-        )}
+        <button onClick={handleClose} className="login-card-close" title="Close">
+          <X style={{ width: '16px', height: '16px' }} />
+        </button>
+
+        {/* Card Header */}
+        <div className="login-header-text">
+          <h1 className="login-main-title">Welcome!</h1>
+          <p className="login-sub-title">
+            Are you new here? <span className="login-link-highlight">Sign in!</span>
+          </p>
+        </div>
 
         {/* Error banner if any */}
         {errorMsg && <div className="login-error-alert">{errorMsg}</div>}
 
-        {authMode === 'offline' ? (
-          <>
-            {/* Card Header with Title and Language Toggle */}
-            <div className="login-header-text">
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  width: '100%',
-                }}
-              >
-                <h1 className="login-main-title">CrystalTides</h1>
-                <div
-                  className="login-lang-segmented"
-                  role="group"
-                  aria-label="Selector de idioma / Language selector"
-                >
-                  <button
-                    type="button"
-                    onClick={() => launcherActions.setLanguage('es')}
-                    className={`login-lang-btn ${language === 'es' ? 'active' : ''}`}
-                    title={t.login.langSpanish}
-                    aria-label={t.login.langSpanish}
-                  >
-                    <SpainFlag size={14} />
-                    <span>ES</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => launcherActions.setLanguage('en')}
-                    className={`login-lang-btn ${language === 'en' ? 'active' : ''}`}
-                    title={t.login.langEnglish}
-                    aria-label={t.login.langEnglish}
-                  >
-                    <UsaFlag size={14} />
-                    <span>EN</span>
-                  </button>
-                </div>
-              </div>
-              <p className="login-sub-title">
-                {t.login.subTitlePrefix}{' '}
-                <span className="login-link-highlight">{t.login.subTitleHighlight}</span>{' '}
-                {t.login.subTitleSuffix}
-              </p>
-            </div>
+        {/* Credentials Form */}
+        <form onSubmit={handleDirectLogin} className="login-inputs-form">
+          <div className="login-fields-col">
+            <input
+              type="text"
+              placeholder="Username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              className="login-text-input"
+              maxLength={24}
+            />
 
-            {/* Offline Form (Zero password field) */}
-            <form onSubmit={handleDirectLogin} className="login-inputs-form">
-              <div className="login-fields-col">
-                <input
-                  type="text"
-                  placeholder={t.login.nicknamePlaceholder}
-                  aria-label={t.login.nicknameAria}
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  className="login-text-input"
-                  maxLength={16}
-                />
-              </div>
+            <input
+              type="password"
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="login-text-input"
+            />
+          </div>
 
-              {/* Remember Account Checkbox */}
-              <label htmlFor="login-remember-account" className="login-checkbox-label">
-                <input
-                  id="login-remember-account"
-                  type="checkbox"
-                  checked={rememberAccount}
-                  onChange={(e) => setRememberAccount(e.target.checked)}
-                  className="login-custom-checkbox"
-                />
-                <span className="login-checkbox-text">{t.login.rememberNickname}</span>
-              </label>
+          {/* Remember Account Checkbox */}
+          <label className="login-checkbox-label">
+            <input
+              type="checkbox"
+              checked={rememberAccount}
+              onChange={(e) => setRememberAccount(e.target.checked)}
+              className="login-custom-checkbox"
+            />
+            <span className="login-checkbox-text">Remember this account.</span>
+          </label>
 
-              {/* Solid Green Continue Button */}
-              <button
-                type="submit"
-                disabled={Boolean(activeLogin)}
-                className="login-continue-btn"
-              >
-                {activeLogin === 'offline' ? (
-                  <Loader2 className="login-btn-spinner" />
-                ) : (
-                  <>
-                    {t.login.playBtn}{' '}
-                    <ArrowRight style={{ width: '16px', height: '16px', strokeWidth: 2.5 }} />
-                  </>
-                )}
-              </button>
-            </form>
+          {/* Solid Green Continue Button */}
+          <button type="submit" disabled={isLoggingIn} className="login-continue-btn">
+            {isLoggingIn ? (
+              <Loader2 className="login-btn-spinner" />
+            ) : (
+              <>
+                Continue <ArrowRight style={{ width: '16px', height: '16px', strokeWidth: 2.5 }} />
+              </>
+            )}
+          </button>
+        </form>
 
-            {/* OR Divider */}
-            <div className="login-or-divider">
-              <div className="login-divider-bar" />
-              <span className="login-divider-label">{t.login.orDivider}</span>
-              <div className="login-divider-bar" />
-            </div>
+        {/* OR Divider */}
+        <div className="login-or-divider">
+          <div className="login-divider-bar" />
+          <span className="login-divider-label">OR</span>
+          <div className="login-divider-bar" />
+        </div>
 
-            {/* Social / Connected Accounts Options */}
-            <div className="login-oauth-options">
-              {/* CrystalTides Login with Octopus Mascot */}
-              <button
-                type="button"
-                aria-label="Iniciar sesión con cuenta de CrystalTides"
-                onClick={() => {
-                  setAuthMode('crystaltides');
-                  setErrorMsg(null);
-                }}
-                disabled={Boolean(activeLogin)}
-                className="login-crystaltides-box"
-              >
-                <img src={logoImg} alt="Octopus Mascot" className="ct-box-logo" />
-                <div className="ct-box-labels">
-                  <span className="ct-box-sub">{t.login.officialAccount}</span>
-                  <span className="ct-box-title">{t.login.crystalLoginTitle}</span>
-                </div>
-              </button>
-
-              {/* Microsoft Login Box */}
-              <button
-                type="button"
-                aria-label="Iniciar sesión con Microsoft"
-                onClick={handleMicrosoftLogin}
-                disabled={Boolean(activeLogin)}
-                className={`login-microsoft-box ${activeLogin === 'microsoft' ? 'loading' : ''}`}
-              >
-                {activeLogin === 'microsoft' ? (
-                  <div className="ms-loading-indicator">
-                    <Loader2 className="login-btn-spinner" style={{ color: '#00a4ef' }} />
-                  </div>
-                ) : (
-                  <div className="ms-icon-grid">
-                    <span style={{ backgroundColor: '#f25022' }} />
-                    <span style={{ backgroundColor: '#7fba00' }} />
-                    <span style={{ backgroundColor: '#00a4ef' }} />
-                    <span style={{ backgroundColor: '#ffb900' }} />
-                  </div>
-                )}
-                <div className="ms-box-labels">
-                  <span className="ms-box-sub">
-                    {activeLogin === 'microsoft' ? t.login.msConnecting : t.login.loginWith}
-                  </span>
-                  <span className="ms-box-title">
-                    {activeLogin === 'microsoft' ? t.login.msLoggingIn : t.login.microsoftTitle}
-                  </span>
-                </div>
-              </button>
-            </div>
-          </>
-        ) : (
-          <>
-            {/* CrystalTides SMP Official Web Login View */}
-            <div
-              className="login-header-text"
-              style={{ alignItems: 'center', textAlign: 'center', position: 'relative' }}
-            >
-              <div style={{ position: 'absolute', top: 0, left: 0 }}>
-                <div
-                  className="login-lang-segmented"
-                  role="group"
-                  aria-label="Selector de idioma / Language selector"
-                >
-                  <button
-                    type="button"
-                    onClick={() => launcherActions.setLanguage('es')}
-                    className={`login-lang-btn ${language === 'es' ? 'active' : ''}`}
-                    title={t.login.langSpanish}
-                    aria-label={t.login.langSpanish}
-                  >
-                    <SpainFlag size={14} />
-                    <span>ES</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => launcherActions.setLanguage('en')}
-                    className={`login-lang-btn ${language === 'en' ? 'active' : ''}`}
-                    title={t.login.langEnglish}
-                    aria-label={t.login.langEnglish}
-                  >
-                    <UsaFlag size={14} />
-                    <span>EN</span>
-                  </button>
-                </div>
-              </div>
-              <img
-                src={logoImg}
-                alt="Octopus Mascot"
-                style={{
-                  width: '38px',
-                  height: '38px',
-                  objectFit: 'contain',
-                  marginBottom: '4px',
-                  filter: 'drop-shadow(0 2px 10px rgba(0, 229, 255, 0.6))',
-                }}
-              />
-              <h1 className="login-main-title" style={{ fontSize: '22px' }}>
-                CrystalTides SMP
-              </h1>
-              <p className="login-sub-title">
-                {t.login.crystalSubTitlePrefix}{' '}
-                <span className="login-link-highlight" style={{ color: '#00e5ff' }}>
-                  crystaltidessmp.net
-                </span>
-              </p>
-            </div>
-
-            <form onSubmit={handleCrystalLogin} className="login-inputs-form">
-              <div className="login-fields-col">
-                <input
-                  type="email"
-                  placeholder={t.login.crystalEmailPlaceholder}
-                  aria-label={t.login.crystalEmailPlaceholder}
-                  value={crystalEmail}
-                  onChange={(e) => setCrystalEmail(e.target.value)}
-                  className="login-text-input"
-                  required
-                />
-
-                <input
-                  type="password"
-                  placeholder={t.login.crystalPasswordPlaceholder}
-                  aria-label={t.login.crystalPasswordPlaceholder}
-                  value={crystalPassword}
-                  onChange={(e) => setCrystalPassword(e.target.value)}
-                  className="login-text-input"
-                  required
-                />
-              </div>
-
-              {/* Remember Account Checkbox */}
-              <label htmlFor="login-remember-crystal" className="login-checkbox-label">
-                <input
-                  id="login-remember-crystal"
-                  type="checkbox"
-                  checked={rememberAccount}
-                  onChange={(e) => setRememberAccount(e.target.checked)}
-                  className="login-custom-checkbox"
-                />
-                <span className="login-checkbox-text">{t.login.rememberCrystal}</span>
-              </label>
-
-              {/* Cyan Glowing CrystalTides Submit Button */}
-              <button
-                type="submit"
-                disabled={Boolean(activeLogin)}
-                className="login-crystal-btn"
-              >
-                {activeLogin === 'crystaltides' ? (
-                  <Loader2 className="login-btn-spinner" />
-                ) : (
-                  <>
-                    {t.login.crystalConnectBtn}{' '}
-                    <ArrowRight style={{ width: '16px', height: '16px', strokeWidth: 2.5 }} />
-                  </>
-                )}
-              </button>
-
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'center',
-                  width: '100%',
-                  marginTop: '4px',
-                }}
-              >
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAuthMode('offline');
-                    setErrorMsg(null);
-                  }}
-                  className="login-back-btn"
-                >
-                  <ArrowLeft style={{ width: '14px', height: '14px' }} /> {t.login.backToOffline}
-                </button>
-              </div>
-            </form>
-          </>
-        )}
+        {/* Large Microsoft Login Box */}
+        <button
+          type="button"
+          aria-label="Iniciar sesión con Microsoft"
+          onClick={handleMicrosoftLogin}
+          disabled={isLoggingIn}
+          className="login-microsoft-box"
+        >
+          <div className="ms-icon-grid">
+            <span style={{ backgroundColor: '#f25022' }} />
+            <span style={{ backgroundColor: '#7fba00' }} />
+            <span style={{ backgroundColor: '#00a4ef' }} />
+            <span style={{ backgroundColor: '#ffb900' }} />
+          </div>
+          <div className="ms-box-labels">
+            <span className="ms-box-sub">Login with:</span>
+            <span className="ms-box-title">Microsoft</span>
+          </div>
+        </button>
       </div>
 
       {/* Bottom Socials: YouTube, Discord, Web */}

@@ -1,9 +1,0 @@
-{
-  "rules": {
-    "react-doctor/no-giant-component": "off",
-    "react-doctor/no-high-complexity-react-function": "off",
-    "react-doctor/prefer-html-dialog": "off",
-    "react-doctor/no-transition-all": "off",
-    "react-doctor/no-create-object-url-without-revoke": "off"
-  }
-}

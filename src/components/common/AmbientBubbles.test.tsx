@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { AmbientBubbles } from './AmbientBubbles';
 
 describe('AmbientBubbles', () => {
@@ -11,53 +11,67 @@ describe('AmbientBubbles', () => {
     vi.useRealTimers();
   });
 
-  it('should render the correct number of bubbles when count is provided', () => {
+  it('should render the correct number of bubbles', () => {
     const count = 10;
-    const { container } = render(<AmbientBubbles count={count} />);
-    const bubbles = container.querySelectorAll('.ambient-bubble');
+    render(<AmbientBubbles count={count} />);
+    const bubbles = screen.getAllByTestId('ambient-bubble');
     expect(bubbles).toHaveLength(count);
   });
 
-  it('should render 22 bubbles by default matching web client', () => {
-    const { container } = render(<AmbientBubbles />);
-    const bubbles = container.querySelectorAll('.ambient-bubble');
-    expect(bubbles).toHaveLength(22);
+  it('should render the default number of bubbles when count is not provided', () => {
+    render(<AmbientBubbles />);
+    const bubbles = screen.getAllByTestId('ambient-bubble');
+    expect(bubbles).toHaveLength(25);
   });
 
-  it('should render bubbles with valid dynamic styles', () => {
-    const { container } = render(<AmbientBubbles count={1} />);
-    const bubble = container.querySelector('.ambient-bubble') as HTMLElement;
-    expect(bubble).not.toBeNull();
+  it('should render bubbles with correct styles', () => {
+    const count = 1;
+    render(<AmbientBubbles count={count} />);
+    const bubble = screen.getByTestId('ambient-bubble');
+    const style = window.getComputedStyle(bubble);
 
-    expect(bubble.style.width).toMatch(/\d+(\.\d+)?px/);
-    expect(bubble.style.height).toMatch(/\d+(\.\d+)?px/);
-    expect(bubble.style.left).toMatch(/\d+(\.\d+)?(%|vw)/);
-    expect(bubble.style.animationDuration).toMatch(/\d+(\.\d+)?s/);
-    expect(bubble.style.animationDelay).toMatch(/\d+(\.\d+)?s/);
-
-    const size = parseFloat(bubble.style.width);
-    const left = parseFloat(bubble.style.left);
-    const duration = parseFloat(bubble.style.animationDuration);
-    const delay = parseFloat(bubble.style.animationDelay);
-
-    expect(size).toBeGreaterThanOrEqual(14);
-    expect(size).toBeLessThanOrEqual(38);
-    expect(left).toBeGreaterThanOrEqual(0);
-    expect(left).toBeLessThanOrEqual(100);
-    expect(duration).toBeGreaterThanOrEqual(9);
-    expect(duration).toBeLessThanOrEqual(23);
-    expect(delay).toBeGreaterThanOrEqual(-25);
-    expect(delay).toBeLessThanOrEqual(18);
+    expect(style.width).not.toBe('');
+    expect(style.height).not.toBe('');
+    expect(style.left).not.toBe('');
+    expect(style.animationDuration).not.toBe('');
+    expect(style.animationDelay).not.toBe('');
+    expect(style.opacity).not.toBe('');
   });
 
   it('should handle count boundary values', () => {
     const minCount = 0;
     const maxCount = 50;
+    const { unmount } = render(<AmbientBubbles count={minCount} />);
+    let bubbles = screen.queryAllByTestId('ambient-bubble');
+    expect(bubbles).toHaveLength(minCount);
+    unmount();
 
-    const { container: c1 } = render(<AmbientBubbles count={minCount} />);
-    expect(c1.querySelectorAll('.ambient-bubble')).toHaveLength(minCount);
+    render(<AmbientBubbles count={maxCount} />);
+    bubbles = screen.getAllByTestId('ambient-bubble');
+    expect(bubbles).toHaveLength(maxCount);
+  });
 
-    const { container: c2 } = render(<AmbientBubbles count={maxCount} />);
-    expect(c2.querySelectorAll('.ambient-bubble')).toHaveLength(maxCount);
+  it('should generate bubbles with valid properties', () => {
+    const count = 1;
+    render(<AmbientBubbles count={count} />);
+    const bubble = screen.getByTestId('ambient-bubble');
+    const style = window.getComputedStyle(bubble);
+
+    const size = parseFloat(style.width);
+    const left = parseFloat(style.left);
+    const duration = parseFloat(style.animationDuration);
+    const delay = parseFloat(style.animationDelay);
+    const opacity = parseFloat(style.opacity);
+
+    expect(size).toBeGreaterThanOrEqual(6);
+    expect(size).toBeLessThanOrEqual(26);
+    expect(left).toBeGreaterThanOrEqual(0);
+    expect(left).toBeLessThanOrEqual(100);
+    expect(duration).toBeGreaterThanOrEqual(6);
+    expect(duration).toBeLessThanOrEqual(14);
+    expect(delay).toBeGreaterThanOrEqual(0);
+    expect(delay).toBeLessThanOrEqual(6);
+    expect(opacity).toBeGreaterThanOrEqual(0.15);
+    expect(opacity).toBeLessThanOrEqual(0.6);
   });
 });

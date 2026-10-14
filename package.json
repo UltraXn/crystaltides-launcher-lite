@@ -2,50 +2,34 @@
   "$schema": "https://json.schemastore.org/package",
   "name": "@crystaltides/launcher-lite",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "dev:tauri": "tauri dev",
     "build": "tsc && vite build",
     "build:tauri": "tauri build",
-    "package": "node scripts/package.mjs",
-    "dist": "node scripts/package.mjs",
-    "export:parts": "node scripts/export_parts.mjs",
     "preview": "vite preview",
-    "test": "vitest run",
-    "test:coverage": "vitest run --coverage",
-    "lint": "node --max-old-space-size=4096 ./node_modules/typescript/bin/tsc --noEmit",
-    "lint:fast": "oxlint --threads 8 --no-ignore src",
-    "doctor": "react-doctor",
-    "doctor:score": "react-doctor --score",
-    "doctor:staged": "react-doctor --staged --blocking warning",
-    "doctor:changed": "react-doctor --verbose --scope changed",
-    "lint:rust": "cargo clippy -p launcher-lite-tauri",
-    "deny:rust": "cargo deny check",
-    "machete:rust": "cargo machete",
-    "tauri": "tauri",
-    "jules:audit": "node scripts/jules_orchestrator.mjs",
-    "jules:dry-run": "node scripts/jules_orchestrator.mjs --dry-run",
-    "jules:status": "node scripts/jules_orchestrator.mjs --status"
+    "lint": "tsc --noEmit",
+    "lint:fast": "oxlint src",
+    "tauri": "tauri"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.3.0",
-    "clsx": "^2.1.1",
-    "dompurify": "^3.4.16",
     "lucide-react": "^1.16.0",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0",
-    "tailwind-merge": "^3.0.2",
-    "zustand": "^5.0.3"
+    "react-dom": "^19.1.0"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
+    "@testing-library/react": "^16.3.3",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react-swc": "^3.8.0",
+    "jsdom": "^30.1.2",
     "oxlint": "^0.15.11",
     "typescript": "~5.8.3",
-    "vite": "^7.0.4"
+    "vite": "^7.0.4",
+    "vitest": "^5.0.4"
   }
 }

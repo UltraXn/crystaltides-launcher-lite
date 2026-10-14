@@ -1,508 +1,304 @@
-import React, { useState, useEffect } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-import logoImg from '../../assets/logo.png';
-import { Minus, X, Trash2, CheckCircle2 } from 'lucide-react';
-import { AmbientBubbles } from '../common/AmbientBubbles';
+import React, { useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { Trash2, CheckCircle2 } from "lucide-react";
+import { AmbientBubbles } from "../common/AmbientBubbles";
 
 interface UninstallerViewProps {
   installDir: string;
 }
 
 export const UninstallerView: React.FC<UninstallerViewProps> = ({ installDir }) => {
-  const [step, setStep] = useState<'confirm' | 'uninstalling' | 'finish'>('confirm');
-  const [keepUserData, setKeepUserData] = useState(true);
+  const [step, setStep] = useState<"confirm" | "uninstalling" | "finish">("confirm");
+  const [removeUserData, setRemoveUserData] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [statusText, setStatusText] = useState('Iniciando desinstalación...');
-
-  // Redimensionar ventana de Tauri a tamaño discreto estilo Lunar (600x400)
-  useEffect(() => {
-    const setupDiscreteWindow = async () => {
-      try {
-        const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow');
-        const { LogicalSize } = await import('@tauri-apps/api/dpi');
-        const win = getCurrentWebviewWindow();
-        await win.setSize(new LogicalSize(600, 400));
-        await win.setResizable(false);
-        await win.center();
-      } catch {
-        // En navegador / dev preview
-      }
-    };
-    setupDiscreteWindow();
-  }, []);
+  const [statusText, setStatusText] = useState("Iniciando desinstalación...");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const handleStartUninstall = async () => {
-    setStep('uninstalling');
+    setStep("uninstalling");
     setProgress(0.2);
-    setStatusText('Cerrando procesos y eliminando accesos directos...');
+    setStatusText("Cerrando procesos y limpiando accesos directos...");
+    setErrorMessage(null);
 
     try {
       await new Promise((r) => setTimeout(r, 600));
       setProgress(0.5);
-      setStatusText('Eliminando registros de Windows y entradas del sistema...');
+      setStatusText("Eliminando claves de registro y entradas del sistema...");
 
-      await invoke('perform_self_uninstall', {
+      await invoke("perform_self_uninstall", {
         targetDir: installDir,
-        removeUserData: !keepUserData,
+        removeUserData,
       });
 
       setProgress(0.85);
-      setStatusText('Limpiando archivos de ejecución y temporales...');
+      setStatusText("Programando auto-limpieza del ejecutable...");
 
-      await invoke('schedule_self_deletion', {
+      await invoke("schedule_self_deletion", {
         targetDir: installDir,
       });
 
       await new Promise((r) => setTimeout(r, 600));
       setProgress(1.0);
-      setStatusText('Desinstalación completada con éxito.');
-      setStep('finish');
-    } catch (err) {
-      if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
-        console.error('Error durante la desinstalación en Tauri:', err);
-        setStatusText(`Error en la desinstalación: ${String(err)}`);
-        setStep('confirm');
-        return;
-      }
-      console.warn('Simulación suave de desinstalación en navegador:', err);
-      setProgress(0.5);
-      setStatusText('Eliminando registros de Windows y entradas del sistema...');
-      await new Promise((r) => setTimeout(r, 1200));
-      setProgress(0.85);
-      setStatusText('Limpiando archivos de ejecución y temporales...');
-      await new Promise((r) => setTimeout(r, 1000));
-      setProgress(1.0);
-      setStatusText('Desinstalación completada con éxito.');
-      setStep('finish');
+      setStatusText("Desinstalación completada.");
+      setStep("finish");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setErrorMessage(msg);
+      setStatusText("Error durante la desinstalación.");
     }
-  };
-
-  const handleMinimize = async () => {
-    try {
-      const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow');
-      await getCurrentWebviewWindow().minimize();
-    } catch {}
   };
 
   const handleClose = async () => {
     try {
-      await invoke('close_app');
-    } catch {
-      if (typeof window !== 'undefined') window.close();
+      await invoke("close_app");
+    } catch (e) {
+      console.warn("Could not close uninstaller window:", e);
     }
   };
 
   return (
     <div
       style={{
-        width: '100vw',
-        height: '100vh',
-        background: '#0a0b0e',
-        color: '#f8fafc',
-        display: 'flex',
-        flexDirection: 'column',
-        userSelect: 'none',
-        overflow: 'hidden',
-        fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
-        position: 'relative',
-        boxSizing: 'border-box',
+        display: "flex",
+        flexDirection: "column",
+        width: "100vw",
+        height: "100vh",
+        background: "radial-gradient(ellipse at top, #1A1118 0%, #0A090E 100%)",
+        color: "#F8FAFC",
+        position: "relative",
+        overflow: "hidden",
+        userSelect: "none",
+        fontFamily: "var(--font-sans, system-ui, -apple-system, sans-serif)",
       }}
     >
-      {/* Burbujas Ambientales Pixel Art Estilo Web */}
-      <AmbientBubbles />
+      <AmbientBubbles count={15} />
 
-      {/* BARRA SUPERIOR DISCRETA */}
+      {/* Barra de título */}
       <div
         data-tauri-drag-region
         style={{
-          height: '36px',
-          minHeight: '36px',
-          padding: '0 10px 0 14px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          background: 'transparent',
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          height: "38px",
+          padding: "0 16px",
+          background: "rgba(15, 14, 20, 0.8)",
+          borderBottom: "1px solid rgba(255, 255, 255, 0.05)",
           zIndex: 50,
         }}
       >
-        <div
-          data-tauri-drag-region
-          style={{ display: 'flex', alignItems: 'center', gap: '8px', pointerEvents: 'none' }}
-        >
-          <img
-            src={logoImg}
-            alt="Logo"
-            style={{ width: '16px', height: '16px', objectFit: 'contain' }}
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <div
+            style={{
+              width: "8px",
+              height: "8px",
+              borderRadius: "50%",
+              backgroundColor: "#F43F5E",
+              boxShadow: "0 0 8px #F43F5E",
+            }}
           />
-          <span
-            style={{
-              fontSize: '12px',
-              fontWeight: 600,
-              color: '#cbd5e1',
-              letterSpacing: '0.2px',
-            }}
-          >
-            CrystalTides Desinstalador
+          <span style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.5px", color: "rgba(248, 250, 252, 0.6)", textTransform: "uppercase" }}>
+            CrystalTides Launcher · Desinstalador
           </span>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
-          <button
-            type="button"
-            onClick={handleMinimize}
-            aria-label="Minimizar"
-            style={{
-              width: '32px',
-              height: '28px',
-              background: 'transparent',
-              border: 'none',
-              color: '#94a3b8',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              borderRadius: '4px',
-              transition: 'background 0.15s',
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)')}
-            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-          >
-            <Minus size={13} />
-          </button>
-          <button
-            type="button"
-            onClick={handleClose}
-            aria-label="Cerrar"
-            style={{
-              width: '32px',
-              height: '28px',
-              background: 'transparent',
-              border: 'none',
-              color: '#94a3b8',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              borderRadius: '4px',
-              transition: 'all 0.15s',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = '#e11d48';
-              e.currentTarget.style.color = '#ffffff';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'transparent';
-              e.currentTarget.style.color = '#94a3b8';
-            }}
-          >
-            <X size={14} />
-          </button>
         </div>
       </div>
 
-      {/* CONTENIDO PRINCIPAL */}
+      {/* Contenido principal */}
       <div
         style={{
           flex: 1,
-          display: 'flex',
-          flexDirection: 'column',
-          position: 'relative',
-          padding: '0 28px',
-          justifyContent: 'center',
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "32px",
+          position: "relative",
+          zIndex: 10,
         }}
       >
-        {/* PASO 1: CONFIRMAR */}
-        {step === 'confirm' && (
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              textAlign: 'center',
-              animation: 'fadeIn 0.25s ease',
-            }}
-          >
+        {step === "confirm" && (
+          <div style={{ maxWidth: "500px", width: "100%", textAlign: "center" }}>
             <div
               style={{
-                width: '60px',
-                height: '60px',
-                borderRadius: '50%',
-                background: 'rgba(244, 63, 94, 0.12)',
-                border: '1px solid rgba(244, 63, 94, 0.3)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                marginBottom: '16px',
-                boxShadow: '0 0 20px rgba(244, 63, 94, 0.2)',
+                width: "68px",
+                height: "68px",
+                borderRadius: "20px",
+                background: "linear-gradient(135deg, rgba(244, 63, 94, 0.2), rgba(239, 68, 68, 0.05))",
+                border: "1px solid rgba(244, 63, 94, 0.35)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                margin: "0 auto 20px auto",
+                boxShadow: "0 8px 32px rgba(244, 63, 94, 0.15)",
               }}
             >
-              <Trash2 size={26} color="#f43f5e" />
+              <Trash2 size={32} color="#F43F5E" />
             </div>
 
-            <div
-              style={{
-                fontSize: '17px',
-                fontWeight: 700,
-                color: '#f8fafc',
-                marginBottom: '6px',
-              }}
-            >
+            <h1 style={{ fontSize: "24px", fontWeight: 800, letterSpacing: "-0.5px", margin: "0 0 8px 0" }}>
               ¿Desinstalar CrystalTides Launcher?
-            </div>
+            </h1>
+            <p style={{ fontSize: "13px", color: "rgba(248, 250, 252, 0.65)", margin: "0 0 24px 0", lineHeight: "1.5" }}>
+              Esta acción eliminará el lanzador y sus accesos directos del sistema en la ruta:
+              <br />
+              <code style={{ fontSize: "11px", color: "#F43F5E", background: "rgba(255, 255, 255, 0.04)", padding: "2px 6px", borderRadius: "4px" }}>
+                {installDir}
+              </code>
+            </p>
 
+            {/* Checkbox de datos de usuario */}
             <div
               style={{
-                fontSize: '12px',
-                color: '#94a3b8',
-                maxWidth: '420px',
-                lineHeight: '1.45',
-                marginBottom: '18px',
-              }}
-            >
-              Esta acción removerá el lanzador, sus accesos directos de escritorio y registros de
-              Windows.
-            </div>
-
-            {/* Caja de Ubicación */}
-            <div
-              style={{
-                width: '100%',
-                maxWidth: '420px',
-                background: '#13151b',
-                border: '1px solid rgba(255, 255, 255, 0.08)',
-                borderRadius: '6px',
-                padding: '9px 12px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                marginBottom: '14px',
-                fontSize: '12px',
-              }}
-            >
-              <span style={{ color: '#64748b' }}>Ubicación:</span>
-              <span style={{ color: '#cbd5e1', fontFamily: 'monospace' }}>{installDir}</span>
-            </div>
-
-            {/* Checkbox Conservar Datos */}
-            <label
-              htmlFor="keep-user-data-checkbox"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                cursor: 'pointer',
-                fontSize: '12px',
-                color: '#cbd5e1',
-                maxWidth: '420px',
-                textAlign: 'left',
-                width: '100%',
+                background: "rgba(255, 255, 255, 0.03)",
+                border: "1px solid rgba(255, 255, 255, 0.08)",
+                borderRadius: "12px",
+                padding: "14px",
+                textAlign: "left",
+                marginBottom: "28px",
+                display: "flex",
+                gap: "12px",
+                alignItems: "flex-start",
               }}
             >
               <input
-                id="keep-user-data-checkbox"
                 type="checkbox"
-                checked={keepUserData}
-                onChange={(e) => setKeepUserData(e.target.checked)}
-                style={{
-                  accentColor: '#2294e3',
-                  width: '15px',
-                  height: '15px',
-                  cursor: 'pointer',
-                }}
+                id="removeUserData"
+                checked={removeUserData}
+                onChange={(e) => setRemoveUserData(e.target.checked)}
+                style={{ accentColor: "#F43F5E", width: "18px", height: "18px", marginTop: "2px", cursor: "pointer" }}
               />
-              <span>Conservar partidas guardadas, capturas y perfiles descargados</span>
-            </label>
+              <div>
+                <label htmlFor="removeUserData" style={{ fontSize: "13px", fontWeight: 600, color: "#F8FAFC", cursor: "pointer", display: "block" }}>
+                  Eliminar también perfiles de juego, mods y mundos guardados
+                </label>
+                <span style={{ fontSize: "11px", color: "rgba(248, 250, 252, 0.5)" }}>
+                  Si dejas esta casilla desmarcada, tus mods y configuraciones se mantendrán intactos para futuras instalaciones.
+                </span>
+              </div>
+            </div>
+
+            {/* Botones de acción */}
+            <div style={{ display: "flex", gap: "12px" }}>
+              <button
+                onClick={handleStartUninstall}
+                style={{
+                  flex: 1,
+                  background: "linear-gradient(135deg, #F43F5E 0%, #E11D48 100%)",
+                  border: "none",
+                  borderRadius: "12px",
+                  padding: "14px 20px",
+                  color: "#FFF",
+                  fontSize: "14px",
+                  fontWeight: 700,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "8px",
+                  cursor: "pointer",
+                  boxShadow: "0 4px 20px rgba(244, 63, 94, 0.3)",
+                }}
+              >
+                <Trash2 size={16} /> Desinstalar
+              </button>
+              <button
+                onClick={handleClose}
+                style={{
+                  background: "rgba(255, 255, 255, 0.06)",
+                  border: "1px solid rgba(255, 255, 255, 0.12)",
+                  borderRadius: "12px",
+                  padding: "14px 20px",
+                  color: "#F8FAFC",
+                  fontSize: "14px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                Cancelar
+              </button>
+            </div>
           </div>
         )}
 
-        {/* PASO 2: DESINSTALANDO */}
-        {step === 'uninstalling' && (
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              animation: 'fadeIn 0.25s ease',
-            }}
-          >
-            <div
-              style={{
-                fontSize: '15px',
-                fontWeight: 600,
-                color: '#f8fafc',
-                marginBottom: '24px',
-              }}
-            >
-              Desinstalando CrystalTides
-            </div>
+        {step === "uninstalling" && (
+          <div style={{ maxWidth: "460px", width: "100%", textAlign: "center" }}>
+            <h2 style={{ fontSize: "20px", fontWeight: 700, margin: "0 0 8px 0" }}>Desinstalando...</h2>
+            <p style={{ fontSize: "13px", color: "rgba(248, 250, 252, 0.6)", margin: "0 0 24px 0" }}>{statusText}</p>
 
             <div
               style={{
-                width: '100%',
-                height: '3px',
-                background: 'rgba(255, 255, 255, 0.1)',
-                borderRadius: '2px',
-                overflow: 'hidden',
-                marginBottom: '14px',
+                width: "100%",
+                height: "10px",
+                background: "rgba(255, 255, 255, 0.08)",
+                borderRadius: "999px",
+                overflow: "hidden",
+                marginBottom: "12px",
               }}
             >
               <div
                 style={{
-                  height: '100%',
-                  width: `${Math.round(progress * 100)}%`,
-                  background: 'linear-gradient(90deg, #f43f5e 0%, #fb7185 100%)',
-                  boxShadow: '0 0 12px rgba(244, 63, 94, 0.8)',
-                  transition: 'width 0.35s ease',
+                  height: "100%",
+                  width: `${progress * 100}%`,
+                  background: "linear-gradient(90deg, #F43F5E, #E11D48)",
+                  borderRadius: "999px",
+                  transition: "width 0.4s ease-out",
+                  boxShadow: "0 0 12px rgba(244, 63, 94, 0.6)",
                 }}
               />
             </div>
+            <div style={{ fontSize: "11px", color: "rgba(248, 250, 252, 0.45)", fontWeight: 600 }}>
+              {Math.round(progress * 100)}%
+            </div>
 
-            <div style={{ fontSize: '12px', color: '#94a3b8' }}>{statusText}</div>
+            {errorMessage && (
+              <div style={{ marginTop: "20px", padding: "12px", background: "rgba(239, 68, 68, 0.15)", border: "1px solid rgba(239, 68, 68, 0.3)", borderRadius: "8px", color: "#FCA5A5", fontSize: "12px" }}>
+                {errorMessage}
+              </div>
+            )}
           </div>
         )}
 
-        {/* PASO 3: COMPLETADO */}
-        {step === 'finish' && (
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              textAlign: 'center',
-              animation: 'fadeIn 0.25s ease',
-            }}
-          >
+        {step === "finish" && (
+          <div style={{ maxWidth: "460px", width: "100%", textAlign: "center" }}>
             <div
               style={{
-                width: '60px',
-                height: '60px',
-                borderRadius: '50%',
-                background: 'rgba(34, 148, 227, 0.12)',
-                border: '1px solid rgba(34, 148, 227, 0.35)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                marginBottom: '16px',
-                boxShadow: '0 0 20px rgba(34, 148, 227, 0.2)',
+                width: "64px",
+                height: "64px",
+                borderRadius: "50%",
+                background: "rgba(45, 212, 191, 0.15)",
+                border: "1px solid #2DD4BF",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                margin: "0 auto 20px auto",
+                boxShadow: "0 0 24px rgba(45, 212, 191, 0.25)",
               }}
             >
-              <CheckCircle2 size={30} color="#2294e3" />
+              <CheckCircle2 size={32} color="#2DD4BF" />
             </div>
 
-            <div
-              style={{
-                fontSize: '17px',
-                fontWeight: 700,
-                color: '#f8fafc',
-                marginBottom: '6px',
-              }}
-            >
-              Desinstalación completada
-            </div>
-            <div
-              style={{
-                fontSize: '12px',
-                color: '#94a3b8',
-                maxWidth: '380px',
-                lineHeight: '1.4',
-              }}
-            >
-              CrystalTides ha sido eliminado de tu equipo. Esperamos verte pronto en los servidores.
-            </div>
-          </div>
-        )}
-      </div>
+            <h2 style={{ fontSize: "22px", fontWeight: 800, margin: "0 0 8px 0" }}>Desinstalación Finalizada</h2>
+            <p style={{ fontSize: "13px", color: "rgba(248, 250, 252, 0.65)", margin: "0 0 32px 0", lineHeight: "1.5" }}>
+              CrystalTides Launcher ha sido eliminado correctamente de tu equipo. La ventana se cerrará automáticamente.
+            </p>
 
-      {/* SEPARADOR INFERIOR DISCRETO */}
-      <div
-        style={{
-          width: '100%',
-          height: '1px',
-          background: 'rgba(255, 255, 255, 0.08)',
-        }}
-      />
-
-      {/* BARRA INFERIOR DE ACCIÓN */}
-      <div
-        style={{
-          height: '54px',
-          minHeight: '54px',
-          padding: '0 24px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          background: 'transparent',
-        }}
-      >
-        {step === 'confirm' && (
-          <button
-            type="button"
-            onClick={handleClose}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: '#94a3b8',
-              fontSize: '12.5px',
-              cursor: 'pointer',
-              padding: '6px 12px',
-              borderRadius: '4px',
-              transition: 'color 0.15s',
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = '#f8fafc')}
-            onMouseLeave={(e) => (e.currentTarget.style.color = '#94a3b8')}
-          >
-            Cancelar
-          </button>
-        )}
-
-        {step !== 'confirm' && <div />}
-
-        <div>
-          {step === 'confirm' && (
             <button
-              type="button"
-              onClick={handleStartUninstall}
-              style={{
-                background: '#e11d48',
-                border: 'none',
-                borderRadius: '4px',
-                padding: '8px 24px',
-                color: '#ffffff',
-                fontSize: '13px',
-                fontWeight: 600,
-                cursor: 'pointer',
-                transition: 'background 0.15s ease',
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = '#be123c')}
-              onMouseLeave={(e) => (e.currentTarget.style.background = '#e11d48')}
-            >
-              Desinstalar
-            </button>
-          )}
-
-          {step === 'finish' && (
-            <button
-              type="button"
               onClick={handleClose}
               style={{
-                background: '#2294e3',
-                border: 'none',
-                borderRadius: '4px',
-                padding: '8px 24px',
-                color: '#ffffff',
-                fontSize: '13px',
-                fontWeight: 600,
-                cursor: 'pointer',
-                transition: 'background 0.15s ease',
+                width: "100%",
+                background: "rgba(255, 255, 255, 0.08)",
+                border: "1px solid rgba(255, 255, 255, 0.15)",
+                borderRadius: "12px",
+                padding: "14px 20px",
+                color: "#F8FAFC",
+                fontSize: "14px",
+                fontWeight: 700,
+                cursor: "pointer",
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = '#1a82cc')}
-              onMouseLeave={(e) => (e.currentTarget.style.background = '#2294e3')}
             >
-              Cerrar
+              Cerrar Asistente
             </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );

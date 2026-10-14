@@ -1,7 +1,0 @@
---target=x86_64-pc-windows-msvc
--D_AMD64_
--DWIN32_LEAN_AND_MEAN
--I
-C:/Program Files/Java/jdk-21/include
--I
-C:/Program Files/Java/jdk-21/include/win32

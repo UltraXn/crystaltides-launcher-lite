@@ -1,55 +1,11 @@
 {
-  "$schema": "../../node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "unicorn", "jsx-a11y", "oxc"],
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "react", "unicorn", "oxc"],
   "categories": {
-    "correctness": "warn",
-    "perf": "warn",
-    "suspicious": "warn"
+    "correctness": "warn"
   },
-  "jsPlugins": [
-    {
-      "name": "react-doctor",
-      "specifier": "oxlint-plugin-react-doctor"
-    }
-  ],
   "rules": {
-    "react/react-in-jsx-scope": "off",
-    "no-unused-vars": "off",
-    "typescript/no-unused-vars": ["warn", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }],
-    "typescript/no-explicit-any": "warn",
-    "no-console": ["warn", { "allow": ["log", "error", "warn", "info", "debug"] }],
-    "react-hooks/rules-of-hooks": "error",
-    "react-hooks/exhaustive-deps": "warn",
-    "jsx-a11y/prefer-tag-over-role": "off",
-    "jsx-a11y/aria-role": ["warn", { "ignoreNonDOM": true }],
-    "jsx-a11y/no-static-element-interactions": [
-      "warn",
-      { "handlers": ["onClick", "onKeyDown", "onKeyUp", "onKeyPress"] }
-    ],
-    "react/set-state-in-effect": "off",
-    "react/immutability": "off",
-    "react/incompatible-library": "off",
-    "react-hooks/set-state-in-effect": "off",
-    "react-hooks/immutability": "off",
-    "react-hooks/incompatible-library": "off",
-    "oxc/no-map-spread": "off",
-    "react-doctor/motion-animate-presence-must-outlive-child": "warn",
-    "react-doctor/no-fetch-in-effect": "warn",
-    "react-doctor/effect-needs-cleanup": "warn"
-  },
-  "overrides": [
-    {
-      "files": ["**/__tests__/**", "**/*.test.ts", "**/*.test.tsx"],
-      "rules": {
-        "typescript/no-explicit-any": "off"
-      }
-    }
-  ],
-  "ignorePatterns": [
-    "**/dist/**",
-    "**/build/**",
-    "**/node_modules/**",
-    "**/src-tauri/target/**",
-    "**/target/**"
-  ]
+    "no-unused-vars": "warn",
+    "no-console": "off"
+  }
 }

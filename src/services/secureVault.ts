@@ -39,12 +39,10 @@ const base64ToBuffer = (base64: string): Uint8Array => {
 };
 
 // Derive AES-256-GCM key using PBKDF2
-const deriveKey = async (salt: Uint8Array, legacy = false): Promise<CryptoKey> => {
+const deriveKey = async (salt: Uint8Array): Promise<CryptoKey> => {
   const enc = new TextEncoder();
   // Mix platform entropy + user agent signature
-  const rawKeyMaterial = legacy
-    ? `${VAULT_PEPPER}_${navigator.userAgent}_${screen.width}x${screen.height}`
-    : `${VAULT_PEPPER}_${navigator.userAgent}`;
+  const rawKeyMaterial = `${VAULT_PEPPER}_${navigator.userAgent}_${screen.width}x${screen.height}`;
   
   const keyMaterial = await crypto.subtle.importKey(
     "raw",
@@ -106,10 +104,7 @@ export const encryptPayload = async <T>(data: T): Promise<string> => {
 /**
  * Decrypt an AES-256-GCM container back into the typed payload
  */
-export const decryptPayload = async <T>(
-  encryptedString: string,
-  validator?: (data: unknown) => boolean,
-): Promise<T | null> => {
+export const decryptPayload = async <T>(encryptedString: string): Promise<T | null> => {
   try {
     if (!encryptedString) return null;
     const container: EncryptedContainer = JSON.parse(encryptedString);
@@ -122,40 +117,20 @@ export const decryptPayload = async <T>(
     const salt = base64ToBuffer(container.salt);
     const ciphertext = base64ToBuffer(container.ciphertext);
 
-    let decryptedContent: ArrayBuffer;
-    try {
-      const key = await deriveKey(salt);
-      decryptedContent = await crypto.subtle.decrypt(
-        {
-          name: "AES-GCM",
-          iv: iv as BufferSource,
-        },
-        key,
-        ciphertext as BufferSource
-      );
-    } catch {
-      // Fallback: try legacy key derivation with screen resolution
-      const legacyKey = await deriveKey(salt, true);
-      decryptedContent = await crypto.subtle.decrypt(
-        {
-          name: "AES-GCM",
-          iv: iv as BufferSource,
-        },
-        legacyKey,
-        ciphertext as BufferSource
-      );
-    }
+    const key = await deriveKey(salt);
+
+    const decryptedContent = await crypto.subtle.decrypt(
+      {
+        name: "AES-GCM",
+        iv: iv as BufferSource,
+      },
+      key,
+      ciphertext as BufferSource
+    );
 
     const dec = new TextDecoder();
     const jsonString = dec.decode(decryptedContent);
-    const parsed = JSON.parse(jsonString);
-    if (parsed === null || typeof parsed === "undefined") {
-      return null;
-    }
-    if (validator && !validator(parsed)) {
-      return null;
-    }
-    return parsed as T;
+    return JSON.parse(jsonString) as T;
   } catch (error) {
     console.warn("[Secure Vault] Decryption failed or invalid container:", error);
     return null;
@@ -173,13 +148,10 @@ export const saveSecureItem = async <T>(storageKey: string, data: T): Promise<vo
 /**
  * High-level helper to load decrypted items from localStorage
  */
-export const loadSecureItem = async <T>(
-  storageKey: string,
-  validator?: (data: unknown) => boolean,
-): Promise<T | null> => {
+export const loadSecureItem = async <T>(storageKey: string): Promise<T | null> => {
   const stored = localStorage.getItem(storageKey);
   if (!stored) return null;
-  return decryptPayload<T>(stored, validator);
+  return decryptPayload<T>(stored);
 };
 
 /**

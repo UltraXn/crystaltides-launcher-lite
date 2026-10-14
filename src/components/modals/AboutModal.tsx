@@ -1,43 +1,10 @@
 import React from 'react';
-import { X, Globe } from 'lucide-react';
+import { X, Sparkles, Heart, Globe } from 'lucide-react';
 import { DiscordIcon } from '../icons/DiscordIcon';
-import { useLauncherStore, launcherActions, LauncherState, useT } from '../../store/launcherStore';
-
-function getOperatingSystem(): string {
-  if (typeof navigator === 'undefined') return 'Windows 11';
-  const ua = navigator.userAgent;
-  if (ua.includes('Win')) return 'Windows 11';
-  if (ua.includes('Mac')) return 'macOS Sonoma';
-  if (ua.includes('Linux')) return 'Linux x86_64';
-  return 'Desktop Client';
-}
-
-function getFormattedClientDate(lang: string): string {
-  try {
-    const now = new Date();
-    const locale = lang === 'en' ? 'en-US' : 'es-ES';
-    const dateStr = now.toLocaleDateString(locale, {
-      weekday: 'long',
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric',
-    });
-    const capitalized = dateStr.charAt(0).toUpperCase() + dateStr.slice(1);
-    const tzOffset = -now.getTimezoneOffset() / 60;
-    const gmt = `(GMT${tzOffset >= 0 ? `+${tzOffset}` : tzOffset})`;
-    return `${capitalized} ${gmt}`;
-  } catch {
-    return '2026';
-  }
-}
+import { useLauncherStore, launcherActions, LauncherState } from '../../store/launcherStore';
 
 export const AboutModal: React.FC = () => {
-  const t = useT();
   const activeModal = useLauncherStore((s: LauncherState) => s.activeModal);
-  const language = useLauncherStore((s: LauncherState) => s.language);
-
-  const formattedDate = React.useMemo(() => getFormattedClientDate(language), [language]);
-  const systemOs = React.useMemo(() => getOperatingSystem(), []);
 
   if (activeModal !== 'about') return null;
 
@@ -45,7 +12,7 @@ export const AboutModal: React.FC = () => {
     <div className="papyrus-modal-overlay">
       <button
         type="button"
-        aria-label={t.settings.close}
+        aria-label="Cerrar modal"
         tabIndex={-1}
         style={{
           position: 'absolute',
@@ -58,94 +25,103 @@ export const AboutModal: React.FC = () => {
         }}
         onClick={launcherActions.closeModal}
       />
-      <dialog
-        open
+      <div
         className="papyrus-about-card"
+        role="dialog"
+        aria-modal="true"
         aria-labelledby="about-modal-title"
-        style={{ color: 'inherit' }}
       >
-        {/* Header: Title and Close */}
-        <div className="about-header-row">
-          <h2 id="about-modal-title" className="about-modal-title">
-            {t.about.title}
+        {/* Close Button on Top Right */}
+        <button
+          type="button"
+          onClick={launcherActions.closeModal}
+          className="settings-card-close"
+          title="Cerrar"
+          aria-label="Cerrar"
+        >
+          <X style={{ width: '16px', height: '16px' }} />
+        </button>
+
+        {/* Title */}
+        <div className="settings-header-block">
+          <h2 id="about-modal-title" className="settings-main-title">
+            About CrystalTides
           </h2>
-          <button
-            type="button"
-            onClick={launcherActions.closeModal}
-            className="settings-card-close"
-            title={t.settings.close}
-            aria-label={t.settings.close}
-          >
-            <X style={{ width: '16px', height: '16px' }} />
-          </button>
+          <p style={{ fontSize: '12px', color: '#94a3b8', fontFamily: 'var(--font-inter)' }}>
+            Launcher Lite Edition • High Performance Client
+          </p>
         </div>
 
-        {/* Report a Bug Button */}
-        <div>
-          <a
-            href="https://crystaltidessmp.net/support"
-            target="_blank"
-            rel="noreferrer"
-            className="about-bug-btn"
-          >
-            {t.about.reportBug}
-          </a>
+        {/* Highlight Card */}
+        <div className="about-highlight-box">
+          <div className="about-highlight-title">
+            <Sparkles style={{ width: '16px', height: '16px', color: '#22c55e' }} />
+            <span>Experiencia Ultraligera</span>
+          </div>
+          <p className="about-highlight-desc">
+            Diseñado para arrancar en menos de 100ms, consumir menos de 30MB de memoria y proteger
+            tus credenciales con cifrado militar AES-256-GCM.
+          </p>
         </div>
 
-        {/* Copyright & Disclaimer */}
-        <div className="about-legal-block">
-          <div className="about-legal-copyright">{t.about.copyright}</div>
-          <div className="about-legal-disclaimer">{t.about.disclaimer}</div>
-        </div>
-
-        {/* APP Section */}
-        <div className="about-section">
-          <h3 className="about-section-heading">{t.about.sectionApp}</h3>
-          <div className="about-section-list">
-            <div>{systemOs}</div>
-            <div>{formattedDate}</div>
-            <div>{t.about.launcherVersion}</div>
-            <div>{t.about.engine}</div>
-            <div>{t.about.runtime}</div>
-            <div>{t.about.arch}</div>
+        {/* System Specs Grid */}
+        <div className="about-specs-grid">
+          <div className="spec-tile">
+            <span className="spec-title">MOTOR</span>
+            <span className="spec-value">Tauri v2 + React 19</span>
+          </div>
+          <div className="spec-tile">
+            <span className="spec-title">SEGURIDAD</span>
+            <span className="spec-value green">AES-256-GCM</span>
+          </div>
+          <div className="spec-tile">
+            <span className="spec-title">SERVIDOR</span>
+            <span className="spec-value">play.crystaltides.net</span>
+          </div>
+          <div className="spec-tile">
+            <span className="spec-title">VERSIÓN</span>
+            <span className="spec-value">1.0.0-lite</span>
           </div>
         </div>
 
-        {/* UI Section */}
-        <div className="about-section">
-          <h3 className="about-section-heading">{t.about.sectionUi}</h3>
-          <div className="about-section-list">
-            <div>{t.about.uiSystem}</div>
-          </div>
-        </div>
-
-        {/* Tagline */}
-        <div className="about-tagline">{t.about.tagline}</div>
-
-        {/* Footer Links */}
+        {/* Footer info & Links */}
         <div className="about-footer-row">
-          <a
-            href="https://discord.gg/crystaltides"
-            target="_blank"
-            rel="noreferrer"
-            className="about-link-icon"
-            title={t.about.openDiscord}
-            aria-label={t.about.openDiscord}
-          >
-            <DiscordIcon style={{ width: '14px', height: '14px' }} />
-          </a>
-          <a
-            href="https://crystaltidessmp.net"
-            target="_blank"
-            rel="noreferrer"
-            className="about-link-icon"
-            title={t.about.openWebsite}
-            aria-label={t.about.openWebsite}
-          >
-            <Globe style={{ width: '14px', height: '14px' }} />
-          </a>
+          <span className="about-credit-text">
+            Desarrollado con{' '}
+            <Heart
+              style={{
+                width: '12px',
+                height: '12px',
+                color: '#f43f5e',
+                fill: '#f43f5e',
+                display: 'inline',
+              }}
+            />{' '}
+            para la comunidad
+          </span>
+
+          <div className="about-footer-links">
+            <a
+              href="https://discord.gg/crystaltides"
+              target="_blank"
+              rel="noreferrer"
+              className="about-link-icon"
+              title="Discord"
+            >
+              <DiscordIcon style={{ width: '14px', height: '14px' }} />
+            </a>
+            <a
+              href="https://crystaltidessmp.net"
+              target="_blank"
+              rel="noreferrer"
+              className="about-link-icon"
+              title="Website"
+            >
+              <Globe style={{ width: '14px', height: '14px' }} />
+            </a>
+          </div>
         </div>
-      </dialog>
+      </div>
     </div>
   );
 };
