@@ -25,6 +25,13 @@ vi.mock('@tauri-apps/api/core', () => ({
 }));
 
 describe('launcherService pure helpers', () => {
+  beforeEach(() => {
+    Object.defineProperty(navigator, 'userAgent', {
+      value: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+      configurable: true,
+      writable: true,
+    });
+  });
   describe('isLibraryAllowed', () => {
     it('permite librerías sin reglas explícitas', () => {
       expect(isLibraryAllowed({})).toBe(true);
