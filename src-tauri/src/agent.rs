@@ -225,17 +225,10 @@ fn handle_telemetry(
         sanitize_telemetry(fps, frametime_p99_ms, gc_pause_time_ms);
     let metrics_lock = get_live_metrics_handle();
     if let Ok(mut lock) = metrics_lock.lock() {
-        let is_vulkan = cfg!(target_os = "windows");
         let current_sw = swapchain_backend.unwrap_or_else(|| {
             lock.as_ref()
                 .map(|m| m.swapchain_backend.clone())
-                .unwrap_or_else(|| {
-                    if is_vulkan {
-                        "OpenGL/Vulkan Dual Layer".to_string()
-                    } else {
-                        "OpenGL Core".to_string()
-                    }
-                })
+                .unwrap_or_else(|| "OpenGL".to_string())
         });
 
         let updated = AgentBenchmarkMetrics {
@@ -425,8 +418,6 @@ pub async fn start_game_ipc_server(app_handle: AppHandle) -> Result<u16, String>
 
 const EMBEDDED_AGENT_JAR: &[u8] = include_bytes!("../assets/game-bridge.jar");
 #[cfg(target_os = "windows")]
-const EMBEDDED_AGENT_DLL: &[u8] = include_bytes!("../assets/game_bridge_core.dll");
-#[cfg(target_os = "windows")]
 const EMBEDDED_CT_AGENT_DLL: &[u8] = include_bytes!("../assets/ct-agent.dll");
 const EMBEDDED_BOOST_FABRIC_JAR: &[u8] = include_bytes!("../assets/crystaltides-boost-fabric.jar");
 const EMBEDDED_BOOST_NEOFORGE_JAR: &[u8] =
@@ -591,37 +582,10 @@ pub async fn remove_crystaltides_boost(game_dir: String) -> Result<bool, String>
 }
 
 fn deploy_native_agent(natives_dir: &Path) -> PathBuf {
-    let lib_filename = if cfg!(target_os = "windows") {
-        "game_bridge_core.dll"
-    } else if cfg!(target_os = "macos") {
-        "libgame_bridge_core.dylib"
-    } else {
-        "libgame_bridge_core.so"
-    };
-
-    let agent_path = natives_dir.join(lib_filename);
+    let ct_agent_path = natives_dir.join("ct-agent.dll");
 
     #[cfg(target_os = "windows")]
     {
-        let needs_deploy =
-            !agent_path.exists() || !file_sha256_matches(&agent_path, EMBEDDED_AGENT_DLL);
-        if needs_deploy {
-            if let Err(e) = fs::write(&agent_path, EMBEDDED_AGENT_DLL) {
-                crate::logger::log(
-                    "WARN",
-                    "CrystalAgent",
-                    &format!("No se pudo escribir game_bridge_core.dll embebido: {}", e),
-                );
-            } else {
-                crate::logger::log(
-                    "INFO",
-                    "CrystalAgent",
-                    "game_bridge_core.dll desplegado automáticamente en natives.",
-                );
-            }
-        }
-
-        let ct_agent_path = natives_dir.join("ct-agent.dll");
         let needs_deploy_ct =
             !ct_agent_path.exists() || !file_sha256_matches(&ct_agent_path, EMBEDDED_CT_AGENT_DLL);
         if needs_deploy_ct {
@@ -651,17 +615,17 @@ fn deploy_native_agent(natives_dir: &Path) -> PathBuf {
         );
     }
 
-    agent_path
+    ct_agent_path
 }
 
 fn generate_agent_token(agent_path: &Path) -> String {
     #[cfg(target_os = "windows")]
     {
-        if agent_path.exists() && !file_sha256_matches(agent_path, EMBEDDED_AGENT_DLL) {
+        if agent_path.exists() && !file_sha256_matches(agent_path, EMBEDDED_CT_AGENT_DLL) {
             crate::logger::log(
                 "WARN",
                 "CrystalAgent",
-                "Advertencia de integridad: SHA-256 de game_bridge_core.dll en disco difiere del binario embebido.",
+                "Advertencia de integridad: SHA-256 de ct-agent.dll en disco difiere del binario embebido.",
             );
         }
     }
@@ -673,7 +637,7 @@ fn generate_agent_token(agent_path: &Path) -> String {
     session_tok
 }
 
-/// Prepara y verifica la presencia e integridad del binario nativo Crystal Agent (`game_bridge_core.dll` / `.so`)
+/// Prepara y verifica la presencia e integridad del binario nativo Crystal Agent (`ct-agent.dll`)
 #[tauri::command]
 pub async fn prepare_crystal_agent(game_dir: String) -> Result<AgentConfig, String> {
     tokio::task::spawn_blocking(move || {
@@ -692,7 +656,7 @@ pub async fn prepare_crystal_agent(game_dir: String) -> Result<AgentConfig, Stri
         Ok(AgentConfig {
             agent_enabled: true,
             native_library_path: agent_path.to_string_lossy().to_string(),
-            agent_version: "2.0.0-native-fsr3.1".to_string(),
+            agent_version: "2.0.0-native".to_string(),
             injected_pid: None,
             handshake_token: session_tok,
             ipc_port: get_actual_game_ipc_port(),
@@ -1032,7 +996,7 @@ mod tests {
         let bridge_jar_hash = hex::encode(sha2::Sha256::digest(EMBEDDED_AGENT_JAR));
         assert_eq!(
             bridge_jar_hash,
-            "54819bfe1a3d0f1a38fd1cee4dc4bf7ce18101787baf99edffbd72eeab5720ef"
+            "7da11c27e1550c67cde46bd383a247872c26d5012ac431565fab52d9d34d63d5"
         );
 
         #[cfg(target_os = "windows")]
@@ -1041,12 +1005,6 @@ mod tests {
             assert_eq!(
                 ct_agent_hash,
                 "ba1aa3c7b9eb074a6be5480087216fbe32d73654eab695f2a676d5a84f94d6e8"
-            );
-
-            let bridge_core_hash = hex::encode(sha2::Sha256::digest(EMBEDDED_AGENT_DLL));
-            assert_eq!(
-                bridge_core_hash,
-                "6da6d9320f8363e894151579083f3375e9a33f3569157c5ab02d36886010ce48"
             );
         }
     }
