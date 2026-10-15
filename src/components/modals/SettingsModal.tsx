@@ -1304,10 +1304,14 @@ export const SettingsModal: React.FC = () => {
                     gap: '8px',
                   }}
                 >
-                  <span style={{ fontSize: '12px', fontWeight: 600, color: '#16A085' }}>
+                  <label
+                    htmlFor="settings-new-extension-name"
+                    style={{ fontSize: '12px', fontWeight: 600, color: '#16A085' }}
+                  >
                     Instalar Extensión (Plugin SDK)
-                  </span>
+                  </label>
                   <input
+                    id="settings-new-extension-name"
                     type="text"
                     placeholder="ej: Discord Oficial, Tienda, Mapa"
                     value={newExtensionName}
@@ -1346,11 +1350,13 @@ export const SettingsModal: React.FC = () => {
                 </div>
               )}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {modules.map((mod) => {
-                  const enabled = enabledModuleIds.includes(mod.id);
-                  const modAccent =
-                    mod.accentColor || mod.slots.dockButton?.defaultColor || '#16A085';
-                  const hasModal = Boolean(mod.slots.modal);
+                {(() => {
+                  const enabledSet = new Set(enabledModuleIds);
+                  return modules.map((mod) => {
+                    const enabled = enabledSet.has(mod.id);
+                    const modAccent =
+                      mod.accentColor || mod.slots.dockButton?.defaultColor || '#16A085';
+                    const hasModal = Boolean(mod.slots.modal);
 
                   return (
                     <div
@@ -1561,8 +1567,9 @@ export const SettingsModal: React.FC = () => {
                       </div>
                     </div>
                   );
-                })}
-              </div>
+                });
+              })()}
+            </div>
             </div>
 
             {/* Section 3: Advanced Options Checkboxes */}

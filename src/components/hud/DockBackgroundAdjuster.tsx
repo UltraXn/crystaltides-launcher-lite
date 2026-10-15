@@ -90,6 +90,7 @@ export const DockBackgroundAdjuster: React.FC = () => {
         </div>
         <input
           type="range"
+          aria-label="Posición Vertical (Y)"
           min="0"
           max="100"
           value={posY}
@@ -142,6 +143,7 @@ export const DockBackgroundAdjuster: React.FC = () => {
         </div>
         <input
           type="range"
+          aria-label="Posición Horizontal (X)"
           min="0"
           max="100"
           value={posX}
@@ -195,6 +197,7 @@ export const DockBackgroundAdjuster: React.FC = () => {
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <input
             type="range"
+            aria-label="Zoom / Escala"
             min="100"
             max="250"
             value={scale}
@@ -242,6 +245,7 @@ export const DockBackgroundAdjuster: React.FC = () => {
         </div>
         <input
           type="range"
+          aria-label="Opacidad de Fondo"
           min="15"
           max="100"
           value={opacity}

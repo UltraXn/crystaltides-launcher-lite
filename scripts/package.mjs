@@ -60,7 +60,7 @@ function safeCopy(src, dest) {
         fs.renameSync(dest, tempDest);
         fs.copyFileSync(src, dest);
         try { fs.unlinkSync(tempDest); } catch {}
-      } catch (retryErr) {
+      } catch {
         throw new Error(`El archivo ${path.basename(dest)} está en uso por Windows. Ciérralo para actualizarlo.`);
       }
     } else {

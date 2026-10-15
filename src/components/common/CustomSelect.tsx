@@ -47,10 +47,10 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
     };
   }, [isOpen]);
 
-  // Close on Escape key
+  // Close on Escape or Tab key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
+      if ((e.key === 'Escape' || e.key === 'Tab') && isOpen) {
         setIsOpen(false);
       }
     };
@@ -76,11 +76,6 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
     <div
       ref={containerRef}
       className={`custom-select-container ${className}`}
-      onKeyDown={(e) => {
-        if (e.key === 'Tab' && isOpen) {
-          setIsOpen(false);
-        }
-      }}
       style={{
         position: 'relative',
         userSelect: 'none',

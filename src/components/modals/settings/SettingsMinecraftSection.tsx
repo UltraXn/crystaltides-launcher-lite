@@ -697,9 +697,11 @@ export const SettingsMinecraftSection: React.FC<SettingsMinecraftSectionProps> =
         <span className="settings-label-title">{t.settings.resolutionTitle}</span>
         <div className="settings-resolution-grid">
           <div className="settings-res-input-group">
-            <span className="settings-res-label">{t.settings.resWidth}:</span>
+            <label htmlFor="settings-res-width" className="settings-res-label">{t.settings.resWidth}:</label>
             <input
+              id="settings-res-width"
               type="text"
+              aria-label={t.settings.resWidth}
               value={width}
               disabled={useDesktopRes}
               onChange={(e) => setWidth(e.target.value)}
@@ -707,9 +709,11 @@ export const SettingsMinecraftSection: React.FC<SettingsMinecraftSectionProps> =
             />
           </div>
           <div className="settings-res-input-group">
-            <span className="settings-res-label">{t.settings.resHeight}:</span>
+            <label htmlFor="settings-res-height" className="settings-res-label">{t.settings.resHeight}:</label>
             <input
+              id="settings-res-height"
               type="text"
+              aria-label={t.settings.resHeight}
               value={height}
               disabled={useDesktopRes}
               onChange={(e) => setHeight(e.target.value)}

@@ -420,6 +420,7 @@ export const DockButtonInspectorBgTab: React.FC<BgTabProps> = ({
           </div>
           <input
             type="range"
+            aria-label="Opacidad de Vídeo"
             min="0.1"
             max="1"
             step="0.05"
@@ -586,6 +587,7 @@ export const DockButtonInspectorIconTab: React.FC<IconTabProps> = ({
       </div>
       <input
         type="range"
+        aria-label="Escala del Icono"
         min="0.5"
         max="2"
         step="0.05"
@@ -772,6 +774,7 @@ export const DockButtonInspectorShapeTab: React.FC<ShapeTabProps> = ({
       </div>
       <input
         type="range"
+        aria-label="Borde Redondeado"
         min="0"
         max="40"
         value={customization.borderRadius ?? 14}
@@ -799,6 +802,7 @@ export const DockButtonInspectorShapeTab: React.FC<ShapeTabProps> = ({
       </div>
       <input
         type="range"
+        aria-label="Rotación"
         min="-30"
         max="30"
         value={customization.rotation ?? 0}

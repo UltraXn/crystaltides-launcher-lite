@@ -1262,9 +1262,8 @@ export const HomeDock: React.FC = () => {
     };
     if (onClick) {
       return (
-        <span
-          role="button"
-          tabIndex={0}
+        <button
+          type="button"
           onClick={onClick}
           onKeyDown={(e) => {
             if ((e.key === 'Enter' || e.key === ' ') && onClick) {
@@ -1313,9 +1312,8 @@ export const HomeDock: React.FC = () => {
     );
     if (onClick) {
       return (
-        <span
-          role="button"
-          tabIndex={0}
+        <button
+          type="button"
           onClick={onClick}
           onKeyDown={(e) => {
             if ((e.key === 'Enter' || e.key === ' ') && onClick) {
@@ -1329,7 +1327,7 @@ export const HomeDock: React.FC = () => {
           style={style}
         >
           {imgEl}
-        </span>
+        </button>
       );
     }
     return (
@@ -1357,9 +1355,8 @@ export const HomeDock: React.FC = () => {
     };
     if (onClick) {
       return (
-        <span
-          role="button"
-          tabIndex={0}
+        <button
+          type="button"
           onClick={onClick}
           onKeyDown={(e) => {
             if ((e.key === 'Enter' || e.key === ' ') && onClick) {
@@ -1372,7 +1369,7 @@ export const HomeDock: React.FC = () => {
           style={style}
         >
           {icon}
-        </span>
+        </button>
       );
     }
     return (
