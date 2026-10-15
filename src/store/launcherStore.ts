@@ -756,7 +756,10 @@ const syncInstanceAssets = async (
 
     if (BOOST_ENABLED && shouldDeployBoost(activeInst.loaderType, activeInst.mcVersion)) {
       try {
-        await invoke('deploy_crystaltides_boost', { gameDir: effectiveGameDir });
+        await invoke('deploy_crystaltides_boost', {
+          gameDir: effectiveGameDir,
+          loaderType: activeInst.loaderType,
+        });
       } catch (boostErr) {
         console.warn('[Launcher] Error inyectando crystaltides-boost:', boostErr);
       }
@@ -791,7 +794,7 @@ const syncInstanceAssets = async (
 };
 
 // Flag maestro para habilitar/deshabilitar el despliegue automático de crystaltides-boost
-export const BOOST_ENABLED = false;
+export const BOOST_ENABLED = true;
 
 export const shouldDeployBoost = (loaderType?: string, mcVersion?: string): boolean => {
   if (!loaderType || !mcVersion) {
