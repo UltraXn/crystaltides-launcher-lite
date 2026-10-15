@@ -1,3 +1,13 @@
+import { loginMicrosoftRedirect } from '../../../services/microsoftAuthService';
+import { loginWithCrystalTides } from '../../../services/crystalAuthService';
+
+vi.mock('../../../services/microsoftAuthService', () => ({
+  loginMicrosoftRedirect: vi.fn(),
+}));
+
+vi.mock('../../../services/crystalAuthService', () => ({
+  loginWithCrystalTides: vi.fn(),
+}));
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import React from 'react';
@@ -180,6 +190,38 @@ describe('Other Modals in launcher-lite', () => {
 
       const svg = container.querySelector('button.account-add-btn svg');
       expect(svg).toBeDefined();
+    });
+
+    it('maneja errores al fallar autenticación con Microsoft', async () => {
+      vi.mocked(loginMicrosoftRedirect).mockRejectedValueOnce(new Error('Microsoft Auth Failed'));
+      useLauncherStore.setState({ activeModal: 'accounts' });
+      render(<AccountsModal />);
+
+      const msBtn = screen.getByText('Microsoft');
+      fireEvent.click(msBtn);
+
+      const alert = await screen.findByText('Microsoft Auth Failed');
+      expect(alert).toBeDefined();
+    });
+
+    it('maneja errores al fallar autenticación con CrystalTides', async () => {
+      vi.mocked(loginWithCrystalTides).mockRejectedValueOnce(new Error('Credenciales inválidas'));
+      useLauncherStore.setState({ activeModal: 'accounts' });
+      render(<AccountsModal />);
+
+      const crystalBtn = screen.getByText('CrystalTides');
+      fireEvent.click(crystalBtn);
+
+      const emailInput = screen.getByPlaceholderText('Correo de crystaltidessmp.net');
+      const passInput = screen.getByPlaceholderText('Contraseña web');
+      fireEvent.change(emailInput, { target: { value: 'user@test.com' } });
+      fireEvent.change(passInput, { target: { value: 'wrongpassword' } });
+
+      const connectBtn = screen.getByText('Conectar Cuenta');
+      fireEvent.click(connectBtn);
+
+      const alert = await screen.findByText('Credenciales inválidas');
+      expect(alert).toBeDefined();
     });
   });
 

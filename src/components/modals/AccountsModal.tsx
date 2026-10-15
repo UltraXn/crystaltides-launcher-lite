@@ -371,7 +371,7 @@ export const AccountsModal: React.FC = () => {
       setAddMode('none');
       setCrystalEmail('');
       setCrystalPassword('');
-    } catch (err) {
+    } catch (err: unknown) {
       setCrystalError(err instanceof Error ? err.message : 'Error al conectar con CrystalTides.');
     } finally {
       setIsAddingCrystal(false);
@@ -395,7 +395,7 @@ export const AccountsModal: React.FC = () => {
           lastUsed: Date.now(),
         });
       }
-    } catch (err) {
+    } catch (err: unknown) {
       console.warn('Microsoft auth error:', err);
       setMsError(err instanceof Error ? err.message : String(err));
     } finally {
