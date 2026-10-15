@@ -310,6 +310,15 @@ export const LoaderIconBadge: React.FC<LoaderIconProps> = ({
   );
 };
 
+export const getLoaderImageSrc = (type: string): { src: string; alt: string } => {
+  const norm = (type || '').toLowerCase().trim();
+  if (norm.includes('neoforge')) return { src: '/icons/neoforge.png', alt: 'NeoForge' };
+  if (norm.includes('fabric')) return { src: '/icons/fabric.png', alt: 'Fabric' };
+  if (norm.includes('quilt')) return { src: '/icons/quilt.png', alt: 'Quilt' };
+  if (norm.includes('forge')) return { src: '/icons/forge.png', alt: 'Forge' };
+  return { src: '/icons/vanilla.png', alt: 'Minecraft' };
+};
+
 export interface LoaderLogoProps {
   type: LoaderBrand | string;
   size?: number;
@@ -321,20 +330,43 @@ export const LoaderLogo: React.FC<LoaderLogoProps> = ({
   type,
   size = 24,
   style,
+  className = '',
 }) => {
   const norm = (type || '').toLowerCase().trim();
-  if (norm.includes('neoforge')) {
-    return <NeoForgeLogo size={size} style={style} />;
+  const [hasError, setHasError] = React.useState(false);
+  const { src, alt } = getLoaderImageSrc(type);
+
+  React.useEffect(() => {
+    setHasError(false);
+  }, [src]);
+
+  if (hasError) {
+    if (norm.includes('neoforge')) return <NeoForgeLogo size={size} style={style} />;
+    if (norm.includes('fabric')) return <FabricLogo size={size} style={style} />;
+    if (norm.includes('quilt')) return <QuiltLogo size={size} style={style} />;
+    if (norm.includes('forge')) return <ForgeLogo size={size} style={style} />;
+    return <VanillaLogo size={size} style={style} />;
   }
-  if (norm.includes('fabric')) {
-    return <FabricLogo size={size} style={style} />;
-  }
-  if (norm.includes('quilt')) {
-    return <QuiltLogo size={size} style={style} />;
-  }
-  if (norm.includes('forge')) {
-    return <ForgeLogo size={size} style={style} />;
-  }
-  return <VanillaLogo size={size} style={style} />;
+
+  return (
+    <img
+      src={src}
+      alt={`${alt} Logo`}
+      aria-label={`${alt} Logo`}
+      width={size}
+      height={size}
+      className={className}
+      style={{
+        width: `${size}px`,
+        height: `${size}px`,
+        objectFit: 'contain',
+        display: 'inline-block',
+        verticalAlign: 'middle',
+        flexShrink: 0,
+        ...style,
+      }}
+      onError={() => setHasError(true)}
+    />
+  );
 };
 

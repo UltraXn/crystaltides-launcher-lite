@@ -58,9 +58,9 @@ const resolveBadgeStyle = (
   if (isInfo) {
     return {
       ...base,
-      background: 'rgba(0, 229, 255, 0.12)',
-      color: '#38bdf8',
-      border: '1px solid rgba(0, 229, 255, 0.25)',
+      background: 'rgba(22, 160, 133, 0.18)',
+      color: '#5eead4',
+      border: '1px solid rgba(22, 160, 133, 0.35)',
     };
   }
   return {
@@ -157,7 +157,7 @@ const renderFormattedLogLine = (text: string) => {
         )}
         {level && <span style={badgeStyle}>{level.toUpperCase()}</span>}
         {source && (
-          <span style={{ color: '#00e5ff', opacity: 0.9, fontWeight: 600, fontSize: '11px' }}>
+          <span style={{ color: '#5eead4', opacity: 0.95, fontWeight: 600, fontSize: '11px' }}>
             [{source}]
           </span>
         )}
@@ -174,17 +174,10 @@ const LogLineItem: React.FC<{
   wrapLines: boolean;
 }> = React.memo(({ item, wrapLines }) => (
   <div
+    className="log-line-row"
     style={{
-      display: 'flex',
-      alignItems: 'baseline',
-      gap: '10px',
-      lineHeight: '1.55',
       whiteSpace: wrapLines ? 'pre-wrap' : 'pre',
       wordBreak: wrapLines ? 'break-word' : 'normal',
-      padding: '1.5px 6px',
-      borderRadius: '4px',
-      width: '100%',
-      boxSizing: 'border-box',
     }}
   >
     <span
@@ -196,6 +189,9 @@ const LogLineItem: React.FC<{
         userSelect: 'none',
         flexShrink: 0,
         fontVariantNumeric: 'tabular-nums',
+        borderRight: '1px solid rgba(255, 255, 255, 0.06)',
+        paddingRight: '6px',
+        marginRight: '2px',
       }}
     >
       {item.lineNumber}
@@ -405,11 +401,11 @@ const LogViewerHeader: React.FC<LogViewerHeaderProps> = ({
   <div
     style={{
       padding: '13px 18px',
-      borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+      borderBottom: '1px solid rgba(255, 255, 255, 0.07)',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'space-between',
-      background: 'rgba(11, 15, 25, 0.75)',
+      background: 'rgba(10, 16, 27, 0.85)',
       flexShrink: 0,
     }}
   >
@@ -419,15 +415,16 @@ const LogViewerHeader: React.FC<LogViewerHeaderProps> = ({
           width: '34px',
           height: '34px',
           borderRadius: '9px',
-          backgroundColor: 'rgba(0, 229, 255, 0.1)',
-          border: '1px solid rgba(0, 229, 255, 0.25)',
+          background: 'linear-gradient(135deg, rgba(22, 160, 133, 0.2) 0%, rgba(20, 37, 62, 0.3) 100%)',
+          border: '1px solid rgba(22, 160, 133, 0.35)',
+          boxShadow: '0 0 12px rgba(22, 160, 133, 0.15)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           flexShrink: 0,
         }}
       >
-        <Terminal size={17} color="#00e5ff" />
+        <Terminal size={17} color="#16A085" />
       </div>
       <div style={{ minWidth: 0 }}>
         <h2
@@ -437,6 +434,7 @@ const LogViewerHeader: React.FC<LogViewerHeaderProps> = ({
             margin: 0,
             color: '#f8fafc',
             lineHeight: 1.2,
+            letterSpacing: '-0.01em',
           }}
         >
           Registros y Diagnóstico
@@ -449,6 +447,7 @@ const LogViewerHeader: React.FC<LogViewerHeaderProps> = ({
             overflow: 'hidden',
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
+            marginTop: '2px',
           }}
         >
           Inspección de eventos del sistema, instaladores y Minecraft
@@ -461,68 +460,39 @@ const LogViewerHeader: React.FC<LogViewerHeaderProps> = ({
         type="button"
         onClick={onOpenFolder}
         title="Abrir carpeta en el Explorador"
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: '5px',
-          background: 'rgba(255, 255, 255, 0.04)',
-          border: '1px solid rgba(255, 255, 255, 0.1)',
-          borderRadius: '7px',
-          color: '#e2e8f0',
-          fontSize: '11.5px',
-          padding: '5px 10px',
-          cursor: 'pointer',
-          transition: 'all 0.15s ease',
-        }}
+        className="log-header-btn"
       >
         <FolderOpen size={13} />
-        Abrir Carpeta
+        <span>Abrir Carpeta</span>
       </button>
 
       <button
         type="button"
         onClick={onDownload}
         title="Descargar archivo de registro"
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: '5px',
-          background: 'rgba(255, 255, 255, 0.04)',
-          border: '1px solid rgba(255, 255, 255, 0.1)',
-          borderRadius: '7px',
-          color: '#e2e8f0',
-          fontSize: '11.5px',
-          padding: '5px 10px',
-          cursor: 'pointer',
-          transition: 'all 0.15s ease',
-        }}
+        className="log-header-btn"
       >
         <Download size={13} />
-        Descargar
+        <span>Descargar</span>
       </button>
 
       <button
         type="button"
         onClick={onCopy}
         title="Copiar contenido al portapapeles"
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: '5px',
-          background: copied ? 'rgba(34, 197, 94, 0.15)' : 'rgba(255, 255, 255, 0.04)',
-          border: copied
-            ? '1px solid rgba(34, 197, 94, 0.4)'
-            : '1px solid rgba(255, 255, 255, 0.1)',
-          borderRadius: '7px',
-          color: copied ? '#4ade80' : '#e2e8f0',
-          fontSize: '11.5px',
-          padding: '5px 10px',
-          cursor: 'pointer',
-          transition: 'all 0.15s ease',
-        }}
+        className="log-header-btn"
+        style={
+          copied
+            ? {
+                background: 'rgba(34, 197, 94, 0.18)',
+                borderColor: 'rgba(34, 197, 94, 0.4)',
+                color: '#4ade80',
+              }
+            : undefined
+        }
       >
         {copied ? <Check size={13} /> : <Copy size={13} />}
-        {copied ? 'Copiado' : 'Copiar'}
+        <span>{copied ? 'Copiado' : 'Copiar'}</span>
       </button>
 
       <button
@@ -530,22 +500,10 @@ const LogViewerHeader: React.FC<LogViewerHeaderProps> = ({
         onClick={onRefresh}
         disabled={loading}
         title="Actualizar registros"
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: '5px',
-          background: 'rgba(0, 229, 255, 0.08)',
-          border: '1px solid rgba(0, 229, 255, 0.25)',
-          borderRadius: '7px',
-          color: '#00e5ff',
-          fontSize: '11.5px',
-          padding: '5px 10px',
-          cursor: loading ? 'not-allowed' : 'pointer',
-          transition: 'all 0.15s ease',
-        }}
+        className="log-refresh-btn"
       >
         <RefreshCw size={13} style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }} />
-        Actualizar
+        <span>Actualizar</span>
       </button>
 
       <button
@@ -557,12 +515,21 @@ const LogViewerHeader: React.FC<LogViewerHeaderProps> = ({
           border: 'none',
           color: '#94a3b8',
           cursor: 'pointer',
-          padding: '5px',
-          borderRadius: '6px',
+          padding: '6px',
+          borderRadius: '7px',
           marginLeft: '4px',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
+          transition: 'all 0.15s ease',
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.background = 'rgba(239, 68, 68, 0.18)';
+          e.currentTarget.style.color = '#f87171';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.background = 'transparent';
+          e.currentTarget.style.color = '#94a3b8';
         }}
       >
         <X size={17} />
@@ -598,35 +565,21 @@ const LogViewerToolbar: React.FC<LogViewerToolbarProps> = ({
   wrapLines,
   setWrapLines,
 }) => {
-  const getTabBtnStyle = (tab: 'launcher' | 'minecraft') => ({
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: '5px',
-    background: activeTab === tab ? '#00e5ff' : 'transparent',
-    border: 'none',
-    borderRadius: '6px',
-    color: activeTab === tab ? '#0a0f1d' : '#94a3b8',
-    fontSize: '11.5px',
-    fontWeight: 700,
-    padding: '5px 9px',
-    cursor: 'pointer',
-    transition: 'all 0.15s ease',
-  });
-
   const getSeverityStyle = (s: 'all' | 'error' | 'warn' | 'info') => {
     const isSelected = severityFilter === s;
     const palettes: Record<
       'all' | 'error' | 'warn' | 'info',
       {
-        selected: { bg: string; color: string; borderColor: string };
-        unselected: { bg: string; color: string; borderColor: string };
+        selected: { bg: string; color: string; borderColor: string; shadow?: string };
+        unselected: { bg: string; color: string; borderColor: string; shadow?: string };
       }
     > = {
       error: {
         selected: {
-          bg: 'rgba(239, 68, 68, 0.2)',
+          bg: 'rgba(239, 68, 68, 0.22)',
           color: '#f87171',
-          borderColor: 'rgba(239, 68, 68, 0.4)',
+          borderColor: 'rgba(239, 68, 68, 0.45)',
+          shadow: '0 0 10px rgba(239, 68, 68, 0.2)',
         },
         unselected: {
           bg: 'rgba(255, 255, 255, 0.04)',
@@ -636,9 +589,10 @@ const LogViewerToolbar: React.FC<LogViewerToolbarProps> = ({
       },
       warn: {
         selected: {
-          bg: 'rgba(245, 158, 11, 0.2)',
+          bg: 'rgba(245, 158, 11, 0.22)',
           color: '#fbbf24',
-          borderColor: 'rgba(245, 158, 11, 0.4)',
+          borderColor: 'rgba(245, 158, 11, 0.45)',
+          shadow: '0 0 10px rgba(245, 158, 11, 0.2)',
         },
         unselected: {
           bg: 'rgba(255, 255, 255, 0.04)',
@@ -648,21 +602,23 @@ const LogViewerToolbar: React.FC<LogViewerToolbarProps> = ({
       },
       info: {
         selected: {
-          bg: 'rgba(0, 229, 255, 0.15)',
-          color: '#38bdf8',
-          borderColor: 'rgba(0, 229, 255, 0.35)',
+          bg: 'rgba(22, 160, 133, 0.22)',
+          color: '#5eead4',
+          borderColor: 'rgba(22, 160, 133, 0.45)',
+          shadow: '0 0 10px rgba(22, 160, 133, 0.2)',
         },
         unselected: {
           bg: 'rgba(255, 255, 255, 0.04)',
-          color: '#7dd3fc',
+          color: '#94a3b8',
           borderColor: 'rgba(255, 255, 255, 0.08)',
         },
       },
       all: {
         selected: {
           bg: 'rgba(255, 255, 255, 0.12)',
-          color: '#fff',
+          color: '#f8fafc',
           borderColor: 'rgba(255, 255, 255, 0.25)',
+          shadow: '0 0 10px rgba(255, 255, 255, 0.08)',
         },
         unselected: {
           bg: 'rgba(255, 255, 255, 0.04)',
@@ -685,9 +641,10 @@ const LogViewerToolbar: React.FC<LogViewerToolbarProps> = ({
       color: theme.color,
       fontSize: '10.5px',
       fontWeight: 600,
-      padding: '3.5px 7px',
+      padding: '3.5px 8px',
       cursor: 'pointer',
-      transition: 'all 0.15s ease',
+      boxShadow: isSelected && theme.shadow ? theme.shadow : 'none',
+      transition: 'all 0.15s cubic-bezier(0.2, 0, 0, 1)',
     };
   };
 
@@ -695,7 +652,7 @@ const LogViewerToolbar: React.FC<LogViewerToolbarProps> = ({
     <div
       style={{
         padding: '8px 18px',
-        backgroundColor: 'rgba(7, 10, 18, 0.9)',
+        backgroundColor: 'rgba(8, 14, 24, 0.88)',
         borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
         display: 'flex',
         alignItems: 'center',
@@ -710,26 +667,28 @@ const LogViewerToolbar: React.FC<LogViewerToolbarProps> = ({
         <div
           style={{
             display: 'flex',
-            background: 'rgba(255, 255, 255, 0.05)',
+            background: 'rgba(20, 37, 62, 0.45)',
+            border: '1px solid rgba(21, 61, 76, 0.35)',
             borderRadius: '8px',
             padding: '2px',
+            gap: '2px',
           }}
         >
           <button
             type="button"
             onClick={() => setActiveTab('launcher')}
-            style={getTabBtnStyle('launcher')}
+            className={`log-tab-btn ${activeTab === 'launcher' ? 'is-active' : ''}`}
           >
             <FileText size={12} />
-            Launcher (launcher.log)
+            <span>Launcher (launcher.log)</span>
           </button>
           <button
             type="button"
             onClick={() => setActiveTab('minecraft')}
-            style={getTabBtnStyle('minecraft')}
+            className={`log-tab-btn ${activeTab === 'minecraft' ? 'is-active' : ''}`}
           >
             <FileText size={12} />
-            Minecraft (minecraft.log)
+            <span>Minecraft (minecraft.log)</span>
           </button>
         </div>
 
@@ -749,7 +708,7 @@ const LogViewerToolbar: React.FC<LogViewerToolbarProps> = ({
               style={getSeverityStyle('error')}
             >
               <AlertCircle size={11} />
-              Errores ({counts.errors})
+              <span>Errores ({counts.errors})</span>
             </button>
           )}
           {counts.warns > 0 && (
@@ -759,7 +718,7 @@ const LogViewerToolbar: React.FC<LogViewerToolbarProps> = ({
               style={getSeverityStyle('warn')}
             >
               <AlertTriangle size={11} />
-              Avisos ({counts.warns})
+              <span>Avisos ({counts.warns})</span>
             </button>
           )}
           {counts.infos > 0 && (
@@ -769,7 +728,7 @@ const LogViewerToolbar: React.FC<LogViewerToolbarProps> = ({
               style={getSeverityStyle('info')}
             >
               <Info size={11} />
-              Info
+              <span>Info</span>
             </button>
           )}
         </div>
@@ -781,14 +740,15 @@ const LogViewerToolbar: React.FC<LogViewerToolbarProps> = ({
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '5px',
-            backgroundColor: 'rgba(0, 0, 0, 0.4)',
-            border: '1px solid rgba(255, 255, 255, 0.12)',
-            borderRadius: '6px',
-            padding: '4px 8px',
+            gap: '6px',
+            backgroundColor: 'rgba(5, 9, 16, 0.65)',
+            border: '1px solid rgba(21, 61, 76, 0.45)',
+            borderRadius: '7px',
+            padding: '4px 9px',
+            transition: 'border-color 0.15s ease, box-shadow 0.15s ease',
           }}
         >
-          <Search size={12} color="#94a3b8" />
+          <Search size={12} color="#16A085" />
           <input
             type="text"
             value={searchFilter}
@@ -801,7 +761,7 @@ const LogViewerToolbar: React.FC<LogViewerToolbarProps> = ({
               outline: 'none',
               color: '#f8fafc',
               fontSize: '11px',
-              width: '120px',
+              width: '130px',
             }}
           />
           {searchFilter && (
@@ -816,6 +776,8 @@ const LogViewerToolbar: React.FC<LogViewerToolbarProps> = ({
                 cursor: 'pointer',
                 padding: 0,
                 lineHeight: 1,
+                display: 'flex',
+                alignItems: 'center',
               }}
             >
               <X size={11} />
@@ -834,22 +796,7 @@ const LogViewerToolbar: React.FC<LogViewerToolbarProps> = ({
               ? 'Desactivar ajuste automático de líneas'
               : 'Ajustar líneas largas para evitar desplazamiento horizontal'
           }
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '5px',
-            backgroundColor: wrapLines ? 'rgba(0, 229, 255, 0.12)' : 'rgba(255, 255, 255, 0.04)',
-            border: wrapLines
-              ? '1px solid rgba(0, 229, 255, 0.35)'
-              : '1px solid rgba(255, 255, 255, 0.1)',
-            borderRadius: '6px',
-            padding: '4px 8px',
-            color: wrapLines ? '#00e5ff' : '#94a3b8',
-            fontSize: '10.5px',
-            fontWeight: 600,
-            cursor: 'pointer',
-            transition: 'all 0.15s ease',
-          }}
+          className={`log-toggle-btn ${wrapLines ? 'is-active' : ''}`}
         >
           <WrapText size={12} />
           <span>Ajustar líneas</span>
@@ -866,22 +813,7 @@ const LogViewerToolbar: React.FC<LogViewerToolbarProps> = ({
               ? 'Desactivar desplazamiento automático'
               : 'Activar desplazamiento automático al recibir nuevas líneas'
           }
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '5px',
-            backgroundColor: autoScroll ? 'rgba(0, 229, 255, 0.12)' : 'rgba(255, 255, 255, 0.04)',
-            border: autoScroll
-              ? '1px solid rgba(0, 229, 255, 0.35)'
-              : '1px solid rgba(255, 255, 255, 0.1)',
-            borderRadius: '6px',
-            padding: '4px 8px',
-            color: autoScroll ? '#00e5ff' : '#94a3b8',
-            fontSize: '10.5px',
-            fontWeight: 600,
-            cursor: 'pointer',
-            transition: 'all 0.15s ease',
-          }}
+          className={`log-toggle-btn ${autoScroll ? 'is-active' : ''}`}
         >
           <ArrowDownToLine size={12} />
           <span>Auto-scroll</span>
@@ -939,7 +871,7 @@ const LogViewerBody: React.FC<LogViewerBodyProps> = ({
     style={{
       flex: 1,
       width: '100%',
-      backgroundColor: '#04060c',
+      backgroundColor: '#050811',
       padding: '10px 14px',
       fontFamily: "'JetBrains Mono', 'Cascadia Code', 'Fira Code', Consolas, Menlo, monospace",
       fontSize: '11px',
@@ -947,7 +879,7 @@ const LogViewerBody: React.FC<LogViewerBodyProps> = ({
       overflowX: wrapLines ? 'hidden' : 'auto',
       boxSizing: 'border-box',
       scrollbarWidth: 'thin',
-      scrollbarColor: 'rgba(0, 229, 255, 0.25) rgba(4, 6, 12, 0.6)',
+      scrollbarColor: 'rgba(22, 160, 133, 0.35) rgba(5, 8, 17, 0.6)',
     }}
   >
     {renderLogLinesContent(loading, logsLength, filteredLines, searchFilter, wrapLines)}
@@ -971,7 +903,7 @@ const LogViewerFooter: React.FC<LogViewerFooterProps> = ({
     style={{
       padding: '8px 18px',
       borderTop: '1px solid rgba(255, 255, 255, 0.06)',
-      backgroundColor: 'rgba(7, 10, 18, 0.92)',
+      backgroundColor: 'rgba(8, 14, 24, 0.92)',
       fontSize: '11px',
       color: '#64748b',
       display: 'flex',
@@ -981,11 +913,27 @@ const LogViewerFooter: React.FC<LogViewerFooterProps> = ({
     }}
   >
     <span>
-      Líneas mostradas: <strong style={{ color: '#e2e8f0' }}>{filteredCount}</strong>{' '}
+      Líneas mostradas: <strong style={{ color: '#e2e8f0', fontWeight: 700 }}>{filteredCount}</strong>{' '}
       {searchFilter && `(filtradas de ${totalLines})`}
     </span>
-    <span style={{ fontFamily: 'monospace', color: '#00e5ff', opacity: 0.8, fontSize: '10.5px' }}>
-      Ruta: ~/.crystaltides/logs/{activeTab === 'launcher' ? 'launcher.log' : 'minecraft.log'}
+    <span
+      style={{
+        fontFamily: "'JetBrains Mono', Consolas, monospace",
+        color: '#5eead4',
+        fontSize: '10.5px',
+        background: 'rgba(22, 160, 133, 0.1)',
+        border: '1px solid rgba(22, 160, 133, 0.25)',
+        padding: '2px 8px',
+        borderRadius: '5px',
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '4px',
+      }}
+    >
+      <span>Ruta:</span>
+      <span style={{ color: '#f1f5f9' }}>
+        ~/.crystaltides/logs/{activeTab === 'launcher' ? 'launcher.log' : 'minecraft.log'}
+      </span>
     </span>
   </div>
 );
@@ -1051,21 +999,7 @@ export const LogViewerModal: React.FC<LogViewerModalProps> = ({
       <dialog
         open
         aria-label="Log Viewer"
-        style={{
-          width: 'min(860px, 92vw)',
-          height: 'min(560px, 84vh)',
-          backgroundColor: '#0a0f1d',
-          border: '1px solid rgba(0, 229, 255, 0.25)',
-          borderRadius: '16px',
-          display: 'flex',
-          flexDirection: 'column',
-          boxShadow: '0 30px 80px rgba(0, 0, 0, 0.85), 0 0 35px rgba(0, 229, 255, 0.08)',
-          color: '#f8fafc',
-          overflow: 'hidden',
-          animation: 'modalPop 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
-          position: 'relative',
-          zIndex: 1,
-        }}
+        className="log-viewer-dialog"
       >
         <LogViewerHeader
           onOpenFolder={handleOpenFolder}

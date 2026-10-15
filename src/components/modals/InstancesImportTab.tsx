@@ -206,7 +206,8 @@ export const InstancesImportTab: React.FC<InstancesImportTabProps> = ({ onImport
         display: 'flex',
         flexDirection: 'column',
         gap: '16px',
-        maxHeight: 'calc(88vh - 140px)',
+        flex: 1,
+        minHeight: 0,
         overflowY: 'auto',
         paddingRight: '6px',
       }}

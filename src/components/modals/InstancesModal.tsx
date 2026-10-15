@@ -318,13 +318,16 @@ export const InstancesModal: React.FC = () => {
         open
         className="papyrus-settings-card"
         style={{
-          width: '880px',
-          maxWidth: '92vw',
-          minHeight: '540px',
+          width: '920px',
+          maxWidth: '94vw',
+          height: '88vh',
           maxHeight: '88vh',
+          minHeight: '88vh',
+          display: 'flex',
+          flexDirection: 'column',
           color: 'inherit',
           margin: 0,
-          overflowX: 'hidden',
+          overflow: 'hidden',
           boxSizing: 'border-box',
         }}
         aria-labelledby="instances-modal-title"
@@ -335,9 +338,10 @@ export const InstancesModal: React.FC = () => {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            marginBottom: '20px',
+            marginBottom: '16px',
             flexWrap: 'wrap',
             gap: '12px',
+            flexShrink: 0,
           }}
         >
           <div style={{ minWidth: '220px', flex: '1 1 auto' }}>
@@ -482,14 +486,14 @@ export const InstancesModal: React.FC = () => {
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))',
               gap: '14px',
               overflowY: 'auto',
               overflowX: 'hidden',
-              maxHeight: 'calc(88vh - 140px)',
-              paddingRight: '6px',
-              paddingLeft: '2px',
-              paddingBottom: '8px',
+              flex: 1,
+              minHeight: 0,
+              alignContent: 'start',
+              padding: '10px 10px 18px 8px',
               boxSizing: 'border-box',
               width: '100%',
             }}
@@ -545,11 +549,14 @@ export const InstancesModal: React.FC = () => {
                           <span
                             style={{
                               fontWeight: 600,
-                              fontSize: '14.5px',
+                              fontSize: '14px',
                               color: '#f8fafc',
+                              display: '-webkit-box',
+                              WebkitLineClamp: 2,
+                              WebkitBoxOrient: 'vertical',
                               overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap',
+                              wordBreak: 'break-word',
+                              lineHeight: '1.25',
                               letterSpacing: '-0.01em',
                             }}
                             title={inst.name}
@@ -581,27 +588,36 @@ export const InstancesModal: React.FC = () => {
                             display: 'flex',
                             alignItems: 'center',
                             gap: '6px',
-                            marginTop: '3px',
+                            marginTop: '4px',
                             minWidth: 0,
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
+                            flexWrap: 'wrap',
                           }}
+                          title={`${inst.mcVersion} • ${inst.loaderType.toUpperCase()}${inst.loaderVersion ? ` (${inst.loaderVersion})` : ''}`}
                         >
                           <span
                             style={{
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap',
                               display: 'inline-flex',
                               alignItems: 'center',
                               gap: '5px',
+                              minWidth: 0,
                             }}
                           >
                             <LoaderIconBadge type={inst.loaderType} size={15} />
-                            <span>
-                              {inst.mcVersion} • {inst.loaderType.toUpperCase()}
-                              {inst.loaderVersion ? ` (${inst.loaderVersion})` : ''}
+                            <span
+                              style={{
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {(() => {
+                                const lType = inst.loaderType.toUpperCase();
+                                const lVer = inst.loaderVersion;
+                                if (lVer && inst.mcVersion.includes(lVer)) {
+                                  return `${inst.mcVersion} • ${lType}`;
+                                }
+                                return `${inst.mcVersion} • ${lType}${lVer ? ` (${lVer})` : ''}`;
+                              })()}
                             </span>
                           </span>
                           {renderScreenResolutionTag(inst)}
@@ -731,39 +747,45 @@ export const InstancesModal: React.FC = () => {
 
         {/* Tab: Crear Instancia */}
         {activeTab === 'create' && (
-          <InstancesCreateTab
-            availableVersions={availableVersions}
-            onCancel={() => setActiveTab('list')}
-            t={t}
-          />
+          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: '6px' }}>
+            <InstancesCreateTab
+              availableVersions={availableVersions}
+              onCancel={() => setActiveTab('list')}
+              t={t}
+            />
+          </div>
         )}
 
         {/* Tab: Editar Instancia */}
         {activeTab === 'edit' && editingInstance && (
-          <InstancesCreateTab
-            availableVersions={availableVersions}
-            initialInstance={instances.find((i) => i.id === editingInstance.id) ?? editingInstance}
-            onCancel={() => {
-              setEditingInstance(null);
-              setActiveTab('list');
-            }}
-            onSubmitSuccess={() => {
-              setEditingInstance(null);
-              setActiveTab('list');
-            }}
-            t={t}
-          />
+          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: '6px' }}>
+            <InstancesCreateTab
+              availableVersions={availableVersions}
+              initialInstance={instances.find((i) => i.id === editingInstance.id) ?? editingInstance}
+              onCancel={() => {
+                setEditingInstance(null);
+                setActiveTab('list');
+              }}
+              onSubmitSuccess={() => {
+                setEditingInstance(null);
+                setActiveTab('list');
+              }}
+              t={t}
+            />
+          </div>
         )}
 
         {/* Tab: Importar Instancia */}
         {activeTab === 'import' && (
-          <InstancesImportTab onImportSuccess={() => setActiveTab('list')} />
+          <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+            <InstancesImportTab onImportSuccess={() => setActiveTab('list')} />
+          </div>
         )}
 
         {/* Tab: Mundos Locales (Rust NBT Level.dat Engine) */}
         {activeTab === 'saves' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', flex: 1, minHeight: 0 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
               <p style={{ margin: 0, fontSize: '13px', color: '#94a3b8' }}>
                 {t.instances.savesSubtitle}
               </p>
@@ -803,7 +825,9 @@ export const InstancesModal: React.FC = () => {
                   gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))',
                   gap: '12px',
                   overflowY: 'auto',
-                  maxHeight: 'calc(88vh - 180px)',
+                  flex: 1,
+                  minHeight: 0,
+                  alignContent: 'start',
                   paddingRight: '6px',
                 }}
               >
@@ -902,8 +926,8 @@ export const InstancesModal: React.FC = () => {
 
         {/* Tab: Servidores Guardados (Rust NBT Servers.dat Engine) */}
         {activeTab === 'servers' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', flex: 1, minHeight: 0 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
               <p style={{ margin: 0, fontSize: '13px', color: '#94a3b8' }}>
                 {t.instances.serversSubtitle}
               </p>
@@ -934,6 +958,7 @@ export const InstancesModal: React.FC = () => {
                 border: '1px solid rgba(255, 255, 255, 0.08)',
                 borderRadius: '10px',
                 padding: '10px 12px',
+                flexShrink: 0,
               }}
             >
               <input
@@ -1023,7 +1048,9 @@ export const InstancesModal: React.FC = () => {
                   gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))',
                   gap: '12px',
                   overflowY: 'auto',
-                  maxHeight: 'calc(88vh - 180px)',
+                  flex: 1,
+                  minHeight: 0,
+                  alignContent: 'start',
                   paddingRight: '6px',
                 }}
               >
@@ -1138,7 +1165,7 @@ export const InstancesModal: React.FC = () => {
 
         {/* Tab: Mods de la Instancia */}
         {activeTab === 'mods' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', flex: 1, minHeight: 0 }}>
             <div
               style={{
                 display: 'flex',
@@ -1146,6 +1173,7 @@ export const InstancesModal: React.FC = () => {
                 alignItems: 'center',
                 flexWrap: 'wrap',
                 gap: '8px',
+                flexShrink: 0,
               }}
             >
               <div>
@@ -1204,7 +1232,9 @@ export const InstancesModal: React.FC = () => {
                   gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))',
                   gap: '12px',
                   overflowY: 'auto',
-                  maxHeight: 'calc(88vh - 180px)',
+                  flex: 1,
+                  minHeight: 0,
+                  alignContent: 'start',
                   paddingRight: '6px',
                 }}
               >
