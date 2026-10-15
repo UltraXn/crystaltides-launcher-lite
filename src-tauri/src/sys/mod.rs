@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", test))]
 mod windows;
 #[cfg(target_os = "windows")]
 pub use windows::*;

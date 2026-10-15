@@ -896,3 +896,6 @@ mod tests {
     }
 }
 
+
+#[cfg(not(target_os = "windows"))]
+pub fn apply_os_optimizations(_pid: u32) {}
