@@ -30,8 +30,14 @@ export function createMockIndexedDB() {
             stores.set(storeName, new Map());
           }
           const storeMap = stores.get(storeName)!;
+          const txListeners: Record<string, ((ev: unknown) => void)[]> = {};
 
-          return {
+          const tx = {
+            error: null,
+            addEventListener(evt: string, fn: (ev: unknown) => void) {
+              txListeners[evt] = txListeners[evt] || [];
+              txListeners[evt].push(fn);
+            },
             objectStore(_name: string) {
               return {
                 get(key: string) {
@@ -46,6 +52,7 @@ export function createMockIndexedDB() {
                   };
                   queueMicrotask(() => {
                     reqListeners['success']?.forEach((fn) => fn({ target: req }));
+                    txListeners['complete']?.forEach((fn) => fn({ target: tx }));
                   });
                   return req;
                 },
@@ -62,12 +69,14 @@ export function createMockIndexedDB() {
                   };
                   queueMicrotask(() => {
                     reqListeners['success']?.forEach((fn) => fn({ target: req }));
+                    txListeners['complete']?.forEach((fn) => fn({ target: tx }));
                   });
                   return req;
                 },
               };
             },
           };
+          return tx;
         },
       };
 

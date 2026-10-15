@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { logFrontend } from './logger';
 
 export interface MicrosoftDeviceCode {
   device_code: string;
@@ -270,7 +271,6 @@ export const refreshMicrosoftSession = async (
   return completeMinecraftAuth(res.access_token, res.refresh_token ?? refreshToken, onStatus);
 };
 
-import { logFrontend } from './logger';
 
 const debugLog = (msg: string) => {
   logFrontend('INFO', msg);

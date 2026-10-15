@@ -82,10 +82,11 @@ export const getOrCreateVaultKey = async (): Promise<CryptoKey> => {
   if (inFlightKeyPromise) return inFlightKeyPromise;
 
   inFlightKeyPromise = (async () => {
+    let db: IDBDatabase | null = null;
     try {
-      const db = await openVaultDb();
+      db = await openVaultDb();
       const storedKey = await new Promise<CryptoKey | null>((resolve, reject) => {
-        const tx = db.transaction(VAULT_STORE_NAME, 'readonly');
+        const tx = db!.transaction(VAULT_STORE_NAME, 'readonly');
         const store = tx.objectStore(VAULT_STORE_NAME);
         const req = store.get(MASTER_KEY_ID);
         req.addEventListener('success', () => resolve((req.result as CryptoKey) || null));
@@ -104,16 +105,20 @@ export const getOrCreateVaultKey = async (): Promise<CryptoKey> => {
       );
 
       await new Promise<void>((resolve, reject) => {
-        const tx = db.transaction(VAULT_STORE_NAME, 'readwrite');
+        const tx = db!.transaction(VAULT_STORE_NAME, 'readwrite');
         const store = tx.objectStore(VAULT_STORE_NAME);
-        const req = store.put(newKey, MASTER_KEY_ID);
-        req.addEventListener('success', () => resolve());
-        req.addEventListener('error', () => reject(req.error));
+        tx.addEventListener('complete', () => resolve());
+        tx.addEventListener('error', () => reject(tx.error ?? new Error('Failed to save vault key')));
+        tx.addEventListener('abort', () => reject(tx.error ?? new Error('Transaction aborted')));
+        store.put(newKey, MASTER_KEY_ID);
       });
 
       memoryKeyCache = newKey;
       return newKey;
     } finally {
+      if (db && typeof db.close === 'function') {
+        db.close();
+      }
       inFlightKeyPromise = null;
     }
   })();
