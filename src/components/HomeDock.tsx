@@ -1245,44 +1245,22 @@ export const HomeDock: React.FC = () => {
     sanitized: string,
     effectiveSize: number,
     effectiveColor?: string,
-    onClick?: (e: React.MouseEvent) => void,
   ) => {
-    const style: React.CSSProperties = {
-      width: `${effectiveSize}px`,
-      height: `${effectiveSize}px`,
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      color: effectiveColor,
-      cursor: isEditingHud ? 'pointer' : undefined,
-      pointerEvents: isEditingHud ? 'auto' : undefined,
-      background: 'transparent',
-      border: 'none',
-      padding: 0,
-    };
-    if (onClick) {
-      return (
-        <button
-          type="button"
-          onClick={onClick}
-          onKeyDown={(e) => {
-            if ((e.key === 'Enter' || e.key === ' ') && onClick) {
-              e.preventDefault();
-              e.stopPropagation();
-              onClick(e as unknown as React.MouseEvent);
-            }
-          }}
-          className="dock-icon-wrapper dock-custom-svg"
-          aria-label="Icono personalizado"
-          style={style}
-          dangerouslySetInnerHTML={{ __html: sanitized }}
-        />
-      );
-    }
     return (
       <div
         className="dock-icon-wrapper dock-custom-svg"
-        style={style}
+        style={{
+          width: `${effectiveSize}px`,
+          height: `${effectiveSize}px`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: effectiveColor,
+          background: 'transparent',
+          border: 'none',
+          padding: 0,
+          pointerEvents: 'none',
+        }}
         dangerouslySetInnerHTML={{ __html: sanitized }}
       />
     );
@@ -1291,48 +1269,25 @@ export const HomeDock: React.FC = () => {
   const renderCustomImageIcon = (
     url: string,
     effectiveSize: number,
-    onClick?: (e: React.MouseEvent) => void,
   ) => {
-    const style: React.CSSProperties = {
-      cursor: isEditingHud ? 'pointer' : undefined,
-      pointerEvents: isEditingHud ? 'auto' : undefined,
-      background: 'transparent',
-      border: 'none',
-      padding: 0,
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-    };
-    const imgEl = (
-      <img
-        src={url}
-        alt=""
-        style={{ width: `${effectiveSize}px`, height: `${effectiveSize}px`, objectFit: 'contain' }}
-      />
-    );
-    if (onClick) {
-      return (
-        <button
-          type="button"
-          onClick={onClick}
-          onKeyDown={(e) => {
-            if ((e.key === 'Enter' || e.key === ' ') && onClick) {
-              e.preventDefault();
-              e.stopPropagation();
-              onClick(e as unknown as React.MouseEvent);
-            }
-          }}
-          className="dock-icon-wrapper"
-          aria-label="Icono personalizado"
-          style={style}
-        >
-          {imgEl}
-        </button>
-      );
-    }
     return (
-      <div className="dock-icon-wrapper" style={style}>
-        {imgEl}
+      <div
+        className="dock-icon-wrapper"
+        style={{
+          background: 'transparent',
+          border: 'none',
+          padding: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          pointerEvents: 'none',
+        }}
+      >
+        <img
+          src={url}
+          alt=""
+          style={{ width: `${effectiveSize}px`, height: `${effectiveSize}px`, objectFit: 'contain' }}
+        />
       </div>
     );
   };
@@ -1340,40 +1295,21 @@ export const HomeDock: React.FC = () => {
   const renderDefaultIconWrapper = (
     icon: React.ReactNode,
     scale: number,
-    onClick?: (e: React.MouseEvent) => void,
   ) => {
-    const style: React.CSSProperties = {
-      transform: scale !== 1 ? `scale(${scale})` : undefined,
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      cursor: isEditingHud ? 'pointer' : undefined,
-      pointerEvents: isEditingHud ? 'auto' : undefined,
-      background: 'transparent',
-      border: 'none',
-      padding: 0,
-    };
-    if (onClick) {
-      return (
-        <button
-          type="button"
-          onClick={onClick}
-          onKeyDown={(e) => {
-            if ((e.key === 'Enter' || e.key === ' ') && onClick) {
-              e.preventDefault();
-              e.stopPropagation();
-              onClick(e as unknown as React.MouseEvent);
-            }
-          }}
-          className="dock-icon-wrapper"
-          style={style}
-        >
-          {icon}
-        </button>
-      );
-    }
     return (
-      <div className="dock-icon-wrapper" style={style}>
+      <div
+        className="dock-icon-wrapper"
+        style={{
+          transform: scale !== 1 ? `scale(${scale})` : undefined,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'transparent',
+          border: 'none',
+          padding: 0,
+          pointerEvents: 'none',
+        }}
+      >
         {icon}
       </div>
     );
@@ -1392,24 +1328,16 @@ export const HomeDock: React.FC = () => {
     const scale = btnCustom?.iconScale ?? 1;
     const effectiveSize = Math.round(iconSize * scale);
 
-    const handleIconLayerClick = isEditingHud
-      ? (e: React.MouseEvent) => {
-          e.stopPropagation();
-          launcherActions.setSelectedDockButtonId(btnId);
-          setInspectorTab('icon');
-        }
-      : undefined;
-
     if (btnCustom?.iconType === 'custom_svg' && btnCustom.customSvg) {
       const sanitized = DOMPurify.sanitize(btnCustom.customSvg, {
         USE_PROFILES: { svg: true, svgFilters: true },
       });
-      return renderCustomSvgIcon(sanitized, effectiveSize, effectiveColor, handleIconLayerClick);
+      return renderCustomSvgIcon(sanitized, effectiveSize, effectiveColor);
     }
     if (btnCustom?.iconType === 'custom_image' && btnCustom.customIconUrl) {
-      return renderCustomImageIcon(btnCustom.customIconUrl, effectiveSize, handleIconLayerClick);
+      return renderCustomImageIcon(btnCustom.customIconUrl, effectiveSize);
     }
-    return renderDefaultIconWrapper(defaultIcon, scale, handleIconLayerClick);
+    return renderDefaultIconWrapper(defaultIcon, scale);
   };
 
   const isButtonLabelVisible = (btnId: DockButtonId) => {
