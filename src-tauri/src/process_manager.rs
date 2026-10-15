@@ -609,6 +609,9 @@ pub fn is_game_running() -> bool {
         .is_some_and(|child| matches!(child.try_wait(), Ok(None)))
 }
 
+#[cfg(not(target_os = "windows"))]
+pub fn apply_os_optimizations(_pid: u32) {}
+
 #[cfg(target_os = "windows")]
 #[allow(unsafe_code)]
 pub fn apply_os_optimizations(pid: u32) {

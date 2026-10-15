@@ -69,3 +69,14 @@ pub fn schedule_self_deletion(target_dir: &Path) -> Result<(), String> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_schedule_self_deletion_handles_special_characters() {
+        let path = std::path::PathBuf::from("/tmp/test_dir_with \"quotes\" & $vars");
+        assert!(schedule_self_deletion(&path).is_ok());
+    }
+}
