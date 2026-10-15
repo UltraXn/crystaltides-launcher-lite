@@ -15,7 +15,7 @@ describe('secureVault', () => {
   it('encrypts and decrypts payloads accurately with stable key', async () => {
     const secretData = {
       username: 'Nero',
-      token: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.xyz',
+      token: 'MOCK_TOKEN_PAYLOAD_ABC_123.xyz',
       roles: ['admin', 'pilot'],
     };
 
