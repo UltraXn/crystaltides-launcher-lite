@@ -40,11 +40,20 @@ jobs:
       - name: TypeScript Typecheck
         run: pnpm run lint
 
+      - name: Typecheck Test Files
+        run: pnpm run typecheck:tests
+
       - name: Oxlint Static Analysis
         run: pnpm run lint:fast
 
       - name: Run Vitest Suite
         run: pnpm run test
+
+      - name: Build Frontend Bundle
+        run: pnpm run build
+
+      - name: React Doctor Quality Gate (Score >= 68)
+        run: pnpm run doctor:ci
 
   rust-check:
     name: Rust Backend Safety
