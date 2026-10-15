@@ -251,6 +251,23 @@ describe('launcherStore helpers & actions', () => {
       expect(getLauncherState().launch.message).toBe('Juego detenido.');
     });
 
+    it('maneja killGameFlow cuando killGame lanza un error registrando el mensaje de error', async () => {
+      const { killGame } = await import('../../services/launcherService');
+      vi.mocked(killGame).mockRejectedValueOnce(new Error('Failed to terminate process'));
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      await launcherActions.killGameFlow();
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        '[Launcher Store] Kill game failed:',
+        'Failed to terminate process',
+      );
+      expect(getLauncherState().launch.status).toBe('IDLE');
+      expect(getLauncherState().launch.message).toBe('Juego detenido.');
+
+      consoleSpy.mockRestore();
+    });
+
     it('permite gestionar cuentas mediante addAccount, setActiveAccount y removeAccount', async () => {
       const newAcc: UserAccount = {
         id: 'acc2',

@@ -1964,8 +1964,9 @@ export const launcherActions = {
     try {
       const { killGame } = await import('../services/launcherService');
       await killGame();
-    } catch (err) {
-      console.error('[Launcher Store] Kill game failed:', err);
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      console.error('[Launcher Store] Kill game failed:', errorMsg);
     }
     setStoreState(() => ({
       launch: { status: 'IDLE', progress: 0, message: 'Juego detenido.' },
