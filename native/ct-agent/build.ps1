@@ -59,7 +59,7 @@ if ($clCmd) {
     )
     & cl.exe $clArgs
     if ($LASTEXITCODE -eq 0) {
-        Remove-Item "$PSScriptRoot\ct_agent.obj", "$PSScriptRoot\ct-agent.exp", "$PSScriptRoot\ct-agent.lib" -Force -ErrorAction SilentlyContinue
+        Remove-Item "$PSScriptRoot\ct_agent.obj", "$PSScriptRoot\ct_agent.exp", "$PSScriptRoot\ct_agent.lib", "$PSScriptRoot\ct-agent.exp", "$PSScriptRoot\ct-agent.lib" -Force -ErrorAction SilentlyContinue
         $size = (Get-Item $outputDll).Length / 1KB
         Write-Host "[SUCCESS] ct-agent.dll generado con exito ($([Math]::Round($size, 2)) KB)" -ForegroundColor Green
         exit 0

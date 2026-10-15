@@ -1,16 +1,12 @@
 /*
- * ct_agent.c - Agente Nativo JVMTI de Rendimiento Industrial para Minecraft (CrystalTides)
+ * ct_agent.c - Agente Nativo JVMTI Seguro y Eficiente para Minecraft (CrystalTides)
  *
- * Características Implementadas:
- * 1. Clasificación Jerárquica Integral de Hilos en Kernel (Render, Server, Netty, Audio, Workers).
- * 2. Captura Forense de Excepciones Nativas (Vectored Exception Handler - VEH).
- * 3. Medición de Frametime Real en Nanosegundos con QueryPerformanceCounter (QPC).
- * 4. Adquisición Automática de Privilegios de Memoria (SeLockMemoryPrivilege para Large Pages).
- * 5. Purga Proactiva de Memoria Off-Heap (Hooks de mimalloc y Working Set Trim).
- * 6. Forzado de GPU Dedicada por Símbolos Exportados (NVIDIA Optimus & AMD PowerXpress).
- * 7. Temporizador Multimedia Extremo a 0.5 ms vía NtSetTimerResolution.
- * 8. Supresión de Pantalla Blanca "(No Responde)" vía DisableProcessWindowsGhosting.
- * 9. Prioridad de GPU Realtime en WDDM vía D3DKMTSetProcessSchedulingPriorityClass.
+ * Características:
+ * 1. Clasificación Jerárquica de Hilos en Kernel (Render, Server, Netty, Audio, Workers) con MMCSS y bypass de EcoQoS.
+ * 2. Supresión de Ventana "(No Responde)" vía DisableProcessWindowsGhosting.
+ * 3. Prioridad de GPU HIGH en el planificador WDDM vía D3DKMTSetProcessSchedulingPriorityClass.
+ * 4. Configuración flexible mediante opciones de agente (threads=on|off, gpu=high|off).
+ * 5. Registro atómico y seguro de ciclo de vida en ct-agent.log.
  *
  * Compilación recomendada (MSVC):
  *   cl.exe /O2 /MT /LD /I"%JAVA_HOME%\include" /I"%JAVA_HOME%\include\win32" ct_agent.c /Fe:ct-agent.dll
@@ -21,57 +17,110 @@
 #endif
 #include <windows.h>
 #include <avrt.h>
-#include <mmsystem.h>
 #include <jvmti.h>
+#include <stdio.h>
 #include <string.h>
 
 #pragma comment(lib, "avrt.lib")
-#pragma comment(lib, "winmm.lib")
 #pragma comment(lib, "advapi32.lib")
 #pragma comment(lib, "user32.lib")
+#pragma comment(lib, "gdi32.lib")
 
 // ============================================================================
-// 1. FORZADO DE GPU DEDICADA DE ALTO RENDIMIENTO (NVIDIA Optimus & AMD)
+// 1. REGISTRO SEGURO DE EVENTOS (ct-agent.log)
 // ============================================================================
-__declspec(dllexport) DWORD NvOptimusEnablement = 0x00000001;
-__declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
-
-// ============================================================================
-// 2. TEMPORIZADOR DE ALTA RESOLUCIÓN A 0.5 MS (NtSetTimerResolution)
-// ============================================================================
-typedef LONG (NTAPI *pfnNtSetTimerResolution)(ULONG RequestedResolution, BOOLEAN Set, PULONG ActualResolution);
-
-static ULONG g_actualTimerRes = 0;
-static BOOLEAN g_timerSet = FALSE;
-
-static void EnableHighResolutionTimer(void) {
-    HMODULE hNtdll = GetModuleHandleW(L"ntdll.dll");
-    if (hNtdll != NULL) {
-        pfnNtSetTimerResolution pNtSetTimerResolution = 
-            (pfnNtSetTimerResolution)GetProcAddress(hNtdll, "NtSetTimerResolution");
-        if (pNtSetTimerResolution != NULL) {
-            // 5000 * 100ns = 500,000ns = 0.5 ms
-            if (pNtSetTimerResolution(5000, TRUE, &g_actualTimerRes) >= 0) {
-                g_timerSet = TRUE;
-            }
-        }
+static void LogLine(const char *fmt, ...) {
+    HMODULE hMod = NULL;
+    if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                            (LPCWSTR)&LogLine, &hMod)) {
+        return;
     }
-    timeBeginPeriod(1);
+
+    WCHAR logPath[MAX_PATH];
+    DWORD len = GetModuleFileNameW(hMod, logPath, MAX_PATH);
+    if (len == 0 || len >= MAX_PATH) {
+        return;
+    }
+
+    WCHAR *lastSlash = wcsrchr(logPath, L'\\');
+    if (!lastSlash) {
+        lastSlash = wcsrchr(logPath, L'/');
+    }
+    if (!lastSlash) {
+        return;
+    }
+
+    *(lastSlash + 1) = L'\0';
+    if (wcscat_s(logPath, MAX_PATH, L"ct-agent.log") != 0) {
+        return;
+    }
+
+    FILE *f = NULL;
+    if (_wfopen_s(&f, logPath, L"a") == 0 && f != NULL) {
+        va_list args;
+        va_start(args, fmt);
+        vfprintf(f, fmt, args);
+        va_end(args);
+        fprintf(f, "\n");
+        fflush(f);
+        fclose(f);
+    }
 }
 
-static void RestoreTimerResolution(void) {
-    if (g_timerSet) {
-        HMODULE hNtdll = GetModuleHandleW(L"ntdll.dll");
-        if (hNtdll != NULL) {
-            pfnNtSetTimerResolution pNtSetTimerResolution = 
-                (pfnNtSetTimerResolution)GetProcAddress(hNtdll, "NtSetTimerResolution");
-            if (pNtSetTimerResolution != NULL) {
-                pNtSetTimerResolution(g_actualTimerRes, FALSE, &g_actualTimerRes);
+// ============================================================================
+// 2. CONFIGURACIÓN Y PARSEO DE OPCIONES
+// ============================================================================
+static int g_optThreads = 1; // 1 = on (defecto), 0 = off
+static int g_optGpu = 1;     // 1 = high (defecto), 0 = off
+
+static void ParseOptions(const char *options) {
+    if (options == NULL || *options == '\0') {
+        return;
+    }
+
+    char buf[512];
+    strncpy_s(buf, sizeof(buf), options, _TRUNCATE);
+
+    char *next_token = NULL;
+    char *token = strtok_s(buf, ",", &next_token);
+
+    while (token != NULL) {
+        while (*token == ' ') token++;
+
+        char *eq = strchr(token, '=');
+        if (eq == NULL) {
+            LogLine("[ct-agent] Advertencia: formato de opcion invalido '%s' (se esperaba clave=valor)", token);
+        } else {
+            *eq = '\0';
+            char *key = token;
+            char *val = eq + 1;
+
+            while (*val == ' ') val++;
+
+            if (_stricmp(key, "threads") == 0) {
+                if (_stricmp(val, "on") == 0) {
+                    g_optThreads = 1;
+                } else if (_stricmp(val, "off") == 0) {
+                    g_optThreads = 0;
+                } else {
+                    LogLine("[ct-agent] Advertencia: valor invalido '%s' para 'threads' (usando defecto 'on')", val);
+                    g_optThreads = 1;
+                }
+            } else if (_stricmp(key, "gpu") == 0) {
+                if (_stricmp(val, "high") == 0) {
+                    g_optGpu = 1;
+                } else if (_stricmp(val, "off") == 0) {
+                    g_optGpu = 0;
+                } else {
+                    LogLine("[ct-agent] Advertencia: valor invalido '%s' para 'gpu' (usando defecto 'high')", val);
+                    g_optGpu = 1;
+                }
+            } else {
+                LogLine("[ct-agent] Advertencia: opcion desconocida '%s=%s' (ignorada)", key, val);
             }
         }
-        g_timerSet = FALSE;
+        token = strtok_s(NULL, ",", &next_token);
     }
-    timeEndPeriod(1);
 }
 
 // ============================================================================
@@ -99,197 +148,64 @@ static void DisableEcoQoSOnCurrentThread(void) {
             CT_THREAD_POWER_THROTTLING_STATE throttling;
             throttling.Version = 1;
             throttling.ControlMask = 0x1; // THREAD_POWER_THROTTLING_EXECUTION_SPEED
-            throttling.StateMask = 0x0;   // 0 = Desactivar limitación de velocidad
+            throttling.StateMask = 0x0;   // 0 = Desactivar limitacion de velocidad
             pSetThreadInformation(GetCurrentThread(), 1 /* ThreadPowerThrottling */, &throttling, sizeof(throttling));
         }
     }
 }
 
 // ============================================================================
-// 4. PRIVILEGIOS DE MEMORIA: SeLockMemoryPrivilege (Large Pages 2MB)
+// 4. JERARQUÍA Y PRIORIZACIÓN DE HILOS
 // ============================================================================
-static void EnableLargePagesPrivilege(void) {
-    HANDLE hToken = NULL;
-    if (OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &hToken)) {
-        TOKEN_PRIVILEGES tp;
-        memset(&tp, 0, sizeof(tp));
-        if (LookupPrivilegeValueW(NULL, L"SeLockMemoryPrivilege", &tp.Privileges[0].Luid)) {
-            tp.PrivilegeCount = 1;
-            tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
-            AdjustTokenPrivileges(hToken, FALSE, &tp, 0, NULL, NULL);
-        }
-        CloseHandle(hToken);
+static __declspec(thread) HANDLE t_hMmcss = NULL;
+
+static void OptimizeRenderThread(void) {
+    DWORD taskIndex = 0;
+    HANDLE hMmcss = AvSetMmThreadCharacteristicsW(L"Games", &taskIndex);
+    if (hMmcss != NULL) {
+        AvSetMmThreadPriority(hMmcss, AVRT_PRIORITY_HIGH);
+        t_hMmcss = hMmcss;
+    }
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
+    DisableEcoQoSOnCurrentThread();
+}
+
+static void OptimizeServerThread(void) {
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
+    DisableEcoQoSOnCurrentThread();
+}
+
+static void OptimizeAudioThread(void) {
+    DWORD taskIndex = 0;
+    HANDLE hMmcss = AvSetMmThreadCharacteristicsW(L"Pro Audio", &taskIndex);
+    if (hMmcss != NULL) {
+        AvSetMmThreadPriority(hMmcss, AVRT_PRIORITY_NORMAL);
+        t_hMmcss = hMmcss;
     }
 }
 
-// ============================================================================
-// 5. PURGA PROACTIVA DE MEMORIA OFF-HEAP (Hooks de mimalloc & Working Set)
-// ============================================================================
-typedef void (*pfn_mi_collect)(BOOL force);
-static pfn_mi_collect g_pfn_mi_collect = NULL;
-
-static void InitMimallocCollector(void) {
-    HMODULE hMimalloc = GetModuleHandleW(L"mimalloc.dll");
-    if (hMimalloc == NULL) {
-        hMimalloc = GetModuleHandleW(L"mimalloc-override.dll");
-    }
-    if (hMimalloc != NULL) {
-        g_pfn_mi_collect = (pfn_mi_collect)GetProcAddress(hMimalloc, "mi_collect");
-    }
+static void OptimizeWorkerThread(void) {
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
 }
-
-JNIEXPORT void JNICALL Java_com_crystaltides_agent_CrystalAgent_nativePurgeOffHeapMemory(JNIEnv *env, jclass clazz) {
-    UNREFERENCED_PARAMETER(env);
-    UNREFERENCED_PARAMETER(clazz);
-
-    // 1. Purgar páginas nativas en mimalloc si está presente
-    if (g_pfn_mi_collect != NULL) {
-        g_pfn_mi_collect(TRUE);
-    }
-    // 2. Compactar Working Set para liberar bloques de RAM inactivos
-    SetProcessWorkingSetSize(GetCurrentProcess(), (SIZE_T)-1, (SIZE_T)-1);
-}
-
-// ============================================================================
-// 6. MEDICIÓN DE FRAMETIMES EN NANOSEGUNDOS CON QPC
-// ============================================================================
-#define QPC_HISTORY_SIZE 128
-static LARGE_INTEGER g_qpcFreq = {0};
-static LARGE_INTEGER g_lastPresentQpc = {0};
-static double g_frametimeHistoryMs[QPC_HISTORY_SIZE] = {0};
-static volatile LONG g_frametimeIndex = 0;
-static double g_latestP99FrametimeMs = 0.0;
-static double g_latestAvgFrametimeMs = 0.0;
-
-static void InitQpcTimer(void) {
-    QueryPerformanceFrequency(&g_qpcFreq);
-    QueryPerformanceCounter(&g_lastPresentQpc);
-}
-
-__declspec(dllexport) void CT_RecordFramePresent(void) {
-    if (g_qpcFreq.QuadPart == 0) return;
-
-    LARGE_INTEGER now;
-    QueryPerformanceCounter(&now);
-
-    LONGLONG diff = now.QuadPart - g_lastPresentQpc.QuadPart;
-    g_lastPresentQpc = now;
-
-    double frameMs = (double)diff * 1000.0 / (double)g_qpcFreq.QuadPart;
-    if (frameMs > 0.0 && frameMs < 500.0) {
-        LONG idx = InterlockedIncrement(&g_frametimeIndex) % QPC_HISTORY_SIZE;
-        g_frametimeHistoryMs[idx] = frameMs;
-
-        // Cada 64 fotogramas calcular promedio y p99
-        if (idx % 64 == 0) {
-            double sum = 0.0;
-            double maxFrame = 0.0;
-            for (int i = 0; i < QPC_HISTORY_SIZE; i++) {
-                double val = g_frametimeHistoryMs[i];
-                sum += val;
-                if (val > maxFrame) maxFrame = val;
-            }
-            g_latestAvgFrametimeMs = sum / QPC_HISTORY_SIZE;
-            g_latestP99FrametimeMs = maxFrame; // Estimación de pico p99
-        }
-    }
-}
-
-__declspec(dllexport) double CT_GetP99FrametimeMs(void) {
-    return g_latestP99FrametimeMs;
-}
-
-__declspec(dllexport) double CT_GetAvgFrametimeMs(void) {
-    return g_latestAvgFrametimeMs;
-}
-
-// ============================================================================
-// 7. MANEJO FORENSE DE EXCEPCIONES NATIVAS (Vectored Exception Handler)
-// ============================================================================
-static PVOID g_vehHandle = NULL;
-
-static LONG WINAPI VectoredCrashHandler(PEXCEPTION_POINTERS pExceptionInfo) {
-    DWORD code = pExceptionInfo->ExceptionRecord->ExceptionCode;
-    
-    // Capturar Access Violation (0xC0000005) o Illegal Instruction (0xC000001D)
-    if (code == EXCEPTION_ACCESS_VIOLATION || code == EXCEPTION_ILLEGAL_INSTRUCTION) {
-        PVOID faultAddr = pExceptionInfo->ExceptionRecord->ExceptionAddress;
-        HMODULE hFaultModule = NULL;
-
-        WCHAR modPath[MAX_PATH];
-        modPath[0] = L'\0';
-
-        if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                               (LPCWSTR)faultAddr, &hFaultModule)) {
-            GetModuleFileNameW(hFaultModule, modPath, MAX_PATH);
-        }
-
-        WCHAR debugMsg[512];
-        wsprintfW(debugMsg, L"[CT_AGENT_CRASH] Exception 0x%08X en direccion %p (Modulo: %ls)\n", 
-                  code, faultAddr, modPath[0] ? modPath : L"Desconocido");
-        OutputDebugStringW(debugMsg);
-    }
-
-    // Permitir que la cadena de excepciones continúe su curso habitual
-    return EXCEPTION_CONTINUE_SEARCH;
-}
-
-// ============================================================================
-// 8. JERARQUÍA COMPLETA DE HILOS DE MINECRAFT
-// ============================================================================
-static HANDLE g_renderMmcssHandle = NULL;
-static HANDLE g_serverMmcssHandle = NULL;
-static HANDLE g_audioMmcssHandle = NULL;
-static jvmtiEnv *g_jvmti = NULL;
 
 static void OptimizeThreadByName(const char *threadName) {
-    if (threadName == NULL) return;
+    if (threadName == NULL || !g_optThreads) return;
 
-    DWORD taskIndex = 0;
-
-    // 1. HILO DE RENDER / CLIENTE (Máxima prioridad de CPU y GPU)
     if (strcmp(threadName, "Render thread") == 0 || strcmp(threadName, "Client thread") == 0) {
-        HANDLE hMmcss = AvSetMmThreadCharacteristicsW(L"Games", &taskIndex);
-        if (hMmcss != NULL) {
-            AvSetMmThreadPriority(hMmcss, AVRT_PRIORITY_HIGH);
-            g_renderMmcssHandle = hMmcss;
-        }
-        SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
-        DisableEcoQoSOnCurrentThread();
-    }
-    // 2. HILO DEL SERVIDOR INTEGRADO (Lógica del mundo, ticks de bloques y mobs)
-    else if (strcmp(threadName, "Server thread") == 0) {
-        HANDLE hMmcss = AvSetMmThreadCharacteristicsW(L"Games", &taskIndex);
-        if (hMmcss != NULL) {
-            AvSetMmThreadPriority(hMmcss, AVRT_PRIORITY_NORMAL);
-            g_serverMmcssHandle = hMmcss;
-        }
-        SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
-        DisableEcoQoSOnCurrentThread();
-    }
-    // 3. HILOS DE RED NETTY (Procesamiento de paquetes multijugador)
-    else if (strncmp(threadName, "Netty", 5) == 0) {
-        SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
-        DisableEcoQoSOnCurrentThread();
-    }
-    // 4. HILO DE AUDIO (OpenAL Soft)
-    else if (strstr(threadName, "Audio") != NULL || strstr(threadName, "OpenAL") != NULL) {
-        HANDLE hMmcss = AvSetMmThreadCharacteristicsW(L"Pro Audio", &taskIndex);
-        if (hMmcss != NULL) {
-            AvSetMmThreadPriority(hMmcss, AVRT_PRIORITY_NORMAL);
-            g_audioMmcssHandle = hMmcss;
-        }
-        SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
-    }
-    // 5. WORKER THREADS (Meshing de chunks de Sodium / Tareas secundarias)
-    else if (strncmp(threadName, "Worker-Main", 11) == 0 || strncmp(threadName, "ForkJoinPool", 12) == 0) {
-        // Degradar ligeramente para que no le roben ciclos de CPU ni calor al Render Thread
-        SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
+        OptimizeRenderThread();
+    } else if (strcmp(threadName, "Server thread") == 0 || strncmp(threadName, "Netty", 5) == 0) {
+        OptimizeServerThread();
+    } else if (strstr(threadName, "Audio") != NULL || strstr(threadName, "OpenAL") != NULL) {
+        OptimizeAudioThread();
+    } else if (strncmp(threadName, "Worker-Main", 11) == 0 || strncmp(threadName, "ForkJoinPool", 12) == 0) {
+        OptimizeWorkerThread();
     }
 }
 
 static void JNICALL OnThreadStart(jvmtiEnv *jvmti_env, JNIEnv *jni_env, jthread thread) {
     UNREFERENCED_PARAMETER(jni_env);
+
+    if (!g_optThreads) return;
 
     jvmtiThreadInfo info;
     memset(&info, 0, sizeof(info));
@@ -306,12 +222,14 @@ static void JNICALL OnVMInit(jvmtiEnv *jvmti_env, JNIEnv *jni_env, jthread threa
     UNREFERENCED_PARAMETER(jni_env);
     UNREFERENCED_PARAMETER(thread);
 
-    // Optimizar el hilo de arranque inicial
-    OptimizeThreadByName("Render thread");
+    if (!g_optThreads) return;
+
+    // En VMInit el hilo principal todavia se llama "main" y JVMTI no avisa del renombre a "Render thread".
+    OptimizeRenderThread();
 }
 
 // ============================================================================
-// 9. OPTIMIZACIONES GLOBALES DE PROCESO (Anti-Ghosting & WDDM GPU Priority)
+// 5. OPTIMIZACIONES GLOBALES DE PROCESO (Anti-Ghosting & WDDM GPU Priority)
 // ============================================================================
 static void DisableWindowGhosting(void) {
     HMODULE hUser32 = GetModuleHandleW(L"user32.dll");
@@ -327,60 +245,70 @@ static void DisableWindowGhosting(void) {
 
 static void ElevateGpuPriority(void) {
     HMODULE hGdi32 = GetModuleHandleW(L"gdi32.dll");
+    if (hGdi32 == NULL) {
+        hGdi32 = LoadLibraryW(L"gdi32.dll");
+    }
     if (hGdi32 != NULL) {
         typedef LONG (APIENTRY *pfnD3DKMTSetProcessSchedulingPriorityClass)(HANDLE, UINT);
         pfnD3DKMTSetProcessSchedulingPriorityClass pfnD3DKMT = 
             (pfnD3DKMTSetProcessSchedulingPriorityClass)GetProcAddress(hGdi32, "D3DKMTSetProcessSchedulingPriorityClass");
         if (pfnD3DKMT != NULL) {
-            // 5 = D3DKMT_SCHEDULINGPRIORITYCLASS_REALTIME en el planificador WDDM
-            pfnD3DKMT(GetCurrentProcess(), 5);
+            // 4 = D3DKMT_SCHEDULINGPRIORITYCLASS_HIGH en el planificador WDDM
+            LONG status = pfnD3DKMT(GetCurrentProcess(), 4);
+            if (status != 0) {
+                LogLine("[ct-agent] Advertencia: D3DKMTSetProcessSchedulingPriorityClass(HIGH) fallo con codigo 0x%08X", (unsigned int)status);
+            }
+        } else {
+            LogLine("[ct-agent] Advertencia: D3DKMTSetProcessSchedulingPriorityClass no encontrada en gdi32.dll");
         }
+    } else {
+        LogLine("[ct-agent] Advertencia: gdi32.dll no disponible");
     }
 }
 
 // ============================================================================
-// 10. CICLO DE VIDA DEL AGENTE JVMTI
+// 6. CICLO DE VIDA DEL AGENTE JVMTI
 // ============================================================================
 JNIEXPORT jint JNICALL Agent_OnLoad(JavaVM *vm, char *options, void *reserved) {
-    UNREFERENCED_PARAMETER(options);
     UNREFERENCED_PARAMETER(reserved);
 
-    // 1. Temporizador de precisión de 0.5 ms
-    EnableHighResolutionTimer();
+    // 1. Procesar opciones
+    ParseOptions(options);
 
-    // 2. Prevenir pantallas blancas de Windows "(No responde)"
+    // 2. Optimizaciones de proceso independientes de JVMTI
     DisableWindowGhosting();
 
-    // 3. Asignar prioridad de hardware REALTIME en la GPU
-    ElevateGpuPriority();
-
-    // 4. Desbloquear Large Pages (SeLockMemoryPrivilege)
-    EnableLargePagesPrivilege();
-
-    // 5. Inicializar cronómetro de alta resolución QPC
-    InitQpcTimer();
-
-    // 6. Conectar recolector de purga mimalloc si está presente
-    InitMimallocCollector();
-
-    // 7. Instalar manejador forense de excepciones nativas (VEH)
-    g_vehHandle = AddVectoredExceptionHandler(1, VectoredCrashHandler);
-
-    // 8. Obtener entorno JVMTI
-    jint res = (*vm)->GetEnv(vm, (void **)&g_jvmti, JVMTI_VERSION_1_2);
-    if (res != JNI_OK || g_jvmti == NULL) {
-        return JNI_OK;
+    if (g_optGpu) {
+        ElevateGpuPriority();
     }
 
-    // 9. Suscribirse a eventos de inicialización y ciclo de hilos
-    jvmtiEventCallbacks callbacks;
-    memset(&callbacks, 0, sizeof(callbacks));
-    callbacks.VMInit = &OnVMInit;
-    callbacks.ThreadStart = &OnThreadStart;
+    // 3. Conectar entorno JVMTI
+    jvmtiEnv *jvmti = NULL;
+    jint res = (*vm)->GetEnv(vm, (void **)&jvmti, JVMTI_VERSION_1_2);
+    int jvmtiHooked = 0;
 
-    (*g_jvmti)->SetEventCallbacks(g_jvmti, &callbacks, (jint)sizeof(callbacks));
-    (*g_jvmti)->SetEventNotificationMode(g_jvmti, JVMTI_ENABLE, JVMTI_EVENT_VM_INIT, (jthread)NULL);
-    (*g_jvmti)->SetEventNotificationMode(g_jvmti, JVMTI_ENABLE, JVMTI_EVENT_THREAD_START, (jthread)NULL);
+    if (res == JNI_OK && jvmti != NULL) {
+        jvmtiHooked = 1;
+
+        if (g_optThreads) {
+            jvmtiEventCallbacks callbacks;
+            memset(&callbacks, 0, sizeof(callbacks));
+            callbacks.VMInit = &OnVMInit;
+            callbacks.ThreadStart = &OnThreadStart;
+
+            (*jvmti)->SetEventCallbacks(jvmti, &callbacks, (jint)sizeof(callbacks));
+            (*jvmti)->SetEventNotificationMode(jvmti, JVMTI_ENABLE, JVMTI_EVENT_VM_INIT, (jthread)NULL);
+            (*jvmti)->SetEventNotificationMode(jvmti, JVMTI_ENABLE, JVMTI_EVENT_THREAD_START, (jthread)NULL);
+        }
+    } else {
+        LogLine("[ct-agent] Advertencia: GetEnv(JVMTI_VERSION_1_2) fallo con codigo %d", (int)res);
+    }
+
+    // 4. Registro de carga en archivo
+    LogLine("[ct-agent] Loaded: threads=%s, gpu=%s, jvmti=%s",
+            g_optThreads ? "on" : "off",
+            g_optGpu ? "high" : "off",
+            jvmtiHooked ? "enganchado" : "fallido");
 
     return JNI_OK;
 }
@@ -388,26 +316,7 @@ JNIEXPORT jint JNICALL Agent_OnLoad(JavaVM *vm, char *options, void *reserved) {
 JNIEXPORT void JNICALL Agent_OnUnload(JavaVM *vm) {
     UNREFERENCED_PARAMETER(vm);
 
-    // Desinstalar VEH
-    if (g_vehHandle != NULL) {
-        RemoveVectoredExceptionHandler(g_vehHandle);
-        g_vehHandle = NULL;
-    }
-
-    // Revertir descriptores MMCSS
-    if (g_renderMmcssHandle != NULL) {
-        AvRevertMmThreadCharacteristics(g_renderMmcssHandle);
-        g_renderMmcssHandle = NULL;
-    }
-    if (g_serverMmcssHandle != NULL) {
-        AvRevertMmThreadCharacteristics(g_serverMmcssHandle);
-        g_serverMmcssHandle = NULL;
-    }
-    if (g_audioMmcssHandle != NULL) {
-        AvRevertMmThreadCharacteristics(g_audioMmcssHandle);
-        g_audioMmcssHandle = NULL;
-    }
-
-    // Restaurar temporizador del kernel
-    RestoreTimerResolution();
+    // El descriptor MMCSS se almacena en TLS (__declspec(thread)) y el kernel lo libera al terminar el hilo;
+    // llamar a AvRevertMmThreadCharacteristics desde un hilo ajeno de descarga no es valido.
+    LogLine("[ct-agent] Unloaded");
 }

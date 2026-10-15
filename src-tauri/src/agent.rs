@@ -974,7 +974,7 @@ mod tests {
             let ct_agent_hash = hex::encode(sha2::Sha256::digest(EMBEDDED_CT_AGENT_DLL));
             assert_eq!(
                 ct_agent_hash,
-                "cb3f3b70a9743f9dfa69c41b6edc6193be9ee9e6c27feb62dde6fbe606e818b3"
+                "ba1aa3c7b9eb074a6be5480087216fbe32d73654eab695f2a676d5a84f94d6e8"
             );
 
             let bridge_core_hash = hex::encode(sha2::Sha256::digest(EMBEDDED_AGENT_DLL));
