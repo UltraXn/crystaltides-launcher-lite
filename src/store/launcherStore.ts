@@ -754,12 +754,24 @@ const syncInstanceAssets = async (
       console.warn('[Launcher] Error sincronizando stack de rendimiento:', perfErr);
     }
 
-    if (['fabric', 'quilt', 'neoforge', 'forge'].includes(activeInst.loaderType)) {
+    if (BOOST_ENABLED && shouldDeployBoost(activeInst.loaderType, activeInst.mcVersion)) {
       try {
         await invoke('deploy_crystaltides_boost', { gameDir: effectiveGameDir });
       } catch (boostErr) {
         console.warn('[Launcher] Error inyectando crystaltides-boost:', boostErr);
       }
+    } else {
+      try {
+        await invoke('remove_crystaltides_boost', { gameDir: effectiveGameDir });
+      } catch (cleanErr) {
+        console.warn('[Launcher] Error limpiando crystaltides-boost:', cleanErr);
+      }
+    }
+  } else {
+    try {
+      await invoke('remove_crystaltides_boost', { gameDir: effectiveGameDir });
+    } catch {
+      // Ignorar fallo de limpieza en instancias que no usan optimización
     }
   }
 
@@ -776,6 +788,19 @@ const syncInstanceAssets = async (
   }
 
   return { halted: false };
+};
+
+// Flag maestro para habilitar/deshabilitar el despliegue automático de crystaltides-boost
+export const BOOST_ENABLED = false;
+
+export const shouldDeployBoost = (loaderType?: string, mcVersion?: string): boolean => {
+  if (!loaderType || !mcVersion) {
+    return false;
+  }
+  const normalizedLoader = loaderType.toLowerCase().trim();
+  const normalizedVersion = mcVersion.trim();
+  const allowedLoaders = ['fabric', 'quilt', 'neoforge'];
+  return allowedLoaders.includes(normalizedLoader) && normalizedVersion === '1.21.1';
 };
 
 export const resolveEffectiveResolution = (activeInst: GameInstance): string => {

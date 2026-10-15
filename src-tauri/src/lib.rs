@@ -1047,6 +1047,7 @@ pub fn run() {
             gpu_preset::detect_gpu_profile,
             agent::prepare_crystal_agent,
             agent::deploy_crystaltides_boost,
+            agent::remove_crystaltides_boost,
             agent::get_agent_jvm_args,
             agent::get_agent_benchmark_status,
             agent::start_game_ipc_server,

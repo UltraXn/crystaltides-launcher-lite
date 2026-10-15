@@ -466,6 +466,54 @@ pub fn deploy_crystaltides_boost(game_dir: String) -> Result<bool, String> {
     Ok(true)
 }
 
+#[tauri::command]
+pub fn remove_crystaltides_boost(game_dir: String) -> Result<bool, String> {
+    let base_path = validate_game_dir(&game_dir)?;
+    let mods_dir = base_path.join("mods");
+    let target_jar = mods_dir.join("crystaltides-boost.jar");
+
+    if !target_jar.exists() {
+        return Ok(false);
+    }
+
+    let existing_bytes = match fs::read(&target_jar) {
+        Ok(b) => b,
+        Err(e) => {
+            crate::logger::log(
+                "WARN",
+                "CrystalBoost",
+                &format!("No se pudo leer crystaltides-boost.jar para verificar antes de borrar: {}", e),
+            );
+            return Err(format!("No se pudo leer crystaltides-boost.jar: {}", e));
+        }
+    };
+
+    if existing_bytes == EMBEDDED_BOOST_JAR {
+        if let Err(e) = fs::remove_file(&target_jar) {
+            crate::logger::log(
+                "WARN",
+                "CrystalBoost",
+                &format!("No se pudo eliminar crystaltides-boost.jar: {}", e),
+            );
+            return Err(format!("No se pudo eliminar crystaltides-boost.jar: {}", e));
+        }
+        crate::logger::log(
+            "INFO",
+            "CrystalBoost",
+            "crystaltides-boost.jar obsoleto/no aplicable eliminado de mods/.",
+        );
+        Ok(true)
+    } else {
+        crate::logger::log(
+            "WARN",
+            "CrystalBoost",
+            "crystaltides-boost.jar detectado en mods/, pero no coincide byte a byte con los binarios embebidos del launcher. No se eliminará.",
+        );
+        Ok(false)
+    }
+}
+
+
 fn deploy_native_agent(natives_dir: &Path) -> PathBuf {
     let lib_filename = if cfg!(target_os = "windows") {
         "game_bridge_core.dll"

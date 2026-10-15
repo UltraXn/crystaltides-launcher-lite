@@ -6,6 +6,7 @@ import {
   sanitizeLauncherSettings,
   launcherActions,
   getLauncherState,
+  shouldDeployBoost,
   useLauncherStore,
 } from '../launcherStore';
 import type { GameInstance } from '../../services/instanceService';
@@ -502,4 +503,40 @@ describe('launcherStore helpers & actions', () => {
       expect(opts.accessToken).toBe('00000000-0000-0000-0000-000000000000');
     });
   });
+
+  describe('shouldDeployBoost', () => {
+    it('debe devolver true para fabric 1.21.1', () => {
+      expect(shouldDeployBoost('fabric', '1.21.1')).toBe(true);
+    });
+
+    it('debe devolver true para neoforge 1.21.1', () => {
+      expect(shouldDeployBoost('neoforge', '1.21.1')).toBe(true);
+    });
+
+    it('debe devolver true para quilt 1.21.1', () => {
+      expect(shouldDeployBoost('quilt', '1.21.1')).toBe(true);
+    });
+
+    it('debe devolver false para fabric 1.20.1', () => {
+      expect(shouldDeployBoost('fabric', '1.20.1')).toBe(false);
+    });
+
+    it('debe devolver false para forge 1.21.1', () => {
+      expect(shouldDeployBoost('forge', '1.21.1')).toBe(false);
+    });
+
+    it('debe devolver false para neoforge 1.21.4', () => {
+      expect(shouldDeployBoost('neoforge', '1.21.4')).toBe(false);
+    });
+
+    it('debe devolver false para cadenas vacías o undefined', () => {
+      expect(shouldDeployBoost('', '1.21.1')).toBe(false);
+      expect(shouldDeployBoost('fabric', '')).toBe(false);
+      expect(shouldDeployBoost('', '')).toBe(false);
+      expect(shouldDeployBoost(undefined, '1.21.1')).toBe(false);
+      expect(shouldDeployBoost('fabric', undefined)).toBe(false);
+      expect(shouldDeployBoost(undefined, undefined)).toBe(false);
+    });
+  });
 });
+
