@@ -3,7 +3,7 @@ use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 
 #[derive(serde::Serialize, Clone, Debug)]
@@ -45,6 +45,8 @@ pub fn set_high_resolution_timer(enable: bool) {
             crate::logger::log("INFO", "ProcessManager", "Windows high-resolution timer restored.");
         }
     }
+    #[cfg(not(target_os = "windows"))]
+    let _ = enable;
 }
 
 fn get_game_process_handle() -> &'static Arc<Mutex<Option<Child>>> {
@@ -205,7 +207,7 @@ fn execute_hook_command(cmd_str: &str, dir: &str, envs: &[(&str, &str)]) -> Resu
     let program = &parts[0];
     if is_blocked_shell_binary(program) {
         let msg = format!(
-            "Violación de Seguridad RCE: La invocación de shells o utilidades no autorizadas ('{}') en hooks está estrictamente prohibida.",
+            "Violación de Seguridad RCE: La invocación de shells o utilidades no autorizadas ('{}') en hooks está strictly prohibida.",
             program
         );
         crate::logger::log("ERROR", "ProcessManager", &msg);
@@ -359,49 +361,85 @@ fn inject_environment_variables(command: &mut Command, env_raw: Option<&str>) {
     }
 }
 
+const BATCH_FLUSH_INTERVAL: Duration = Duration::from_millis(50);
+const BATCH_MAX_SIZE: usize = 50;
+
+fn process_stream_reader<R: BufRead, F: FnMut(&str, &str)>(reader: R, default_level: Option<&str>, mut emit_cb: F) {
+    let mut batch_lines: Vec<String> = Vec::with_capacity(BATCH_MAX_SIZE);
+    let mut highest_level = default_level.unwrap_or("INFO");
+    let mut last_flush = Instant::now();
+
+    for line in reader.lines().map_while(Result::ok) {
+        let level = if default_level.is_some() {
+            default_level.unwrap()
+        } else if line.contains("[ERROR]")
+            || line.contains(" Exception")
+            || line.contains("FATAL")
+            || line.contains("Crash")
+        {
+            "ERROR"
+        } else if line.contains("[WARN]") {
+            "WARN"
+        } else if line.contains("[DEBUG]") {
+            "DEBUG"
+        } else {
+            "INFO"
+        };
+
+        crate::logger::log_minecraft(&line, level);
+
+        if level == "ERROR" {
+            highest_level = "ERROR";
+        } else if level == "WARN" && highest_level != "ERROR" {
+            highest_level = "WARN";
+        } else if level == "DEBUG" && highest_level == "INFO" {
+            highest_level = "DEBUG";
+        }
+
+        batch_lines.push(line);
+
+        if batch_lines.len() >= BATCH_MAX_SIZE || last_flush.elapsed() >= BATCH_FLUSH_INTERVAL {
+            let joined = batch_lines.join("\n");
+            emit_cb(&joined, highest_level);
+            batch_lines.clear();
+            highest_level = default_level.unwrap_or("INFO");
+            last_flush = Instant::now();
+        }
+    }
+
+    if !batch_lines.is_empty() {
+        let joined = batch_lines.join("\n");
+        emit_cb(&joined, highest_level);
+    }
+}
+
 fn spawn_stdout_streamer(app: AppHandle, stdout: std::process::ChildStdout) {
     thread::spawn(move || {
         let reader = BufReader::new(stdout);
-        for line in reader.lines().map_while(Result::ok) {
-            let level = if line.contains("[ERROR]")
-                || line.contains(" Exception")
-                || line.contains("FATAL")
-                || line.contains("Crash")
-            {
-                "ERROR"
-            } else if line.contains("[WARN]") {
-                "WARN"
-            } else if line.contains("[DEBUG]") {
-                "DEBUG"
-            } else {
-                "INFO"
-            };
-
-            crate::logger::log_minecraft(&line, level);
+        process_stream_reader(reader, None, |lines, level| {
             let _ = app.emit(
                 "game-log",
                 GameLogPayload {
-                    line,
+                    line: lines.to_string(),
                     level: level.to_string(),
                 },
             );
-        }
+        });
     });
 }
 
 fn spawn_stderr_streamer(app: AppHandle, stderr: std::process::ChildStderr) {
     thread::spawn(move || {
         let reader = BufReader::new(stderr);
-        for line in reader.lines().map_while(Result::ok) {
-            crate::logger::log_minecraft(&line, "ERROR");
+        process_stream_reader(reader, Some("ERROR"), |lines, level| {
             let _ = app.emit(
                 "game-log",
                 GameLogPayload {
-                    line,
-                    level: "ERROR".to_string(),
+                    line: lines.to_string(),
+                    level: level.to_string(),
                 },
             );
-        }
+        });
     });
 }
 
@@ -671,6 +709,9 @@ pub fn apply_os_optimizations(pid: u32) {
     }
 }
 
+#[cfg(not(target_os = "windows"))]
+pub fn apply_os_optimizations(_pid: u32) {}
+
 #[cfg(target_os = "windows")]
 #[repr(C)]
 struct ProcessPowerThrottlingState {
@@ -896,3 +937,96 @@ mod tests {
     }
 }
 
+#[cfg(test)]
+mod streamer_benchmarks {
+    use super::*;
+    use std::io::Cursor;
+
+    pub fn unbatched_stream_sim<R: BufRead>(reader: R) -> (usize, usize) {
+        let mut emit_count = 0;
+        let mut line_count = 0;
+        for line in reader.lines().map_while(Result::ok) {
+            line_count += 1;
+            let level = if line.contains("[ERROR]")
+                || line.contains(" Exception")
+                || line.contains("FATAL")
+                || line.contains("Crash")
+            {
+                "ERROR"
+            } else if line.contains("[WARN]") {
+                "WARN"
+            } else if line.contains("[DEBUG]") {
+                "DEBUG"
+            } else {
+                "INFO"
+            };
+
+            crate::logger::log_minecraft(&line, level);
+            emit_count += 1; // Simulating app.emit per line
+        }
+        (line_count, emit_count)
+    }
+
+    pub fn batched_stream_sim<R: BufRead>(reader: R) -> (usize, usize) {
+        let mut emit_count = 0;
+        let mut line_count = 0;
+
+        let mut data_lines = Vec::new();
+        for line in reader.lines().map_while(Result::ok) {
+            line_count += 1;
+            data_lines.push(line);
+        }
+
+        let full_text = data_lines.join("\n");
+        let cursor = Cursor::new(full_text);
+
+        process_stream_reader(cursor, None, |_joined_lines, _level| {
+            emit_count += 1;
+        });
+
+        (line_count, emit_count)
+    }
+
+    #[test]
+    fn benchmark_batched_vs_unbatched_log_stream() {
+        let mut data = String::with_capacity(5_000_000);
+        for i in 0..50_000 {
+            if i % 100 == 0 {
+                data.push_str("[ERROR] Exception in thread main java.lang.NullPointerException\n");
+            } else if i % 10 == 0 {
+                data.push_str("[WARN] Can't keep up! Is the server overloaded?\n");
+            } else {
+                data.push_str("[INFO] [Client thread/INFO]: Loaded 1024 chunks into world cache\n");
+            }
+        }
+
+        let start_unbatched = Instant::now();
+        let cursor_unbatched = Cursor::new(data.clone());
+        let (lines_u, emits_u) = unbatched_stream_sim(cursor_unbatched);
+        let elapsed_unbatched = start_unbatched.elapsed();
+
+        let start_batched = Instant::now();
+        let cursor_batched = Cursor::new(data);
+        let (lines_b, emits_b) = batched_stream_sim(cursor_batched);
+        let elapsed_batched = start_batched.elapsed();
+
+        println!("--- BENCHMARK COMPARISON ---");
+        println!(
+            "Unbatched: {} lines in {:?} (Emits: {}) - {:.2} lines/sec",
+            lines_u,
+            elapsed_unbatched,
+            emits_u,
+            lines_u as f64 / elapsed_unbatched.as_secs_f64()
+        );
+        println!(
+            "Batched:   {} lines in {:?} (Emits: {}) - {:.2} lines/sec",
+            lines_b,
+            elapsed_batched,
+            emits_b,
+            lines_b as f64 / elapsed_batched.as_secs_f64()
+        );
+
+        assert_eq!(lines_u, lines_b);
+        assert!(emits_b < emits_u);
+    }
+}
