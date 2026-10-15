@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import {
   launcherActions,
+  useT,
   type DockButtonId,
   type DockButtonEffect,
   type DockButtonCustomization,
@@ -70,6 +71,7 @@ export const DockButtonInspectorBgTab: React.FC<BgTabProps> = ({
   dockBgInputRef,
   setUploadStatus,
 }) => {
+  const t = useT();
   const handleDockBgUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -378,7 +380,7 @@ export const DockButtonInspectorBgTab: React.FC<BgTabProps> = ({
             <input
               id={`dock-custom-color-${buttonId}`}
               type="color"
-              aria-label="Color personalizado de fondo"
+              aria-label={t.hudEditor.customBgColor}
               value={
                 /^#[0-9A-Fa-f]{6}$/.test(customization.bgColor ?? '')
                   ? customization.bgColor
@@ -420,7 +422,7 @@ export const DockButtonInspectorBgTab: React.FC<BgTabProps> = ({
           </div>
           <input
             type="range"
-            aria-label="Opacidad de Vídeo"
+            aria-label={t.hudEditor.videoOpacity}
             min="0.1"
             max="1"
             step="0.05"
@@ -485,7 +487,9 @@ export const DockButtonInspectorIconTab: React.FC<IconTabProps> = ({
   buttonId,
   customization,
   iconFileInputRef,
-}) => (
+}) => {
+  const t = useT();
+  return (
   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
     <button
       type="button"
@@ -587,7 +591,7 @@ export const DockButtonInspectorIconTab: React.FC<IconTabProps> = ({
       </div>
       <input
         type="range"
-        aria-label="Escala del Icono"
+        aria-label={t.hudEditor.iconScale}
         min="0.5"
         max="2"
         step="0.05"
@@ -601,7 +605,8 @@ export const DockButtonInspectorIconTab: React.FC<IconTabProps> = ({
       />
     </div>
   </div>
-);
+  );
+};
 
 // ─────────────────────────────────────────────────────────────
 // TAB 3: EFECTOS VISUALES FX
@@ -663,7 +668,9 @@ export const DockButtonInspectorShapeTab: React.FC<ShapeTabProps> = ({
   buttonId,
   dockConfig,
   customization,
-}) => (
+}) => {
+  const t = useT();
+  return (
   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
     <div
       style={{
@@ -774,7 +781,7 @@ export const DockButtonInspectorShapeTab: React.FC<ShapeTabProps> = ({
       </div>
       <input
         type="range"
-        aria-label="Borde Redondeado"
+        aria-label={t.hudEditor.borderRadius}
         min="0"
         max="40"
         value={customization.borderRadius ?? 14}
@@ -802,7 +809,7 @@ export const DockButtonInspectorShapeTab: React.FC<ShapeTabProps> = ({
       </div>
       <input
         type="range"
-        aria-label="Rotación"
+        aria-label={t.hudEditor.rotation}
         min="-30"
         max="30"
         value={customization.rotation ?? 0}
@@ -815,4 +822,5 @@ export const DockButtonInspectorShapeTab: React.FC<ShapeTabProps> = ({
       />
     </div>
   </div>
-);
+  );
+};

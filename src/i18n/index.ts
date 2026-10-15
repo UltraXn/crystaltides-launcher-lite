@@ -51,6 +51,14 @@ export const translations = {
       hideText: 'Sin Texto',
       opacity: 'Opacidad',
       borderRadius: 'Bordes',
+      posY: 'Posición Vertical (Y)',
+      posX: 'Posición Horizontal (X)',
+      zoomScale: 'Zoom / Escala',
+      bgOpacity: 'Opacidad de Fondo',
+      videoOpacity: 'Opacidad de Vídeo',
+      iconScale: 'Escala del Icono',
+      rotation: 'Rotación',
+      customBgColor: 'Color personalizado de fondo',
     },
     // Bottom Bar
     bottomBar: {
@@ -442,6 +450,14 @@ export const translations = {
       hideText: 'No Text',
       opacity: 'Opacity',
       borderRadius: 'Radius',
+      posY: 'Vertical Position (Y)',
+      posX: 'Horizontal Position (X)',
+      zoomScale: 'Zoom / Scale',
+      bgOpacity: 'Background Opacity',
+      videoOpacity: 'Video Opacity',
+      iconScale: 'Icon Scale',
+      rotation: 'Rotation',
+      customBgColor: 'Custom background color',
     },
     // Bottom Bar
     bottomBar: {
