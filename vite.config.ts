@@ -15,11 +15,24 @@ export default defineConfig({
     sourcemap: false,
     target: "es2020",
     cssCodeSplit: true,
-    chunkSizeWarningLimit: 600,
+    chunkSizeWarningLimit: 500,
     rollupOptions: {
       output: {
-        manualChunks: {
-          "vendor-react": ["react", "react-dom"],
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('react') || id.includes('react-dom') || id.includes('scheduler')) {
+              return 'vendor-react';
+            }
+            if (id.includes('lucide-react')) {
+              return 'vendor-icons';
+            }
+            if (id.includes('@tauri-apps')) {
+              return 'vendor-tauri';
+            }
+            if (id.includes('dompurify') || id.includes('jose')) {
+              return 'vendor-security';
+            }
+          }
         },
       },
     },

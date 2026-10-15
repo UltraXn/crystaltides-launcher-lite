@@ -62,6 +62,7 @@ export const fetchVanillaVersions = async (includeSnapshots = false): Promise<st
 export function parseLoaderList(parsed: unknown, includeBetas = false): string[] {
   if (!Array.isArray(parsed) || parsed.length === 0) return [];
   const results: string[] = [];
+  const seen = new Set<string>();
 
   for (const item of parsed) {
     if (!item || typeof item !== "object") continue;
@@ -83,7 +84,8 @@ export function parseLoaderList(parsed: unknown, includeBetas = false): string[]
     if (!includeBetas && isBeta) {
       continue;
     }
-    if (!results.includes(version)) {
+    if (!seen.has(version)) {
+      seen.add(version);
       results.push(version);
     }
   }
