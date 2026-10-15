@@ -74,7 +74,7 @@ export const SettingsPersonalizationSection: React.FC<SettingsPersonalizationSec
             className="settings-label-title"
             style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
           >
-            <Sparkles size={14} style={{ color: '#38bdf8' }} />
+            <Sparkles size={14} style={{ color: '#16A085' }} />
             Fondo de Pantalla & Personalización
           </span>
           {customWallpaperUrl && (
@@ -123,7 +123,7 @@ export const SettingsPersonalizationSection: React.FC<SettingsPersonalizationSec
                 <span className="wallpaper-preset-title">{wp.name}</span>
                 {isSelected && (
                   <div style={{ position: 'absolute', top: '6px', right: '6px', zIndex: 2 }}>
-                    <CheckCircle2 size={14} color="#38bdf8" />
+                    <CheckCircle2 size={14} color="#16A085" />
                   </div>
                 )}
               </div>
@@ -163,7 +163,7 @@ export const SettingsPersonalizationSection: React.FC<SettingsPersonalizationSec
             {customWallpaperUrl && (
               <div className="wallpaper-active-badge">
                 {isVideoWallpaper || isVideoSource(customWallpaperUrl) ? (
-                  <Film size={12} color="#00e5ff" />
+                  <Film size={12} color="#16A085" />
                 ) : (
                   <CheckCircle2 size={12} />
                 )}
@@ -179,8 +179,8 @@ export const SettingsPersonalizationSection: React.FC<SettingsPersonalizationSec
                 marginTop: '12px',
                 padding: '10px 14px',
                 borderRadius: '8px',
-                background: 'rgba(0, 229, 255, 0.05)',
-                border: '1px solid rgba(0, 229, 255, 0.2)',
+                background: 'rgba(21, 61, 76, 0.25)',
+                border: '1px solid rgba(22, 160, 133, 0.35)',
               }}
             >
               <div
@@ -201,7 +201,7 @@ export const SettingsPersonalizationSection: React.FC<SettingsPersonalizationSec
                     gap: '6px',
                   }}
                 >
-                  <Film size={12} color="#00e5ff" />
+                  <Film size={12} color="#16A085" />
                   Audio del Vídeo de Fondo:
                 </span>
                 <button
@@ -215,11 +215,11 @@ export const SettingsPersonalizationSection: React.FC<SettingsPersonalizationSec
                     borderRadius: '6px',
                     background: wallpaperMuted
                       ? 'rgba(239, 68, 68, 0.15)'
-                      : 'rgba(0, 229, 255, 0.15)',
+                      : 'rgba(22, 160, 133, 0.18)',
                     border: wallpaperMuted
                       ? '1px solid rgba(239, 68, 68, 0.3)'
-                      : '1px solid rgba(0, 229, 255, 0.3)',
-                    color: wallpaperMuted ? '#f87171' : '#38bdf8',
+                      : '1px solid rgba(22, 160, 133, 0.45)',
+                    color: wallpaperMuted ? '#f87171' : '#16A085',
                     fontSize: '11px',
                     cursor: 'pointer',
                     transition:
@@ -243,12 +243,13 @@ export const SettingsPersonalizationSection: React.FC<SettingsPersonalizationSec
                     launcherActions.setWallpaperVolume(parseFloat(e.target.value));
                   }}
                   aria-label="Volumen del fondo de pantalla"
-                  style={{ flex: 1, accentColor: '#00e5ff', cursor: 'pointer' }}
+                  style={{ flex: 1, accentColor: '#16A085', cursor: 'pointer' }}
                 />
                 <span
                   style={{
                     fontSize: '10px',
-                    color: 'rgba(248, 250, 252, 0.7)',
+                    color: '#16A085',
+                    fontWeight: 600,
                     width: '32px',
                     textAlign: 'right',
                     fontVariantNumeric: 'tabular-nums',
@@ -326,15 +327,15 @@ export const SettingsPersonalizationSection: React.FC<SettingsPersonalizationSec
             <Palette size={14} style={{ color: accentColor }} />
             Color de Acento & Iluminación
           </span>
-          {accentColor.toLowerCase() !== '#00e5ff' && (
+          {accentColor.toLowerCase() !== '#16a085' && (
             <button
               type="button"
-              onClick={() => launcherActions.setAccentColor('#00e5ff')}
+              onClick={() => launcherActions.setAccentColor('#16A085')}
               className="wallpaper-reset-btn"
-              title="Restablecer color cian oficial"
+              title="Restablecer color jade oficial"
             >
               <RotateCcw size={12} />
-              Restablecer a Cian
+              Restablecer a Jade
             </button>
           )}
         </div>
@@ -444,7 +445,7 @@ export const SettingsPersonalizationSection: React.FC<SettingsPersonalizationSec
                 }
                 className={`dock-preset-pill ${guiTheme.fontFamily === font.id ? 'active' : ''}`}
               >
-                {guiTheme.fontFamily === font.id && <Check size={12} color="#38bdf8" />}
+                {guiTheme.fontFamily === font.id && <Check size={12} color="#16A085" />}
                 <span>{font.label}</span>
               </button>
             ))}
@@ -466,10 +467,10 @@ export const SettingsPersonalizationSection: React.FC<SettingsPersonalizationSec
           </span>
           <div className="dock-preset-group" style={{ margin: 0, flexWrap: 'wrap' }}>
             {[
-              { id: 'obsidian', label: 'Obsidiana Profunda', hex: '#0a0f18' },
-              { id: 'midnight', label: 'Medianoche Azul', hex: '#081224' },
+              { id: 'obsidian', label: 'Obsidiana Abisal', hex: '#140C30' },
+              { id: 'midnight', label: 'Medianoche Océano', hex: '#14253E' },
               { id: 'amethyst', label: 'Amatista Cyber', hex: '#160a24' },
-              { id: 'emerald', label: 'Esmeralda Abisal', hex: '#061a12' },
+              { id: 'emerald', label: 'Petróleo Abisal', hex: '#153D4C' },
               { id: 'crimson', label: 'Carmesí Nether', hex: '#20080e' },
             ].map((bg) => (
               <button
@@ -492,7 +493,7 @@ export const SettingsPersonalizationSection: React.FC<SettingsPersonalizationSec
             ))}
 
             <CustomColorPicker
-              color={guiTheme.customBgColor || '#0a0f18'}
+              color={guiTheme.customBgColor || '#140C30'}
               onChange={(hex) =>
                 launcherActions.setGuiTheme({
                   bgMode: 'custom',
@@ -521,7 +522,7 @@ export const SettingsPersonalizationSection: React.FC<SettingsPersonalizationSec
             {[
               { id: 'subtle', label: 'Sutil (Translúcido)' },
               { id: 'accent', label: `Acento Dinámico (${accentColor.toUpperCase()})` },
-              { id: 'cyan', label: 'Cian Cristalino' },
+              { id: 'cyan', label: 'Jade Abisal' },
               { id: 'amber', label: 'Oro Solar' },
             ].map((b) => (
               <button
@@ -530,13 +531,13 @@ export const SettingsPersonalizationSection: React.FC<SettingsPersonalizationSec
                 onClick={() => launcherActions.setGuiTheme({ borderMode: b.id as GuiBorderPreset })}
                 className={`dock-preset-pill ${guiTheme.borderMode === b.id ? 'active' : ''}`}
               >
-                {guiTheme.borderMode === b.id && <Check size={12} color="#38bdf8" />}
+                {guiTheme.borderMode === b.id && <Check size={12} color="#16A085" />}
                 <span>{b.label}</span>
               </button>
             ))}
 
             <CustomColorPicker
-              color={guiTheme.customBorderColor || '#00e5ff'}
+              color={guiTheme.customBorderColor || '#16A085'}
               onChange={(hex) =>
                 launcherActions.setGuiTheme({
                   borderMode: 'custom',

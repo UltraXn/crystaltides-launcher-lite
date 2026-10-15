@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import logoImg from '../../assets/logo.png';
+import logoImg from '../../assets/logo.webp';
 import { Minus, X, FolderOpen, CheckCircle2, ChevronDown } from 'lucide-react';
 import { AmbientBubbles } from '../common/AmbientBubbles';
 

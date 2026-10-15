@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import React from 'react';
 import { SettingsModal } from '../SettingsModal';
-import { useLauncherStore, launcherActions } from '../../../store/launcherStore';
+import { launcherActions } from '../../../store/launcherStore';
 import { useModuleStore, initializeBuiltinModules } from '../../../modules';
 
 describe('Plugin & Module SDK in SettingsModal', () => {

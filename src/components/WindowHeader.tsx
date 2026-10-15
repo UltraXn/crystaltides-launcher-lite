@@ -1,6 +1,6 @@
 import React from "react";
 import { Minus, Square, X, Move, Check } from "lucide-react";
-import logoImg from "../assets/logo.png";
+import logoImg from "../assets/logo.webp";
 import { useLauncherStore, launcherActions, LauncherState, useT } from "../store/launcherStore";
 import { TelemetryCapsule } from "./TelemetryCapsule";
 

@@ -12,6 +12,7 @@ import {
   Layers,
   Flame,
   Ban,
+  Trash2,
 } from 'lucide-react';
 import {
   launcherActions,
@@ -20,7 +21,11 @@ import {
   type DockButtonCustomization,
   type LauncherState,
 } from '../../store/launcherStore';
-import { saveDockPanoramaFile, clearButtonMedia } from '../../utils/wallpaperStorage';
+import {
+  saveDockPanoramaFile,
+  clearButtonMedia,
+  clearDockPanorama,
+} from '../../utils/wallpaperStorage';
 import { DockBackgroundAdjuster } from '../hud/DockBackgroundAdjuster';
 
 export const COLOR_PRESETS = [
@@ -68,6 +73,7 @@ export const DockButtonInspectorBgTab: React.FC<BgTabProps> = ({
   const handleDockBgUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    e.target.value = '';
 
     try {
       setUploadStatus('Cargando fondo de barra...');
@@ -86,7 +92,7 @@ export const DockButtonInspectorBgTab: React.FC<BgTabProps> = ({
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', paddingBottom: '8px' }}>
       <input
         ref={dockBgInputRef}
         type="file"
@@ -212,11 +218,87 @@ export const DockButtonInspectorBgTab: React.FC<BgTabProps> = ({
               )}
             </button>
             <DockBackgroundAdjuster />
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: '6px',
+                marginTop: '4px',
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  if (dockBgInputRef.current) {
+                    dockBgInputRef.current.value = '';
+                    dockBgInputRef.current.click();
+                  }
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  padding: '7px 8px',
+                  borderRadius: '7px',
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid rgba(255, 255, 255, 0.12)',
+                  color: '#e2e8f0',
+                  fontSize: '10.5px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <Upload size={12} />
+                <span>Cambiar Fondo</span>
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    setUploadStatus('Eliminando fondo...');
+                    await clearDockPanorama();
+                    launcherActions.clearDockBackground();
+                    launcherActions.resetDockBackgroundTransform();
+                    setUploadStatus('¡Fondo eliminado!');
+                    setTimeout(() => setUploadStatus(null), 2000);
+                  } catch (err) {
+                    console.error('Error clearing dock panorama:', err);
+                    setUploadStatus('Error al eliminar');
+                    setTimeout(() => setUploadStatus(null), 3000);
+                  }
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  padding: '7px 8px',
+                  borderRadius: '7px',
+                  background: 'rgba(239, 68, 68, 0.12)',
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                  color: '#f87171',
+                  fontSize: '10.5px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <Trash2 size={12} />
+                <span>Quitar Fondo de Barra</span>
+              </button>
+            </div>
           </>
         ) : (
           <button
             type="button"
-            onClick={() => dockBgInputRef.current?.click()}
+            onClick={() => {
+              if (dockBgInputRef.current) {
+                dockBgInputRef.current.value = '';
+                dockBgInputRef.current.click();
+              }
+            }}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -377,6 +459,8 @@ export const DockButtonInspectorBgTab: React.FC<BgTabProps> = ({
             alignItems: 'center',
             justifyContent: 'center',
             gap: '6px',
+            flexShrink: 0,
+            width: '100%',
           }}
         >
           <RotateCcw size={12} />
@@ -626,11 +710,11 @@ export const DockButtonInspectorShapeTab: React.FC<ShapeTabProps> = ({
         style={{
           background: customization.hideLabel
             ? 'rgba(255, 255, 255, 0.06)'
-            : 'rgba(56, 189, 248, 0.15)',
+            : 'rgba(22, 160, 133, 0.15)',
           border: customization.hideLabel
             ? '1px solid rgba(255, 255, 255, 0.14)'
-            : '1px solid rgba(56, 189, 248, 0.35)',
-          color: customization.hideLabel ? '#94a3b8' : '#38bdf8',
+            : '1px solid rgba(22, 160, 133, 0.35)',
+          color: customization.hideLabel ? '#94a3b8' : 'var(--accent-primary, #16A085)',
           borderRadius: '6px',
           padding: '4px 8px',
           fontSize: '10.5px',

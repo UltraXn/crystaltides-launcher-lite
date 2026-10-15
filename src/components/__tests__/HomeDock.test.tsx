@@ -252,11 +252,34 @@ describe('HomeDock Component & Helpers Suite', () => {
       }
     });
 
-    it('renderiza handles de redimensionado y arrastre en modo de edición HUD', () => {
-      useLauncherStore.setState({ isEditingHud: true, selectedDockButtonId: 'settings' });
+    it('renderiza handles de redimensionado y arrastre en modo de edición HUD con accentColor', () => {
+      useLauncherStore.setState({
+        isEditingHud: true,
+        selectedDockButtonId: 'settings',
+        accentColor: '#16A085',
+      });
       const { container } = render(<HomeDock />);
 
       expect(container.firstChild).not.toBeNull();
+      const selectionFrame =
+        container.querySelector('div[style*="border: 2px solid rgb(22, 160, 133)"]') ||
+        container.querySelector('div[style*="border: 2px solid #16A085"]');
+      expect(selectionFrame).not.toBeNull();
+    });
+
+    it('oculta la etiqueta del botón cuando se redimensiona a dimensiones compactas', () => {
+      useLauncherStore.setState({
+        dockConfig: {
+          ...useLauncherStore.getState().dockConfig,
+          showLabels: true,
+          buttonCustomizations: {
+            settings: { customHeight: 50, customWidth: 50 },
+          },
+        },
+      });
+
+      render(<HomeDock />);
+      expect(screen.queryByText(/Ajustes/i)).toBeNull();
     });
 
     it('renderiza en modo free_buttons flotante con posiciones individuales', () => {

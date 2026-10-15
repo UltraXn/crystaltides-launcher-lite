@@ -107,7 +107,7 @@ export const MinecraftOficialLogo: React.FC<{ size?: number; style?: React.CSSPr
  */
 export const CrystalTidesLogo: React.FC<{ size?: number; style?: React.CSSProperties }> = ({ size = 16, style }) => (
   <img
-    src="/logo.png"
+    src="/logo.webp"
     alt="CrystalTides"
     width={size}
     height={size}

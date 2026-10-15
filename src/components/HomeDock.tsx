@@ -11,7 +11,6 @@ import {
   GripHorizontal,
   Sliders,
   AlertTriangle,
-  Sparkles,
 } from 'lucide-react';
 import {
   useLauncherStore,
@@ -81,6 +80,7 @@ interface FreeButtonElementProps {
   isSelected: boolean;
   inspectorTab: InspectorTab;
   onCloseInspector: () => void;
+  accentColor?: string;
 }
 
 interface FreeButtonCoordBadgeProps {
@@ -88,6 +88,7 @@ interface FreeButtonCoordBadgeProps {
   isColliding: boolean;
   pos: { x: number; y: number };
   collisionLabel: string;
+  accentColor?: string;
 }
 
 export const FreeButtonCoordBadge: React.FC<FreeButtonCoordBadgeProps> = ({
@@ -95,8 +96,10 @@ export const FreeButtonCoordBadge: React.FC<FreeButtonCoordBadgeProps> = ({
   isColliding,
   pos,
   collisionLabel,
+  accentColor,
 }) => {
   const isDanger = isDraggingThis && isColliding;
+  const badgeColor = accentColor || '#16A085';
   return (
     <div
       style={{
@@ -105,12 +108,12 @@ export const FreeButtonCoordBadge: React.FC<FreeButtonCoordBadgeProps> = ({
         left: '50%',
         transform: 'translateX(-50%)',
         background: isDanger ? 'rgba(239, 68, 68, 0.95)' : 'rgba(10, 14, 22, 0.9)',
-        border: isDanger ? '1px solid #f87171' : '1px solid #38bdf8',
+        border: isDanger ? '1px solid #f87171' : `1px solid ${badgeColor}`,
         borderRadius: '4px',
         padding: '1px 6px',
         fontSize: '9px',
         fontWeight: 700,
-        color: isDanger ? '#ffffff' : '#38bdf8',
+        color: isDanger ? '#ffffff' : badgeColor,
         whiteSpace: 'nowrap',
         pointerEvents: 'none',
         boxShadow: isDanger ? '0 0 12px rgba(239, 68, 68, 0.6)' : 'none',
@@ -198,6 +201,7 @@ const FreeButtonElement: React.FC<FreeButtonElementProps> = ({
   isSelected,
   inspectorTab,
   onCloseInspector,
+  accentColor,
 }) => {
   const buttonClasses = resolveFreeButtonClasses(isLaunch, isRunning, isLaunching, effectClass);
   const borderStyle = resolveFreeButtonBorder(
@@ -207,12 +211,14 @@ const FreeButtonElement: React.FC<FreeButtonElementProps> = ({
     btnCustom,
     customBtnColor,
     dockConfig.dockBorderColorMode,
+    accentColor,
   );
   const shadowStyle = resolveFreeButtonShadow(
     isEditingHud,
     isDraggingThis,
     isColliding,
     customBtnColor,
+    accentColor,
   );
   const cursorStyle = resolveButtonCursor(isEditingHud, isDraggingThis);
 
@@ -272,18 +278,12 @@ const FreeButtonElement: React.FC<FreeButtonElementProps> = ({
         )}
 
         {isEditingHud && (
-          <div className="dock-edit-badge">
-            <Sparkles size={8} />
-            <span>Editar</span>
-          </div>
-        )}
-
-        {isEditingHud && (
           <FreeButtonCoordBadge
             isDraggingThis={isDraggingThis}
             isColliding={isColliding}
             pos={pos}
             collisionLabel={t.hudEditor.collision}
+            accentColor={accentColor}
           />
         )}
 
@@ -294,8 +294,10 @@ const FreeButtonElement: React.FC<FreeButtonElementProps> = ({
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
+            justifyContent: 'center',
             gap: '4px',
             width: '100%',
+            height: '100%',
             pointerEvents: isEditingHud ? 'auto' : 'none',
           }}
         >
@@ -347,6 +349,7 @@ interface FreeButtonsLayoutProps {
   startSubtleBg: string;
   startColor: string;
   getButtonCustomColor: (btnId: DockButtonId) => string | null | undefined;
+  accentColor?: string;
 }
 
 const FreeButtonsLayout: React.FC<FreeButtonsLayoutProps> = ({
@@ -376,6 +379,7 @@ const FreeButtonsLayout: React.FC<FreeButtonsLayoutProps> = ({
   startSubtleBg,
   startColor,
   getButtonCustomColor,
+  accentColor,
 }) => {
   const allFreeButtons = useMemo(() => {
     const modButtonIds = (activeModuleButtons || []).map(
@@ -451,6 +455,7 @@ const FreeButtonsLayout: React.FC<FreeButtonsLayoutProps> = ({
             isSelected={selectedDockButtonId === btnId}
             inspectorTab={inspectorTab}
             onCloseInspector={onCloseInspector}
+            accentColor={accentColor}
           />
         );
       })}
@@ -493,6 +498,7 @@ interface GroupedDockLayoutProps {
   accentColor: string;
   showLabels: boolean;
   labelFontSize: string;
+  isButtonLabelVisible?: (btnId: DockButtonId) => boolean;
 }
 
 const GroupedDockLayout: React.FC<GroupedDockLayoutProps> = ({
@@ -527,6 +533,7 @@ const GroupedDockLayout: React.FC<GroupedDockLayoutProps> = ({
   accentColor,
   showLabels,
   labelFontSize,
+  isButtonLabelVisible,
 }) => {
   const dockZIndex = resolveButtonZIndex(draggingTarget === 'dock', isEditingHud);
   const dockBorder = resolveDockBorder(isEditingHud, dockConfig.dockBorderColorMode);
@@ -577,7 +584,7 @@ const GroupedDockLayout: React.FC<GroupedDockLayoutProps> = ({
               border: '1px solid rgba(255, 255, 255, 0.16)',
               borderRadius: '20px',
               padding: '4px 10px',
-              boxShadow: '0 8px 30px rgba(0, 0, 0, 0.7), 0 0 16px rgba(0, 229, 255, 0.12)',
+              boxShadow: `0 8px 30px rgba(0, 0, 0, 0.7), 0 0 16px ${accentColor}25`,
               animation: 'fadeInUpPill 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards',
               whiteSpace: 'nowrap',
             }}
@@ -588,7 +595,7 @@ const GroupedDockLayout: React.FC<GroupedDockLayoutProps> = ({
               style={{
                 background: 'transparent',
                 border: 'none',
-                color: '#38bdf8',
+                color: accentColor,
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
@@ -774,13 +781,6 @@ const GroupedDockLayout: React.FC<GroupedDockLayoutProps> = ({
                   />
                 )}
 
-                {isEditingHud && (
-                  <div className="dock-edit-badge">
-                    <Sparkles size={8} />
-                    <span>Editar</span>
-                  </div>
-                )}
-
                 <div
                   style={{
                     position: 'relative',
@@ -788,8 +788,10 @@ const GroupedDockLayout: React.FC<GroupedDockLayoutProps> = ({
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
+                    justifyContent: 'center',
                     gap: '4px',
                     width: '100%',
+                    height: '100%',
                     pointerEvents: isEditingHud ? 'auto' : 'none',
                   }}
                 >
@@ -836,7 +838,9 @@ const GroupedDockLayout: React.FC<GroupedDockLayoutProps> = ({
               <div className="dock-icon-wrapper" style={{ color: modCustomColor }}>
                 {slot.icon}
               </div>
-              {showLabels && (
+              {(isButtonLabelVisible
+                ? isButtonLabelVisible(`mod:${mod.id}` as unknown as DockButtonId)
+                : showLabels) && (
                 <span
                   className="dock-label"
                   style={{
@@ -1042,6 +1046,8 @@ export const HomeDock: React.FC = () => {
   useEffect(() => {
     if (!resizing) return;
 
+    let currentDims = { width: resizing.startWidth, height: resizing.startHeight };
+
     const handleMouseMove = (e: MouseEvent) => {
       const deltaX = e.clientX - resizing.startX;
       const deltaY = e.clientY - resizing.startY;
@@ -1056,14 +1062,23 @@ export const HomeDock: React.FC = () => {
         newH = Math.max(46, Math.min(280, Math.round(resizing.startHeight + deltaY)));
       }
 
-      setLiveResizeDims({ width: newW, height: newH });
-      launcherActions.setDockButtonCustomization(resizing.btnId, {
-        customWidth: newW,
-        customHeight: newH,
-      });
+      currentDims = { width: newW, height: newH };
+      setLiveResizeDims(currentDims);
     };
 
     const handleMouseUp = () => {
+      const finalW = currentDims.width;
+      const finalH = currentDims.height;
+      const autoHide = finalH < 62 || finalW < 70;
+      const currentConfig = useLauncherStore.getState().dockConfig;
+      const currentBtnCustom = currentConfig.buttonCustomizations?.[resizing.btnId];
+
+      launcherActions.setDockButtonCustomization(resizing.btnId, {
+        customWidth: finalW,
+        customHeight: finalH,
+        ...(currentBtnCustom?.hideLabel !== autoHide ? { hideLabel: autoHide } : {}),
+      });
+
       setResizing(null);
       setLiveResizeDims(null);
     };
@@ -1400,12 +1415,22 @@ export const HomeDock: React.FC = () => {
     return renderDefaultIconWrapper(defaultIcon, scale, handleIconLayerClick);
   };
 
+  const isButtonLabelVisible = (btnId: DockButtonId) => {
+    if (!showLabels) return false;
+    const btnCustom = dockConfig.buttonCustomizations?.[btnId];
+    if (btnCustom?.hideLabel) return false;
+    if (btnCustom?.customHeight !== undefined && btnCustom.customHeight < 62) return false;
+    if (btnCustom?.customWidth !== undefined && btnCustom.customWidth < 70) return false;
+    return true;
+  };
+
   // Helper to render interactive corner resize handles and selection frame
   const renderResizeHandles = (btnId: DockButtonId) => {
     if (!isEditingHud || selectedDockButtonId !== btnId) return null;
 
     const isCurrentResizing = resizing?.btnId === btnId;
     const currentDims = isCurrentResizing && liveResizeDims ? liveResizeDims : null;
+    const handleColor = accentColor || '#16A085';
 
     return (
       <>
@@ -1414,9 +1439,9 @@ export const HomeDock: React.FC = () => {
           style={{
             position: 'absolute',
             inset: '-3px',
-            border: '2px solid #00e5ff',
+            border: `2px solid ${handleColor}`,
             borderRadius: 'inherit',
-            boxShadow: '0 0 14px rgba(0, 229, 255, 0.5)',
+            boxShadow: `0 0 14px ${handleColor}80`,
             pointerEvents: 'none',
             zIndex: 40,
           }}
@@ -1431,12 +1456,12 @@ export const HomeDock: React.FC = () => {
               left: '50%',
               transform: 'translateX(-50%)',
               background: 'rgba(10, 14, 23, 0.95)',
-              border: '1px solid #00e5ff',
+              border: `1px solid ${handleColor}`,
               borderRadius: '6px',
               padding: '2px 8px',
               fontSize: '11px',
               fontWeight: 800,
-              color: '#00e5ff',
+              color: handleColor,
               whiteSpace: 'nowrap',
               boxShadow: '0 4px 15px rgba(0, 0, 0, 0.85)',
               pointerEvents: 'none',
@@ -1444,6 +1469,9 @@ export const HomeDock: React.FC = () => {
             }}
           >
             {currentDims.width} × {currentDims.height} px
+            {(currentDims.height < 62 || currentDims.width < 70) && (
+              <span style={{ opacity: 0.8, fontWeight: 500 }}> • Sin texto</span>
+            )}
           </div>
         )}
 
@@ -1459,12 +1487,12 @@ export const HomeDock: React.FC = () => {
             bottom: '-6px',
             width: '14px',
             height: '14px',
-            background: '#00e5ff',
+            background: handleColor,
             border: '2px solid #0a0f18',
             borderRadius: '3px',
             cursor: 'nwse-resize',
             zIndex: 50,
-            boxShadow: '0 0 8px #00e5ff',
+            boxShadow: `0 0 8px ${handleColor}`,
             padding: 0,
           }}
         />
@@ -1482,7 +1510,7 @@ export const HomeDock: React.FC = () => {
             transform: 'translateY(-50%)',
             width: '10px',
             height: '22px',
-            background: 'rgba(0, 229, 255, 0.9)',
+            background: handleColor,
             border: '2px solid #0a0f18',
             borderRadius: '3px',
             cursor: 'ew-resize',
@@ -1504,7 +1532,7 @@ export const HomeDock: React.FC = () => {
             transform: 'translateX(-50%)',
             width: '22px',
             height: '10px',
-            background: 'rgba(0, 229, 255, 0.9)',
+            background: handleColor,
             border: '2px solid #0a0f18',
             borderRadius: '3px',
             cursor: 'ns-resize',
@@ -1518,7 +1546,7 @@ export const HomeDock: React.FC = () => {
 
   const renderInstancesButton = (customColor?: string | null) => {
     const iconColor = customColor ?? (activeInstance?.isOfficial ? accentColor : '#22c55e');
-    const shouldShowLabel = showLabels && !dockConfig.buttonCustomizations?.instances?.hideLabel;
+    const shouldShowLabel = isButtonLabelVisible('instances');
 
     const defaultIcon = activeInstance?.loaderType ? (
       <LoaderLogo
@@ -1560,7 +1588,7 @@ export const HomeDock: React.FC = () => {
   };
 
   const renderAboutButton = (customColor?: string | null) => {
-    const shouldShowLabel = showLabels && !dockConfig.buttonCustomizations?.about?.hideLabel;
+    const shouldShowLabel = isButtonLabelVisible('about');
     return (
       <>
         {renderIconWithCustomization(
@@ -1591,7 +1619,7 @@ export const HomeDock: React.FC = () => {
 
   const renderAccountsButton = (customColor?: string | null) => {
     const avatarSrc = resolveAccountAvatarSrc(activeAccount);
-    const shouldShowLabel = showLabels && !dockConfig.buttonCustomizations?.accounts?.hideLabel;
+    const shouldShowLabel = isButtonLabelVisible('accounts');
     const accountsCustom = dockConfig.buttonCustomizations?.accounts;
     const hasCustomIcon =
       accountsCustom?.iconType === 'custom_svg' ||
@@ -1637,7 +1665,7 @@ export const HomeDock: React.FC = () => {
   };
 
   const renderSettingsButton = (customColor?: string | null) => {
-    const shouldShowLabel = showLabels && !dockConfig.buttonCustomizations?.settings?.hideLabel;
+    const shouldShowLabel = isButtonLabelVisible('settings');
     return (
       <>
         {renderIconWithCustomization(
@@ -1684,7 +1712,7 @@ export const HomeDock: React.FC = () => {
 
   const renderLaunchButton = (customColor?: string | null) => {
     const launchIconColor = customColor ?? startColor;
-    const shouldShowLabel = showLabels && !dockConfig.buttonCustomizations?.launch?.hideLabel;
+    const shouldShowLabel = isButtonLabelVisible('launch');
     return (
       <>
         {renderIconWithCustomization(
@@ -1711,7 +1739,7 @@ export const HomeDock: React.FC = () => {
               className="dock-launch-fill"
               style={{
                 width: `${launch.progress}%`,
-                background: `linear-gradient(to right, ${startColor}, #38bdf8)`,
+                background: `linear-gradient(to right, ${startColor}, ${accentColor})`,
               }}
             />
           </div>
@@ -1737,7 +1765,7 @@ export const HomeDock: React.FC = () => {
         const { slot } = modItem;
         const modCustomColor =
           customColor || dockConfig.customButtonColors?.[btnId] || slot.defaultColor || accentColor;
-        const shouldShowLabel = showLabels && !dockConfig.buttonCustomizations?.[btnId]?.hideLabel;
+        const shouldShowLabel = isButtonLabelVisible(btnId);
         return (
           <>
             <div className="dock-icon-wrapper" style={{ color: modCustomColor }}>
@@ -1830,6 +1858,7 @@ export const HomeDock: React.FC = () => {
         startSubtleBg={startSubtleBg}
         startColor={startColor}
         getButtonCustomColor={getButtonCustomColor}
+        accentColor={accentColor}
       />
     );
   }
@@ -1896,6 +1925,7 @@ export const HomeDock: React.FC = () => {
       accentColor={accentColor}
       showLabels={showLabels}
       labelFontSize={labelFontSize}
+      isButtonLabelVisible={isButtonLabelVisible}
     />
   );
 };

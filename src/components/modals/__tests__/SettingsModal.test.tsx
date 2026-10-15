@@ -128,7 +128,7 @@ describe('SettingsModal Component & Helpers Suite', () => {
       expect(resolveActiveBtnColor('launch', {}, 'custom', '#123456')).toBe('#123456');
       expect(resolveActiveBtnColor('launch', {}, 'preset')).toBe('#22c55e');
       expect(resolveActiveBtnColor('other', {}, undefined, undefined, '#abcdef')).toBe('#abcdef');
-      expect(resolveActiveBtnColor('other', {})).toBe('#00e5ff');
+      expect(resolveActiveBtnColor('other', {})).toBe('#16A085');
     });
 
     it('extractCleanMinecraftVersion extrae limpiamente la versión base de Minecraft', () => {

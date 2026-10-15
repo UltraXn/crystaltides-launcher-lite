@@ -149,8 +149,8 @@ export const SettingsMinecraftSection: React.FC<SettingsMinecraftSectionProps> =
             height: '36px',
             paddingLeft: '10px',
             background: 'rgba(5, 9, 14, 0.75)',
-            color: '#38bdf8',
-            border: '1px solid rgba(56, 189, 248, 0.4)',
+            color: '#16A085',
+            border: '1px solid rgba(22, 160, 133, 0.45)',
             borderRadius: '8px',
             fontSize: '12px',
             fontWeight: 600,
@@ -295,7 +295,7 @@ export const SettingsMinecraftSection: React.FC<SettingsMinecraftSectionProps> =
             className="settings-label-title"
             style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
           >
-            <Zap size={14} style={{ color: '#00e5ff' }} />
+            <Zap size={14} style={{ color: '#16A085' }} />
             {t.settings.loaderType}
           </span>
           <span style={{ fontSize: '11px', color: 'rgba(248, 250, 252, 0.5)' }}>
@@ -311,11 +311,11 @@ export const SettingsMinecraftSection: React.FC<SettingsMinecraftSectionProps> =
           style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '8px' }}
         >
           <div>
-            <label className="settings-field-label">Tipo de Cargador</label>
+            <span className="settings-field-label">Tipo de Cargador</span>
             <CustomSelect
               value={loaderType}
               onChange={(val) => {
-                const newLoader = val as any;
+                const newLoader = val as SettingsMinecraftSectionProps['loaderType'];
                 setLoaderType(newLoader);
                 setLoaderVersion(resolveEffectiveLoaderVersion(newLoader, '', mcVersion) || '');
               }}
@@ -335,9 +335,9 @@ export const SettingsMinecraftSection: React.FC<SettingsMinecraftSectionProps> =
                 marginBottom: '6px',
               }}
             >
-              <label className="settings-field-label" style={{ marginBottom: 0 }}>
+              <span className="settings-field-label" style={{ marginBottom: 0 }}>
                 Versión del Loader
-              </label>
+              </span>
               {loaderType !== 'vanilla' && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                   {setShowBetaLoaders && (
@@ -372,7 +372,7 @@ export const SettingsMinecraftSection: React.FC<SettingsMinecraftSectionProps> =
                     style={{
                       background: 'none',
                       border: 'none',
-                      color: '#38bdf8',
+                      color: '#16A085',
                       fontSize: '11px',
                       cursor: 'pointer',
                       padding: '2px 4px',
@@ -405,10 +405,10 @@ export const SettingsMinecraftSection: React.FC<SettingsMinecraftSectionProps> =
                         padding: '24px',
                         width: '460px',
                         maxWidth: '92vw',
-                        background: 'rgba(11, 19, 34, 0.98)',
-                        border: '1px solid rgba(56, 189, 248, 0.3)',
+                        background: 'rgba(10, 15, 24, 0.98)',
+                        border: '1px solid rgba(22, 160, 133, 0.35)',
                         boxShadow:
-                          '0 25px 60px rgba(0, 0, 0, 0.85), 0 0 25px rgba(56, 189, 248, 0.15)',
+                          '0 25px 60px rgba(0, 0, 0, 0.85), 0 0 25px rgba(22, 160, 133, 0.15)',
                       }}
                     >
                       <div
@@ -422,7 +422,7 @@ export const SettingsMinecraftSection: React.FC<SettingsMinecraftSectionProps> =
                         }}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <Zap size={18} style={{ color: '#00e5ff' }} />
+                          <Zap size={18} style={{ color: '#16A085' }} />
                           <h3
                             style={{
                               margin: 0,
@@ -495,9 +495,9 @@ export const SettingsMinecraftSection: React.FC<SettingsMinecraftSectionProps> =
                           <span
                             style={{
                               fontWeight: 700,
-                              color: '#00e5ff',
+                              color: '#16A085',
                               textTransform: 'uppercase',
-                              background: 'rgba(0, 229, 255, 0.12)',
+                              background: 'rgba(22, 160, 133, 0.14)',
                               padding: '2px 8px',
                               borderRadius: '4px',
                             }}
@@ -521,9 +521,9 @@ export const SettingsMinecraftSection: React.FC<SettingsMinecraftSectionProps> =
                           <span
                             style={{
                               fontWeight: 700,
-                              color: '#38bdf8',
+                              color: '#16A085',
                               fontFamily: 'monospace',
-                              background: 'rgba(56, 189, 248, 0.12)',
+                              background: 'rgba(22, 160, 133, 0.14)',
                               padding: '2px 8px',
                               borderRadius: '4px',
                             }}
@@ -557,10 +557,11 @@ export const SettingsMinecraftSection: React.FC<SettingsMinecraftSectionProps> =
                             }}
                             className="settings-action-btn primary"
                             style={{
-                              background: 'rgba(0, 229, 255, 0.2)',
-                              borderColor: '#00e5ff',
-                              color: '#00e5ff',
+                              background: 'linear-gradient(135deg, #156F69 0%, #16A085 100%)',
+                              borderColor: 'rgba(22, 160, 133, 0.6)',
+                              color: '#ffffff',
                               fontWeight: 700,
+                              boxShadow: '0 2px 10px rgba(22, 160, 133, 0.3)',
                             }}
                           >
                             Descargar e Instalar Ahora
@@ -607,10 +608,13 @@ export const SettingsMinecraftSection: React.FC<SettingsMinecraftSectionProps> =
                 className="settings-action-btn"
                 style={{
                   fontSize: '11px',
-                  padding: '4px 12px',
-                  background: 'rgba(0, 229, 255, 0.15)',
-                  color: '#00e5ff',
-                  border: '1px solid rgba(0, 229, 255, 0.3)',
+                  padding: '5px 14px',
+                  background:
+                    'linear-gradient(135deg, rgba(21, 111, 105, 0.28) 0%, rgba(22, 160, 133, 0.16) 100%)',
+                  color: '#16A085',
+                  border: '1px solid rgba(22, 160, 133, 0.45)',
+                  boxShadow: '0 0 10px rgba(22, 160, 133, 0.15)',
+                  fontWeight: 600,
                 }}
               >
                 {loaderInstallStatus.loading
@@ -644,14 +648,7 @@ export const SettingsMinecraftSection: React.FC<SettingsMinecraftSectionProps> =
       <div className="settings-section">
         <div className="settings-section-header">
           <span className="settings-label-title">{t.settings.memoryTitle}</span>
-          <span
-            style={{
-              fontSize: '12px',
-              fontWeight: 700,
-              color: '#38bdf8',
-              fontFamily: 'var(--font-inter)',
-            }}
-          >
+          <span className="settings-ram-counter">
             {Math.round(ramMb / 1024)} GB ({ramMb} MB)
           </span>
         </div>
@@ -664,13 +661,34 @@ export const SettingsMinecraftSection: React.FC<SettingsMinecraftSectionProps> =
             value={ramMb}
             onChange={(e) => setRamMb(Number(e.target.value))}
             className="papyrus-range-slider"
+            style={
+              {
+                '--slider-fill': `${Math.min(Math.max(((ramMb - 2048) / (16384 - 2048)) * 100, 0), 100)}%`,
+              } as React.CSSProperties
+            }
+            aria-label={t.settings.memoryTitle}
           />
         </div>
         <div className="settings-ram-markers">
-          <span>2 GB</span>
-          <span>4 GB (Base)</span>
-          <span>8 GB (Recomendado)</span>
-          <span>16 GB</span>
+          {[
+            { mb: 2048, label: '2 GB' },
+            { mb: 4096, label: '4 GB (Base)' },
+            { mb: 8192, label: '8 GB (Recomendado)', isRecommended: true },
+            { mb: 16384, label: '16 GB' },
+          ].map((m) => {
+            const isCurrent = Math.round(ramMb / 1024) === Math.round(m.mb / 1024);
+            return (
+              <button
+                key={m.mb}
+                type="button"
+                onClick={() => setRamMb(m.mb)}
+                className={`settings-ram-marker-btn ${isCurrent ? 'active' : ''} ${m.isRecommended ? 'recommended' : ''}`}
+                title={`Fijar memoria a ${m.label}`}
+              >
+                {m.label}
+              </button>
+            );
+          })}
         </div>
       </div>
 

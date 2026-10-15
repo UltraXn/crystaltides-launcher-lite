@@ -9,11 +9,13 @@ import {
   COLOR_PRESETS,
   EFFECT_OPTIONS,
 } from '../DockButtonInspectorTabs';
+import { DockButtonInspector } from '../../DockButtonInspector';
 import { launcherActions } from '../../../store/launcherStore';
 
 vi.mock('../../../utils/wallpaperStorage', () => ({
   saveDockPanoramaFile: vi.fn().mockResolvedValue({ url: 'file:///dock_pano.mp4', isVideo: true }),
   clearButtonMedia: vi.fn().mockResolvedValue(true),
+  clearDockPanorama: vi.fn().mockResolvedValue(true),
 }));
 
 describe('DockButtonInspectorTabs Suite', () => {
@@ -127,6 +129,34 @@ describe('DockButtonInspectorTabs Suite', () => {
           'play',
           expect.objectContaining({ bgType: 'default' })
         );
+      });
+    });
+
+    it('permite quitar el fondo panorámico de la barra', async () => {
+      const clearDockBgSpy = vi.spyOn(launcherActions, 'clearDockBackground');
+      const resetTransformSpy = vi.spyOn(launcherActions, 'resetDockBackgroundTransform');
+      const setUploadStatus = vi.fn();
+
+      render(
+        <DockButtonInspectorBgTab
+          buttonId="play"
+          customization={mockCustomization}
+          dockConfig={mockDockConfig}
+          hasDockPanorama={true}
+          isParticipant={true}
+          bgFileInputRef={{ current: null } as any}
+          dockBgInputRef={{ current: null } as any}
+          setUploadStatus={setUploadStatus}
+        />
+      );
+
+      const removePanoBtn = screen.getByText('Quitar Fondo de Barra');
+      fireEvent.click(removePanoBtn);
+
+      await waitFor(() => {
+        expect(clearDockBgSpy).toHaveBeenCalled();
+        expect(resetTransformSpy).toHaveBeenCalled();
+        expect(setUploadStatus).toHaveBeenCalledWith('¡Fondo eliminado!');
       });
     });
   });
@@ -249,6 +279,21 @@ describe('DockButtonInspectorTabs Suite', () => {
       // Rotación
       fireEvent.change(sliders[1], { target: { value: '-10' } });
       expect(setCustomizationSpy).toHaveBeenCalledWith('play', { rotation: -10 });
+    });
+
+    it('renderiza DockButtonInspector con overflow hidden en dialog y overscroll-behavior contain', () => {
+      const { container } = render(
+        <DockButtonInspector buttonId="play" onClose={vi.fn()} />
+      );
+
+      const dialog = container.querySelector<HTMLElement>('dialog[data-inspector="true"]');
+      expect(dialog).not.toBeNull();
+      expect(dialog?.style.overflow).toBe('hidden');
+      expect(dialog?.style.margin).toBe('0px');
+
+      const scrollBody = container.querySelector<HTMLElement>('.hud-custom-scrollbar');
+      expect(scrollBody).not.toBeNull();
+      expect(scrollBody?.style.overscrollBehavior).toBe('contain');
     });
   });
 });

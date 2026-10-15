@@ -40,6 +40,27 @@ vi.mock('../../services/databaseService', () => ({
   setActiveDatabaseAccount: vi.fn().mockResolvedValue(true),
 }));
 
+vi.mock('../../services/microsoftAuthService', () => {
+  class MockMicrosoftAuthError extends Error {
+    code: string;
+    constructor(message: string, code: string) {
+      super(message);
+      this.name = 'MicrosoftAuthError';
+      this.code = code;
+    }
+  }
+
+  return {
+    MicrosoftAuthError: MockMicrosoftAuthError,
+    refreshMicrosoftSession: vi.fn().mockResolvedValue({
+      accessToken: 'refreshed-mc-token',
+      refreshToken: 'new-refresh-token',
+      username: 'RefreshedUser',
+      uuid: 'refreshed-uuid',
+    }),
+  };
+});
+
 vi.mock('../../services/instanceService', () => ({
   resolveInstanceGameDir: vi.fn().mockResolvedValue('C:\\fake\\instances\\default-ct'),
   syncInstanceAssets: vi.fn().mockResolvedValue(true),
@@ -234,6 +255,41 @@ describe('launcherStore helpers & actions', () => {
       const state = getLauncherState();
       expect(state.launch.status).toBe('RUNNING');
       expect(state.launch.progress).toBe(100);
+    });
+
+    it('detecta invalid_grant por code al renovar sesión y marca requiresReauth', async () => {
+      const msAccount: UserAccount = {
+        id: 'acc-ms-test',
+        username: 'TestMS',
+        uuid: '11111111-2222-3333-4444-555555555555',
+        type: 'microsoft',
+        accessToken: '', // Vacío para forzar renovación de token
+        refreshToken: 'stale-refresh-token',
+        lastUsed: Date.now(),
+      };
+
+      useLauncherStore.setState({
+        accounts: [msAccount],
+        activeAccountId: 'acc-ms-test',
+        launch: { status: 'IDLE', progress: 0, message: '' },
+      });
+
+      const { refreshMicrosoftSession, MicrosoftAuthError } =
+        await import('../../services/microsoftAuthService');
+      vi.mocked(refreshMicrosoftSession).mockRejectedValueOnce(
+        new MicrosoftAuthError(
+          'The provided value for the input parameter is not valid.',
+          'invalid_grant',
+        ),
+      );
+
+      await launcherActions.startLaunchFlow();
+
+      const state = getLauncherState();
+      expect(state.launch.status).toBe('IDLE');
+      expect(state.launch.message).toContain('invalid_grant');
+      const updatedAccount = state.accounts.find((a) => a.id === 'acc-ms-test');
+      expect(updatedAccount?.requiresReauth).toBe(true);
     });
 
     it('ignora startLaunchFlow si el estado no es IDLE', async () => {
@@ -447,4 +503,3 @@ describe('launcherStore helpers & actions', () => {
     });
   });
 });
-

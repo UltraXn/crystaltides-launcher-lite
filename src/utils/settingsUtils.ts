@@ -32,7 +32,7 @@ export const resolveActiveBtnColor = (
     if (startBtnColorMode === 'accent' && fallbackAccent) return fallbackAccent;
     return '#22c55e';
   }
-  return fallbackAccent ?? '#00e5ff';
+  return fallbackAccent ?? '#16A085';
 };
 
 export const extractCleanMinecraftVersion = (raw: string): string => {

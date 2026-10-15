@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { X, ArrowRight, ArrowLeft, Loader2, Globe } from 'lucide-react';
 import { DiscordIcon } from './icons/DiscordIcon';
 import { SpainFlag, UsaFlag } from './icons/FlagIcons';
-import logoImg from '../assets/logo.png';
+import logoImg from '../assets/logo.webp';
 import { launcherActions, useLauncherStore, useT } from '../store/launcherStore';
 import { validateMinecraftUsername, generateOfflineUuid } from '../services/offlineAuth';
 import { loginWithCrystalTides } from '../services/crystalAuthService';

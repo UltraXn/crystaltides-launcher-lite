@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import logoImg from '../assets/logo.png';
+import logoImg from '../assets/logo.webp';
 import { Cpu, Database, CheckCircle2, Sparkles, Compass, ShieldCheck } from 'lucide-react';
 
 type MvpType = '1' | '2' | '3';

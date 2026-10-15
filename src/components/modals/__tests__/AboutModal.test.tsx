@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import React from 'react';
 import { AboutModal } from '../AboutModal';
-import { useLauncherStore, launcherActions } from '../../../store/launcherStore';
+import { useLauncherStore } from '../../../store/launcherStore';
 
 describe('AboutModal Component', () => {
   beforeEach(() => {

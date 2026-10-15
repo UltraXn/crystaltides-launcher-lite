@@ -118,14 +118,14 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
               ? 'rgba(14, 21, 33, 0.92)'
               : 'rgba(8, 13, 20, 0.78)',
           color: disabled ? 'rgba(255, 255, 255, 0.3)' : '#f1f5f9',
-          border: isOpen ? '1px solid rgba(56, 189, 248, 0.6)' : '1px solid rgba(255, 255, 255, 0.1)',
+          border: isOpen ? '1px solid rgba(22, 160, 133, 0.7)' : '1px solid rgba(255, 255, 255, 0.1)',
           borderRadius: '8px',
           fontSize: '12px',
           fontFamily: 'var(--font-inter)',
           cursor: disabled ? 'not-allowed' : 'pointer',
           outline: 'none',
           boxShadow: isOpen
-            ? '0 0 0 2px rgba(56, 189, 248, 0.2), 0 4px 12px rgba(0, 0, 0, 0.4)'
+            ? '0 0 0 2px rgba(22, 160, 133, 0.25), 0 4px 12px rgba(0, 0, 0, 0.45)'
             : 'inset 0 1px 0 rgba(255, 255, 255, 0.04)',
           transition:
             'border-color 0.15s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.15s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.15s ease',
@@ -212,7 +212,7 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
                     fontWeight: 700,
                     textTransform: 'uppercase',
                     letterSpacing: '0.6px',
-                    color: '#38bdf8',
+                    color: '#16A085',
                     fontFamily: 'var(--font-inter)',
                   }}
                 >
@@ -245,8 +245,8 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
                       fontFamily: 'var(--font-inter)',
                       cursor: 'pointer',
                       textAlign: 'left',
-                      background: isSelected ? 'rgba(56, 189, 248, 0.14)' : 'transparent',
-                      color: isSelected ? '#38bdf8' : '#e2e8f0',
+                      background: isSelected ? 'rgba(22, 160, 133, 0.16)' : 'transparent',
+                      color: isSelected ? '#16A085' : '#e2e8f0',
                       fontWeight: isSelected ? 600 : 400,
                       transition:
                         'background-color 0.12s cubic-bezier(0.16, 1, 0.3, 1), color 0.12s ease',
@@ -256,8 +256,8 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
                         e.currentTarget.style.background = 'rgba(255, 255, 255, 0.07)';
                         e.currentTarget.style.color = '#ffffff';
                       } else {
-                        e.currentTarget.style.background = 'rgba(56, 189, 248, 0.22)';
-                        e.currentTarget.style.color = '#7dd3fc';
+                        e.currentTarget.style.background = 'rgba(22, 160, 133, 0.25)';
+                        e.currentTarget.style.color = '#1abc9c';
                       }
                     }}
                     onMouseLeave={(e) => {
@@ -265,8 +265,8 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
                         e.currentTarget.style.background = 'transparent';
                         e.currentTarget.style.color = '#e2e8f0';
                       } else {
-                        e.currentTarget.style.background = 'rgba(56, 189, 248, 0.14)';
-                        e.currentTarget.style.color = '#38bdf8';
+                        e.currentTarget.style.background = 'rgba(22, 160, 133, 0.16)';
+                        e.currentTarget.style.color = '#16A085';
                       }
                     }}
                   >
@@ -301,7 +301,7 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
                       </span>
                     </div>
                     {isSelected && (
-                      <Check size={13} strokeWidth={2.5} color="#38bdf8" style={{ flexShrink: 0 }} />
+                      <Check size={13} strokeWidth={2.5} color="#16A085" style={{ flexShrink: 0 }} />
                     )}
                   </button>
                 );

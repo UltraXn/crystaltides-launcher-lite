@@ -66,7 +66,7 @@ export const DockBackgroundAdjuster: React.FC = () => {
               borderRadius: '4px',
             }}
           >
-            <RotateCcw size={9} /> Restablecer
+            <RotateCcw size={9} /> Restablecer Encuadre
           </button>
         )}
       </div>
