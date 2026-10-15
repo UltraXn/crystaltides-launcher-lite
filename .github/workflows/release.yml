@@ -28,11 +28,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js 22
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - name: Setup Node.js 24
         uses: actions/setup-node@v4
         with:
-          node-version: 22
-          cache: 'npm'
+          node-version: 24
+          cache: 'pnpm'
 
       - name: Setup Rust toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -41,14 +46,31 @@ jobs:
           cache: true
 
       - name: Install dependencies
-        run: npm install
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify Supabase Environment Variables
+        shell: pwsh
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || vars.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          if (-not $env:VITE_SUPABASE_URL -or -not $env:VITE_SUPABASE_ANON_KEY) {
+            Write-Error "CRITICAL: VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY son requeridas en secrets o vars de GitHub Actions para el build de producción."
+            exit 1
+          }
+          Write-Host "✓ Supabase environment variables verified."
 
       - name: Build Frontend Assets (Vite)
-        run: npm run build
+        run: pnpm run build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || vars.VITE_SUPABASE_ANON_KEY }}
 
       - name: Build Standalone Launcher (Tauri CLI)
-        run: npx tauri build --no-bundle --ignore-version-mismatches
+        run: pnpm tauri build --no-bundle
         env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || vars.VITE_SUPABASE_ANON_KEY }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
@@ -83,7 +105,7 @@ jobs:
           # 3. Firmar paquete de actualización y generar latest.json
           if ($env:TAURI_SIGNING_PRIVATE_KEY) {
             Write-Host "🔐 Firmando archivo para AutoUpdater con Tauri Signer..."
-            npx tauri signer sign -k "$env:TAURI_SIGNING_PRIVATE_KEY" -p "$($env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD)" $zipPath
+            pnpm tauri signer sign -k "$env:TAURI_SIGNING_PRIVATE_KEY" -p "$($env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD)" $zipPath
 
             $sigFile = "$zipPath.sig"
             if (Test-Path $sigFile) {
