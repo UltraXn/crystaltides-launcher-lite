@@ -69,3 +69,21 @@ pub fn schedule_self_deletion(target_dir: &Path) -> Result<(), String> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_schedule_self_deletion_valid_path() {
+        let temp_dir = std::env::temp_dir().join("ct_test_self_delete");
+        assert!(schedule_self_deletion(&temp_dir).is_ok());
+    }
+
+    #[test]
+    fn test_schedule_self_deletion_handles_special_characters_safely() {
+        let special_path = std::env::temp_dir().join("ct_test_dir \"'; $(touch /tmp/ct_vulnerable) `whoami` &");
+        assert!(schedule_self_deletion(&special_path).is_ok());
+        assert!(!std::path::Path::new("/tmp/ct_vulnerable").exists(), "Command injection vulnerability detected!");
+    }
+}

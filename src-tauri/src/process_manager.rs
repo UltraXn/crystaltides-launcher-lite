@@ -846,6 +846,9 @@ pub fn enforce_high_performance_gpu(java_path: &std::path::Path) {
 #[cfg(not(target_os = "windows"))]
 pub fn enforce_high_performance_gpu(_java_path: &std::path::Path) {}
 
+#[cfg(not(target_os = "windows"))]
+pub fn apply_os_optimizations(_pid: u32) {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
