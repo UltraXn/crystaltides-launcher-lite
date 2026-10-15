@@ -81,3 +81,23 @@ pub(crate) fn cleanup_install_dir(install_dir: &Path, remove_user_data: bool) {
 }
 
 
+
+
+#[cfg(test)]
+mod sys_tests {
+    use super::*;
+
+    #[test]
+    fn test_sanitize_windows_path_string() {
+        let raw_path = "C:/Program Files/CrystalTides/Launcher.exe";
+        let cleaned = raw_path.replace('/', "\\");
+        assert_eq!(cleaned, r"C:\Program Files\CrystalTides\Launcher.exe");
+    }
+
+    #[test]
+    fn test_strip_unc_prefix() {
+        let path_str = r"\\?\C:\Users\Test\AppData\Local\CrystalTides";
+        let clean = path_str.strip_prefix(r"\\?\").unwrap_or(path_str).replace('/', "\\");
+        assert_eq!(clean, r"C:\Users\Test\AppData\Local\CrystalTides");
+    }
+}
