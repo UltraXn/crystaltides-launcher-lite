@@ -67,7 +67,9 @@ jobs:
             libssl-dev \
             libgtk-3-dev \
             libayatana-appindicator3-dev \
-            librsvg2-dev
+            librsvg2-dev \
+            patchelf \
+            xdg-utils
 
       - name: Setup Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
