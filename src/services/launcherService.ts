@@ -3,6 +3,8 @@ import { ensureJava, getJavaVersionForMinecraft } from './javaService';
 import { fetchHardwareProfile, fetchGpuProfile } from './hardwareService';
 import { getAgentJvmArgs } from './agentIpcService';
 import { extractCleanMinecraftVersion } from '../utils/settingsUtils';
+import { logFrontend } from './logger';
+import { redact } from '../utils/redact';
 
 export interface LaunchParams {
   username: string;
@@ -19,6 +21,7 @@ export interface LaunchParams {
   javaPath?: string;
   resolution?: string;
   fullscreen?: boolean;
+  profileId?: string;
   preLaunchCommand?: string;
   wrapperCommand?: string;
   postExitCommand?: string;
@@ -900,6 +903,7 @@ const dispatchMinecraftProcess = async (
       javaPath,
       args: fullArgs,
       gameDir: gameDirectory,
+      profileId: params.profileId ?? null,
       preLaunchCommand: params.preLaunchCommand ?? null,
       wrapperCommand: params.wrapperCommand ?? null,
       postExitCommand: params.postExitCommand ?? null,
@@ -919,7 +923,7 @@ export const launchGame = async (
   isCancelled?: () => boolean,
 ): Promise<number> => {
   const log = (msg: string, level = 'INFO') => {
-    invoke('log_frontend', { msg, level }).catch(() => {});
+    logFrontend(level, msg);
   };
 
   try {
@@ -1021,7 +1025,7 @@ export const launchGame = async (
         await invoke('prepare_crystal_agent', { gameDir: gameDirectory });
         agentArgs = await getAgentJvmArgs(gameDirectory);
         if (agentArgs.length > 0) {
-          log(`Crystal Agent JVM inyectado: ${agentArgs.join(' ')}`);
+          log(`Crystal Agent JVM inyectado: ${agentArgs.map((arg) => redact(arg)).join(' ')}`);
         }
       } catch (agentErr) {
         log(`Nota al obtener Crystal Agent JVM: ${agentErr}`, 'WARN');
@@ -1059,7 +1063,7 @@ export const launchGame = async (
     await syncOptionsFile(gameDirectory, params.fullscreen, log);
 
     onProgress?.('Iniciando proceso de Minecraft...', 92);
-    console.log(`[Launcher] Executing Java at ${javaPath} with args:`, fullArgs);
+    console.log(`[Launcher] Executing Java at ${javaPath} with args:`, fullArgs.map((a) => redact(a)));
 
     if (isCancelled?.()) {
       log('Lanzamiento cancelado por el usuario antes de despachar el proceso.', 'WARN');

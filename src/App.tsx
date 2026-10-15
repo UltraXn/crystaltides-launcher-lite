@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, Suspense } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import {
@@ -13,13 +13,8 @@ import { BottomBar } from './components/BottomBar';
 import { HomeDock } from './components/HomeDock';
 import { HudEditorOverlay } from './components/HudEditorOverlay';
 import { LoginView } from './components/LoginView';
-import { SettingsModal } from './components/modals/SettingsModal';
 import { AccountsModal } from './components/modals/AccountsModal';
 import { AboutModal } from './components/modals/AboutModal';
-import { InstancesModal } from './components/modals/InstancesModal';
-import { CrashReportModal } from './components/modals/CrashReportModal';
-import { InstallerView } from './components/installer/InstallerView';
-import { UninstallerView } from './components/uninstaller/UninstallerView';
 import { UpdaterModal } from './components/modals/UpdaterModal';
 import { SplashScreen } from './components/SplashScreen';
 import { GameLaunchOverlay } from './components/GameLaunchOverlay';
@@ -32,10 +27,28 @@ import {
 import { initializeBuiltinModules, useModuleStore } from './modules';
 import { ModuleModalRenderer } from './components/modals/ModuleModalRenderer';
 import { GuiHintToast } from './components/GuiHintToast';
-import { OutOfMemoryScreen } from './components/OutOfMemoryScreen';
-import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { CrashDiagnosis } from './services/crashDoctorService';
 import { resolveInstanceGameDir } from './services/instanceService';
+import { IS_SUPABASE_CONFIGURED } from './config/supabase';
+
+const SettingsModal = React.lazy(() =>
+  import('./components/modals/SettingsModal').then((m) => ({ default: m.SettingsModal })),
+);
+const InstancesModal = React.lazy(() =>
+  import('./components/modals/InstancesModal').then((m) => ({ default: m.InstancesModal })),
+);
+const CrashReportModal = React.lazy(() =>
+  import('./components/modals/CrashReportModal').then((m) => ({ default: m.CrashReportModal })),
+);
+const OutOfMemoryScreen = React.lazy(() =>
+  import('./components/OutOfMemoryScreen').then((m) => ({ default: m.OutOfMemoryScreen })),
+);
+const InstallerView = React.lazy(() =>
+  import('./components/installer/InstallerView').then((m) => ({ default: m.InstallerView })),
+);
+const UninstallerView = React.lazy(() =>
+  import('./components/uninstaller/UninstallerView').then((m) => ({ default: m.UninstallerView })),
+);
 
 interface BootContext {
   mode: 'install' | 'launcher' | 'uninstall';
@@ -293,117 +306,232 @@ const buildCrashPayload = async (
     return () => window.removeEventListener('keydown', handleKeyDown, true);
   }, [activeModal, customizingButtonId, updateInfo]);
 
+  const isDev = Boolean(import.meta.env.DEV);
+
+  if (!IS_SUPABASE_CONFIGURED) {
+    return (
+      <div
+        role="alert"
+        aria-live="assertive"
+        style={{
+          position: 'fixed',
+          inset: 0,
+          width: '100vw',
+          height: '100vh',
+          backgroundColor: '#0a0d14',
+          color: '#ffffff',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '2rem',
+          zIndex: 9999,
+          fontFamily: 'var(--app-font-family, sans-serif)',
+        }}
+      >
+        <div
+          style={{
+            maxWidth: 520,
+            width: '100%',
+            background: 'rgba(255, 255, 255, 0.04)',
+            border: '1px solid rgba(239, 68, 68, 0.4)',
+            borderRadius: 16,
+            padding: '2rem',
+            textAlign: 'center',
+            boxShadow: '0 20px 40px rgba(0, 0, 0, 0.5)',
+          }}
+        >
+          <div
+            style={{
+              width: 54,
+              height: 54,
+              borderRadius: '50%',
+              background: 'rgba(239, 68, 68, 0.15)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              margin: '0 auto 1.25rem',
+              color: '#ef4444',
+              fontSize: '1.75rem',
+            }}
+          >
+            ⚠️
+          </div>
+          <h2
+            style={{
+              fontSize: '1.25rem',
+              fontWeight: 700,
+              marginBottom: '0.75rem',
+              color: '#f8fafc',
+            }}
+          >
+            Error de Configuración de Servicios
+          </h2>
+          <p
+            style={{
+              color: '#94a3b8',
+              fontSize: '0.875rem',
+              lineHeight: 1.6,
+              marginBottom: '1.5rem',
+            }}
+          >
+            La configuración de conexión a Supabase está ausente o incompleta. En entornos de
+            producción, las variables de entorno <code style={{ color: '#38bdf8' }}>VITE_SUPABASE_URL</code> y{' '}
+            <code style={{ color: '#38bdf8' }}>VITE_SUPABASE_ANON_KEY</code> son obligatorias para
+            autenticación y sincronización oficial.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              if (typeof window !== 'undefined') window.location.reload();
+            }}
+            style={{
+              padding: '0.625rem 1.5rem',
+              background: 'var(--accent-primary, #16A085)',
+              color: '#ffffff',
+              border: 'none',
+              borderRadius: 8,
+              fontWeight: 600,
+              fontSize: '0.875rem',
+              cursor: 'pointer',
+              transition: 'opacity 0.2s',
+            }}
+          >
+            Reintentar
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const isSplashPreview =
-    typeof window !== 'undefined' && window.location.search.includes('preview=splash');
+    isDev && typeof window !== 'undefined' && window.location.search.includes('preview=splash');
 
   if (isSplashPreview) {
     return <SplashScreen />;
   }
 
   const isOomPreview =
+    isDev &&
     typeof window !== 'undefined' &&
     (window.location.search.includes('preview=oom') ||
       window.location.search.includes('preview=ram'));
 
   if (isOomPreview) {
     return (
-      <OutOfMemoryScreen
-        onRetry={() => {
-          if (typeof window !== 'undefined') window.location.href = window.location.pathname;
-        }}
-        onClose={() => {
-          if (typeof window !== 'undefined') window.location.href = window.location.pathname;
-        }}
-        crashReason="java.lang.OutOfMemoryError: Java heap space"
-        crashDetails="Exception in thread 'main' java.lang.OutOfMemoryError: Java heap space&#10;    at net.minecraft.client.renderer.texture.TextureAtlas.load(TextureAtlas.java:142)&#10;    at net.minecraft.client.Minecraft.run(Minecraft.java:940)"
-        exitCode={137}
-      />
+      <Suspense fallback={null}>
+        <OutOfMemoryScreen
+          onRetry={() => {
+            if (typeof window !== 'undefined') window.location.href = window.location.pathname;
+          }}
+          onClose={() => {
+            if (typeof window !== 'undefined') window.location.href = window.location.pathname;
+          }}
+          crashReason="java.lang.OutOfMemoryError: Java heap space"
+          crashDetails="Exception in thread 'main' java.lang.OutOfMemoryError: Java heap space&#10;    at net.minecraft.client.renderer.texture.TextureAtlas.load(TextureAtlas.java:142)&#10;    at net.minecraft.client.Minecraft.run(Minecraft.java:940)"
+          exitCode={137}
+        />
+      </Suspense>
     );
   }
 
   const isCrashPreview =
-    typeof window !== 'undefined' && window.location.search.includes('preview=crash');
+    isDev && typeof window !== 'undefined' && window.location.search.includes('preview=crash');
 
   if (isCrashPreview) {
     return (
       <div style={{ position: 'relative', width: '100vw', height: '100vh', background: '#0a0d14' }}>
-        <CrashReportModal
-          isOpen={true}
-          onClose={() => {
-            if (typeof window !== 'undefined') window.location.href = window.location.pathname;
-          }}
-          onRetry={() => {
-            if (typeof window !== 'undefined') window.location.href = window.location.pathname;
-          }}
-          onOpenOomAssistant={() => {
-            if (typeof window !== 'undefined')
-              window.location.href = `${window.location.pathname}?preview=oom`;
-          }}
-          exitCode={1}
-          crashReason="Fallo al inicializar renderizador gráfico (GLFW error 65542: The driver does not appear to support OpenGL)"
-          crashDetails="[18:42:10] [Render thread/INFO]: Setting user: Steve&#10;[18:42:11] [Render thread/ERROR]: Minecraft has stopped running because it couldn't find a compatible graphics driver.&#10;org.lwjgl.LWJGLException: Could not find OpenGL driver.&#10;    at org.lwjgl.opengl.WindowsPeerInfo.nChoosePixelFormat(Native Method)&#10;    at net.minecraft.client.main.Main.main(Main.java:214)"
-        />
+        <Suspense fallback={null}>
+          <CrashReportModal
+            isOpen={true}
+            onClose={() => {
+              if (typeof window !== 'undefined') window.location.href = window.location.pathname;
+            }}
+            onRetry={() => {
+              if (typeof window !== 'undefined') window.location.href = window.location.pathname;
+            }}
+            onOpenOomAssistant={() => {
+              if (typeof window !== 'undefined')
+                window.location.href = `${window.location.pathname}?preview=oom`;
+            }}
+            exitCode={1}
+            crashReason="Fallo al inicializar renderizador gráfico (GLFW error 65542: The driver does not appear to support OpenGL)"
+            crashDetails="[18:42:10] [Render thread/INFO]: Setting user: Steve&#10;[18:42:11] [Render thread/ERROR]: Minecraft has stopped running because it couldn't find a compatible graphics driver.&#10;org.lwjgl.LWJGLException: Could not find OpenGL driver.&#10;    at org.lwjgl.opengl.WindowsPeerInfo.nChoosePixelFormat(Native Method)&#10;    at net.minecraft.client.main.Main.main(Main.java:214)"
+          />
+        </Suspense>
       </div>
     );
   }
 
   const isInstallPreview =
-    typeof window !== 'undefined' && window.location.search.includes('preview=install');
+    isDev && typeof window !== 'undefined' && window.location.search.includes('preview=install');
 
   if (isInstallPreview) {
     return (
-      <InstallerView
-        defaultInstallDir="C:/.crystaltides"
-        onLaunchMain={() => {
-          if (typeof window !== 'undefined') window.location.href = window.location.pathname;
-        }}
-      />
+      <Suspense fallback={null}>
+        <InstallerView
+          defaultInstallDir="C:/.crystaltides"
+          onLaunchMain={() => {
+            if (typeof window !== 'undefined') window.location.href = window.location.pathname;
+          }}
+        />
+      </Suspense>
     );
   }
 
   const isUninstallPreview =
-    typeof window !== 'undefined' && window.location.search.includes('preview=uninstall');
+    isDev && typeof window !== 'undefined' && window.location.search.includes('preview=uninstall');
 
   if (isUninstallPreview) {
-    return <UninstallerView installDir="C:/.crystaltides" />;
+    return (
+      <Suspense fallback={null}>
+        <UninstallerView installDir="C:/.crystaltides" />
+      </Suspense>
+    );
   }
 
   // Vista del Instalador
   if (bootContext?.mode === 'install') {
     return (
-      <InstallerView
-        defaultInstallDir={bootContext.defaultInstallDir}
-        onLaunchMain={() => setBootContext({ ...bootContext, mode: 'launcher' })}
-      />
+      <Suspense fallback={null}>
+        <InstallerView
+          defaultInstallDir={bootContext.defaultInstallDir}
+          onLaunchMain={() => setBootContext({ ...bootContext, mode: 'launcher' })}
+        />
+      </Suspense>
     );
   }
 
   // Vista del Desinstalador
   if (bootContext?.mode === 'uninstall') {
-    return <UninstallerView installDir={bootContext.defaultInstallDir} />;
+    return (
+      <Suspense fallback={null}>
+        <UninstallerView installDir={bootContext.defaultInstallDir} />
+      </Suspense>
+    );
   }
 
   // Vista Principal del Launcher
   return (
-    <ErrorBoundary>
-      <div className="app-viewport">
-        {/* Fondo con blur dinámico en modales */}
-        <WallpaperBackground />
+    <div className="app-viewport">
+      {/* Fondo con blur dinámico en modales */}
+      <WallpaperBackground />
 
-        {/* Controles de Ventana y Drag Region Global */}
-        <WindowHeader />
+      {/* Controles de Ventana y Drag Region Global */}
+      <WindowHeader />
 
-        {/* Switcher de vistas: Login vs Home */}
-        {currentView === 'login' ? (
-          <LoginView />
-        ) : (
-          <>
-            <HudEditorOverlay />
-            <HomeDock />
-            <BottomBar />
-            <GuiHintToast />
+      {/* Switcher de vistas: Login vs Home */}
+      {currentView === 'login' ? (
+        <LoginView />
+      ) : (
+        <>
+          <HudEditorOverlay />
+          <HomeDock />
+          <BottomBar />
+          <GuiHintToast />
 
-            {/* Modales */}
+          {/* Modales */}
+          <Suspense fallback={null}>
             <InstancesModal />
             <SettingsModal />
             <AccountsModal />
@@ -447,17 +575,17 @@ const buildCrashPayload = async (
                 exitCode={crashData.code}
               />
             )}
-          </>
-        )}
+          </Suspense>
+        </>
+      )}
 
-        {/* Pantalla de carga interactiva al iniciar el juego */}
-        <GameLaunchOverlay />
+      {/* Pantalla de carga interactiva al iniciar el juego */}
+      <GameLaunchOverlay />
 
-        {/* Modal de Actualización Autónoma */}
-        {updateInfo?.available && (
-          <UpdaterModal updateInfo={updateInfo} onClose={() => setUpdateInfo(null)} />
-        )}
-      </div>
-    </ErrorBoundary>
+      {/* Modal de Actualización Autónoma */}
+      {updateInfo?.available && (
+        <UpdaterModal updateInfo={updateInfo} onClose={() => setUpdateInfo(null)} />
+      )}
+    </div>
   );
 };

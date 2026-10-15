@@ -60,102 +60,127 @@ const CLIENT_ID = '3974b918-cd84-4d60-8955-2ad65234d16b';
 const SCOPE = 'XboxLive.SignIn XboxLive.offline_access';
 const REDIRECT_URI = 'https://login.live.com/oauth20_desktop.srf';
 
-const parseProxyHttpError = <T>(err: unknown): T => {
-  const msg = err instanceof Error ? err.message : String(err);
-  if (msg.startsWith('HTTP ')) {
-    const jsonStart = msg.indexOf('{');
-    const jsonEnd = msg.lastIndexOf('}');
-    if (jsonStart !== -1 && jsonEnd > jsonStart) {
-      try {
-        const parsed = JSON.parse(msg.slice(jsonStart, jsonEnd + 1));
-        if (
-          parsed &&
-          typeof parsed === 'object' &&
-          ('error' in parsed || 'XErr' in parsed || 'errorMessage' in parsed)
-        ) {
-          return parsed as T;
-        }
-      } catch {
-        // Fallback to rethrow err
+export class MicrosoftAuthError extends Error {
+  code: string;
+
+  constructor(message: string, code: string) {
+    super(message);
+    this.name = 'MicrosoftAuthError';
+    this.code = code;
+  }
+}
+
+export class ProxyHttpError extends Error {
+  code?: string;
+  status?: number;
+
+  constructor(message: string, options?: { code?: string; status?: number }) {
+    super(message);
+    this.name = 'ProxyHttpError';
+    this.code = options?.code;
+    this.status = options?.status;
+  }
+}
+
+export const parseProxyHttpError = <T = Record<string, unknown>>(err: unknown): T => {
+  // Manejo de errores con estructura de backend { code, message }
+  if (err && typeof err === 'object') {
+    if ('code' in err && 'message' in err) {
+      const bErr = err as { code: string; message: string; data?: unknown };
+      if (bErr.data && typeof bErr.data === 'object') {
+        return bErr.data as T;
       }
+      return { error: bErr.code, errorMessage: bErr.message } as unknown as T;
+    }
+    if ('error' in err || 'XErr' in err || 'errorMessage' in err) {
+      return err as T;
     }
   }
-  throw err;
+
+  const msg = err instanceof Error ? err.message : String(err);
+  const statusMatch = msg.match(/HTTP\s+(\d{3})/i);
+  const status = statusMatch ? parseInt(statusMatch[1], 10) : undefined;
+
+  const jsonStart = msg.indexOf('{');
+  const jsonEnd = msg.lastIndexOf('}');
+  if (jsonStart !== -1 && jsonEnd > jsonStart) {
+    try {
+      const parsed = JSON.parse(msg.slice(jsonStart, jsonEnd + 1));
+      if (
+        parsed &&
+        typeof parsed === 'object' &&
+        ('error' in parsed || 'XErr' in parsed || 'errorMessage' in parsed)
+      ) {
+        return parsed as T;
+      }
+    } catch {
+      // Ignorar fallo de parseo JSON y re-lanzar error
+    }
+  }
+
+  throw new ProxyHttpError(msg, { status });
 };
 
-// Helper for POST requests through Rust proxy
-const proxyPost = async <T = Record<string, unknown>>(
+type HttpProxyMethod = 'http_get' | 'http_post' | 'http_put' | 'http_delete';
+
+interface ProxyRequestOptions {
+  url: string;
+  headers?: Record<string, string>;
+  body?: string;
+}
+
+const executeProxyRequest = async <T = Record<string, unknown>>(
+  method: HttpProxyMethod,
+  options: ProxyRequestOptions,
+): Promise<T> => {
+  let responseText: string;
+  try {
+    const args: Record<string, unknown> = {
+      url: options.url,
+      headers: options.headers ?? {},
+    };
+    if (options.body !== undefined) {
+      args.body = options.body;
+    }
+    responseText = await invoke<string>(method, args);
+  } catch (err) {
+    return parseProxyHttpError<T>(err);
+  }
+
+  if (typeof responseText !== 'string' || responseText.trim().length === 0) {
+    return {} as T;
+  }
+
+  try {
+    return JSON.parse(responseText) as T;
+  } catch {
+    throw new ProxyHttpError(
+      `Respuesta del proxy no válida como JSON para ${options.url}: ${responseText.slice(0, 100)}`,
+    );
+  }
+};
+
+const proxyPost = <T = Record<string, unknown>>(
   url: string,
   headers: Record<string, string>,
   body: string,
-): Promise<T> => {
-  let responseText: string;
-  try {
-    responseText = await invoke('http_post', { url, headers, body });
-  } catch (err) {
-    return parseProxyHttpError<T>(err);
-  }
-  try {
-    return JSON.parse(responseText) as T;
-  } catch {
-    return responseText as unknown as T;
-  }
-};
+): Promise<T> => executeProxyRequest<T>('http_post', { url, headers, body });
 
-// Helper for GET requests through Rust proxy
-const proxyGet = async <T = Record<string, unknown>>(
+const proxyGet = <T = Record<string, unknown>>(
   url: string,
   headers: Record<string, string>,
-): Promise<T> => {
-  let responseText: string;
-  try {
-    responseText = await invoke('http_get', { url, headers });
-  } catch (err) {
-    return parseProxyHttpError<T>(err);
-  }
-  try {
-    return JSON.parse(responseText) as T;
-  } catch {
-    return responseText as unknown as T;
-  }
-};
+): Promise<T> => executeProxyRequest<T>('http_get', { url, headers });
 
-// Helper for PUT requests through Rust proxy
-const proxyPut = async <T = Record<string, unknown>>(
+const proxyPut = <T = Record<string, unknown>>(
   url: string,
   headers: Record<string, string>,
   body: string,
-): Promise<T> => {
-  let responseText: string;
-  try {
-    responseText = await invoke('http_put', { url, headers, body });
-  } catch (err) {
-    return parseProxyHttpError<T>(err);
-  }
-  try {
-    return JSON.parse(responseText) as T;
-  } catch {
-    return responseText as unknown as T;
-  }
-};
+): Promise<T> => executeProxyRequest<T>('http_put', { url, headers, body });
 
-// Helper for DELETE requests through Rust proxy
-const proxyDelete = async <T = Record<string, unknown>>(
+const proxyDelete = <T = Record<string, unknown>>(
   url: string,
   headers: Record<string, string>,
-): Promise<T> => {
-  let responseText: string;
-  try {
-    responseText = await invoke('http_delete', { url, headers });
-  } catch (err) {
-    return parseProxyHttpError<T>(err);
-  }
-  try {
-    return JSON.parse(responseText) as T;
-  } catch {
-    return responseText as unknown as T;
-  }
-};
+): Promise<T> => executeProxyRequest<T>('http_delete', { url, headers });
 
 export const startMicrosoftOAuthFlow = async (): Promise<MicrosoftDeviceCode> => {
   const body = `client_id=${CLIENT_ID}&scope=${encodeURIComponent(SCOPE)}`;
@@ -235,21 +260,24 @@ export const refreshMicrosoftSession = async (
   );
 
   if (res.error) {
-    throw new Error(`Error al renovar token: ${res.error_description ?? res.error}`);
+    throw new MicrosoftAuthError(
+      `Error al renovar token (${res.error}): ${res.error_description ?? res.error}`,
+      res.error,
+    );
   }
 
   onStatus?.('Autenticando con Xbox Live...');
   return completeMinecraftAuth(res.access_token, res.refresh_token ?? refreshToken, onStatus);
 };
 
+import { logFrontend } from './logger';
+
 const debugLog = (msg: string) => {
-  console.log(msg);
-  invoke('log_frontend', { msg }).catch(() => {});
+  logFrontend('INFO', msg);
 };
 
 const debugLogError = (msg: string) => {
-  console.error(msg);
-  invoke('log_frontend', { msg: `[Error] ${msg}` }).catch(() => {});
+  logFrontend('ERROR', msg);
 };
 
 export const completeMinecraftAuth = async (
@@ -276,12 +304,15 @@ export const completeMinecraftAuth = async (
       TokenType: 'JWT',
     }),
   );
-  debugLog('[MS Auth] Step 1 response: ' + JSON.stringify(xblRes));
-
   if (!xblRes.Token) {
-    debugLogError('[MS Auth] Step 1 failed, missing Token');
-    throw new Error(`Error de Xbox Live: ${JSON.stringify(xblRes)}`);
+    debugLogError(
+      '[MS Auth] Step 1 failed: missing Token' + (xblRes.error ? ` (error: ${xblRes.error})` : ''),
+    );
+    throw new Error(
+      `Error de Xbox Live: ${xblRes.errorMessage ?? xblRes.error ?? 'Token ausente'}`,
+    );
   }
+  debugLog('[MS Auth] Step 1 complete (Xbox Live)');
 
   const xblToken = xblRes.Token;
   const uhs = xblRes.DisplayClaims?.xui?.[0]?.uhs;
@@ -308,7 +339,6 @@ export const completeMinecraftAuth = async (
       TokenType: 'JWT',
     }),
   );
-  debugLog('[MS Auth] Step 2 response: ' + JSON.stringify(xstsRes));
 
   if (xstsRes.XErr) {
     const errCode = xstsRes.XErr.toString();
@@ -321,8 +351,9 @@ export const completeMinecraftAuth = async (
           'Entra en xbox.com, crea un gamertag e inténtalo de nuevo.',
       );
     }
-    throw new Error(`Error de Xbox (XSTS): ${JSON.stringify(xstsRes)}`);
+    throw new Error(`Error de Xbox (XSTS): XErr=${errCode}`);
   }
+  debugLog('[MS Auth] Step 2 complete (XSTS)');
 
   const xstsToken = xstsRes.Token;
 
@@ -338,12 +369,17 @@ export const completeMinecraftAuth = async (
       identityToken: `XBL3.0 x=${uhs};${xstsToken}`,
     }),
   );
-  debugLog('[MS Auth] Step 3 response: ' + JSON.stringify(mcRes));
 
   if (!mcRes.access_token) {
-    debugLogError('[MS Auth] Step 3 failed, missing Minecraft access token');
-    throw new Error(`Error de inicio de sesión de Minecraft: ${JSON.stringify(mcRes)}`);
+    debugLogError(
+      '[MS Auth] Step 3 failed: missing Minecraft access token' +
+        (mcRes.error ? ` (error: ${mcRes.error})` : ''),
+    );
+    throw new Error(
+      `Error de inicio de sesión de Minecraft: ${mcRes.errorMessage ?? mcRes.error ?? 'Token ausente'}`,
+    );
   }
+  debugLog('[MS Auth] Step 3 complete (Minecraft Auth)');
 
   const mcAccessToken = mcRes.access_token;
 
@@ -354,7 +390,6 @@ export const completeMinecraftAuth = async (
     'https://api.minecraftservices.com/minecraft/profile',
     { Authorization: `Bearer ${mcAccessToken}` },
   );
-  debugLog('[MS Auth] Step 4 response: ' + JSON.stringify(profileRes));
 
   if (profileRes.error) {
     debugLogError('[MS Auth] Step 4 failed, error: ' + profileRes.error);
@@ -365,9 +400,10 @@ export const completeMinecraftAuth = async (
       );
     }
     throw new Error(
-      `Error al obtener perfil: ${profileRes.errorMessage ?? JSON.stringify(profileRes)}`,
+      `Error al obtener perfil: ${profileRes.errorMessage ?? profileRes.error ?? 'Error desconocido'}`,
     );
   }
+  debugLog(`[MS Auth] Step 4 complete (Profile: ${profileRes.name ?? 'OK'})`);
 
   const rawUuid = profileRes.id;
   if (typeof rawUuid !== 'string' || rawUuid.length < 32) {
@@ -389,16 +425,47 @@ export const loginMicrosoftRedirect = async (
   onStatus?: (msg: string) => void,
 ): Promise<MicrosoftAuthResult> => {
   onStatus?.('Abriendo ventana de inicio de sesión de Microsoft...');
-  debugLog('[MS Auth] Opening native Microsoft login window with official redirect URI...');
+  debugLog('[MS Auth] Opening native Microsoft login window with PKCE and state protection...');
+
+  let codeVerifier: string | undefined;
+  let codeChallenge: string | undefined;
+  let state: string | undefined;
+
+  try {
+    if (typeof crypto !== 'undefined' && crypto.getRandomValues && crypto.subtle) {
+      const randomBytes = new Uint8Array(32);
+      crypto.getRandomValues(randomBytes);
+      codeVerifier = Array.from(randomBytes, (b) => b.toString(16).padStart(2, '0')).join('');
+
+      const stateBytes = new Uint8Array(16);
+      crypto.getRandomValues(stateBytes);
+      state = Array.from(stateBytes, (b) => b.toString(16).padStart(2, '0')).join('');
+
+      const encoder = new TextEncoder();
+      const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(codeVerifier));
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      const base64 = btoa(String.fromCharCode(...hashArray));
+      codeChallenge = base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    }
+  } catch (pkceErr) {
+    debugLog(`[MS Auth] Fallback without PKCE: ${pkceErr}`);
+  }
 
   // 1. Open child WebviewWindow in Rust, wait for user login, and intercept redirect_uri
-  const code = await invoke<string>('open_microsoft_auth_window');
-  debugLog('[MS Auth] Code received successfully from Rust auth window: ' + code);
+  const code = await invoke<string>('open_microsoft_auth_window', {
+    codeChallenge: codeChallenge ?? null,
+    state: state ?? null,
+  });
+  debugLog('[MS Auth] Authorization code received from auth window');
 
   onStatus?.('Obteniendo tokens de Microsoft...');
-  const tokenBody = `client_id=${CLIENT_ID}&grant_type=authorization_code&code=${encodeURIComponent(
+  let tokenBody = `client_id=${CLIENT_ID}&grant_type=authorization_code&code=${encodeURIComponent(
     code,
   )}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=${encodeURIComponent(SCOPE)}`;
+
+  if (codeVerifier) {
+    tokenBody += `&code_verifier=${encodeURIComponent(codeVerifier)}`;
+  }
 
   debugLog('[MS Auth] Fetching Microsoft tokens from OAuth endpoint...');
   const res = await proxyPost<OAuthTokenResponse>(
@@ -406,7 +473,7 @@ export const loginMicrosoftRedirect = async (
     { 'Content-Type': 'application/x-www-form-urlencoded' },
     tokenBody,
   );
-  debugLog('[MS Auth] Token endpoint response received: ' + JSON.stringify(res));
+  debugLog('[MS Auth] Token endpoint response received');
 
   if (res.error) {
     debugLogError(
@@ -418,7 +485,9 @@ export const loginMicrosoftRedirect = async (
   onStatus?.('Autenticando con Xbox Live...');
   debugLog('[MS Auth] Completing Minecraft authentication steps...');
   const result = await completeMinecraftAuth(res.access_token, res.refresh_token, onStatus);
-  debugLog('[MS Auth] Authentication completed successfully! Result: ' + JSON.stringify(result));
+  debugLog(
+    `[MS Auth] Authentication completed successfully for user: ${result.username} (${result.uuid})`,
+  );
   return result;
 };
 

@@ -7,14 +7,14 @@ export * from './registry';
 export * from './builtin/netherPortalModule';
 export * from './builtin/communityHubModule';
 
-let initialized = false;
-
 export const initializeBuiltinModules = () => {
-  if (initialized) return;
-  initialized = true;
-
   const registry = useModuleStore.getState();
-  registry.registerModule(NetherPortalModule);
-  registry.registerModule(CommunityHubModule);
+  if (!registry.modules.some((m) => m.id === NetherPortalModule.id)) {
+    registry.registerModule(NetherPortalModule);
+  }
+  if (!registry.modules.some((m) => m.id === CommunityHubModule.id)) {
+    registry.registerModule(CommunityHubModule);
+  }
   registry.loadSavedCustomPlugins();
 };
+
