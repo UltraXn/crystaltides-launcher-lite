@@ -79,6 +79,7 @@ async function fetchUserProfile(
     const profileRes = await fetch(
       `${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}&select=*`,
       {
+        signal: AbortSignal.timeout(10000),
         headers: {
           apikey: SUPABASE_ANON_KEY,
           Authorization: `Bearer ${accessToken}`,
@@ -161,6 +162,7 @@ export async function loginWithCrystalTides(
   try {
     response = await fetch(tokenUrl, {
       method: 'POST',
+      signal: AbortSignal.timeout(15000),
       headers: {
         'Content-Type': 'application/json',
         apikey: SUPABASE_ANON_KEY,

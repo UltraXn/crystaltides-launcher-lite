@@ -236,5 +236,41 @@ describe('ButtonCustomizerModal & InstancesCreateTab Suite', () => {
         expect(navigator.clipboard.writeText).toHaveBeenCalled();
       }
     });
+
+    it('muestra el botón de subir imagen y campo de URL sin texturas predefinidas en modo Imagen', () => {
+      render(
+        <ButtonCustomizerModal
+          isOpen={true}
+          buttonId="instances"
+          onClose={vi.fn()}
+        />
+      );
+
+      const imgTypeBtn = screen.getByRole('button', { name: /Imagen \/ Textura/i });
+      fireEvent.click(imgTypeBtn);
+
+      expect(screen.getByRole('button', { name: /Subir Imagen/i })).toBeTruthy();
+      expect(screen.getByLabelText(/URL de imagen de fondo/i)).toBeTruthy();
+      expect(screen.queryByText(/Texturas predefinidas/i)).toBeNull();
+    });
+
+    it('muestra el botón de subir vídeo y campo de URL sin vídeos predefinidos en modo Vídeo', () => {
+      render(
+        <ButtonCustomizerModal
+          isOpen={true}
+          buttonId="instances"
+          onClose={vi.fn()}
+        />
+      );
+
+      const videoTypeBtn = screen.getByRole('button', { name: /Vídeo en Bucle/i });
+      fireEvent.click(videoTypeBtn);
+
+      expect(screen.getByRole('button', { name: /Subir Vídeo/i })).toBeTruthy();
+      expect(screen.getByLabelText(/URL del vídeo de fondo/i)).toBeTruthy();
+      expect(screen.getByLabelText(/Opacidad del vídeo/i)).toBeTruthy();
+      expect(screen.queryByText(/Vídeos animados predefinidos/i)).toBeNull();
+    });
   });
 });
+

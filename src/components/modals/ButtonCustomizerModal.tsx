@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   X,
   RotateCcw,
@@ -18,6 +18,7 @@ import {
   Ban,
   Activity,
   Tv,
+  Upload,
 } from 'lucide-react';
 import DOMPurify from 'dompurify';
 import {
@@ -31,6 +32,7 @@ import {
 } from '../../store/launcherStore';
 import { useModuleStore } from '../../modules';
 import { CustomColorPicker } from '../common/CustomColorPicker';
+import { saveButtonMediaFile } from '../../utils/wallpaperStorage';
 
 interface ButtonCustomizerModalProps {
   buttonId?: DockButtonId;
@@ -68,48 +70,6 @@ const BUTTON_METADATA: Record<
     defaultColor: '#22c55e',
   },
 };
-
-const BG_IMAGE_PRESETS = [
-  {
-    name: 'Obsidiana',
-    url: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=300&auto=format&fit=crop&q=80',
-  },
-  {
-    name: 'Portal Nether',
-    url: 'https://images.unsplash.com/photo-1550684848-fac1c5b4e853?w=300&auto=format&fit=crop&q=80',
-  },
-  {
-    name: 'Ciber Neón',
-    url: 'https://images.unsplash.com/photo-1508739773434-c26b3d09e071?w=300&auto=format&fit=crop&q=80',
-  },
-  {
-    name: 'Esmeralda',
-    url: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=300&auto=format&fit=crop&q=80',
-  },
-];
-
-const BG_VIDEO_PRESETS = [
-  {
-    name: 'Portal Nether Loop',
-    url: 'https://assets.mixkit.co/videos/preview/mixkit-abstract-purple-and-blue-light-streaks-31768-large.mp4',
-  },
-  {
-    name: 'Código Matrix Stream',
-    url: 'https://assets.mixkit.co/videos/preview/mixkit-digital-animation-of-screens-with-code-31913-large.mp4',
-  },
-  {
-    name: 'Ciber Túnel',
-    url: 'https://assets.mixkit.co/videos/preview/mixkit-neon-lights-tunnel-loop-31998-large.mp4',
-  },
-  {
-    name: 'Olas de Agua Shaders',
-    url: 'https://assets.mixkit.co/videos/preview/mixkit-water-surface-in-a-swimming-pool-41584-large.mp4',
-  },
-  {
-    name: 'Nebulosa Cósmica',
-    url: 'https://assets.mixkit.co/videos/preview/mixkit-stars-in-space-1610-large.mp4',
-  },
-];
 
 const SPECIAL_EFFECT_OPTIONS: {
   id: DockButtonEffect;
@@ -392,16 +352,61 @@ const CustomizerLivePreview: React.FC<CustomizerLivePreviewProps> = ({
 };
 
 interface CustomizerBackgroundTabProps {
+  buttonId: DockButtonId;
   custom: DockButtonCustomization;
   currentBgType: string;
   handleUpdate: (patch: Partial<DockButtonCustomization>) => void;
 }
 
 const CustomizerBackgroundTab: React.FC<CustomizerBackgroundTabProps> = ({
+  buttonId,
   custom,
   currentBgType,
   handleUpdate,
 }) => {
+  const [isUploading, setIsUploading] = useState(false);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setIsUploading(true);
+      const res = await saveButtonMediaFile(buttonId, file, false);
+      handleUpdate({
+        bgType: 'image',
+        bgImage: res.url,
+        bgVideo: undefined,
+      });
+    } catch (err) {
+      console.error('Error al subir imagen de fondo:', err);
+    } finally {
+      setIsUploading(false);
+      if (e.target) e.target.value = '';
+    }
+  };
+
+  const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setIsUploading(true);
+      const res = await saveButtonMediaFile(buttonId, file, false);
+      handleUpdate({
+        bgType: 'video',
+        bgVideo: res.url,
+        bgImage: undefined,
+        bgVideoOpacity: custom.bgVideoOpacity ?? 0.85,
+      });
+    } catch (err) {
+      console.error('Error al subir vídeo de fondo:', err);
+    } finally {
+      setIsUploading(false);
+      if (e.target) e.target.value = '';
+    }
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
       <div>
@@ -477,82 +482,162 @@ const CustomizerBackgroundTab: React.FC<CustomizerBackgroundTabProps> = ({
 
       {currentBgType === 'image' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <label
-            htmlFor="bg-image-url-input"
-            style={{ fontSize: '11px', fontWeight: 600, color: '#e2e8f0' }}
-          >
-            URL de Imagen Personalizada:
-          </label>
           <input
-            id="bg-image-url-input"
-            type="text"
-            value={custom.bgImage ?? ''}
-            onChange={(e) => handleUpdate({ bgImage: e.target.value.trim() })}
-            placeholder="https://... o ruta de imagen"
-            aria-label="URL de imagen de fondo"
-            className="login-text-input"
-            style={{ fontSize: '11.5px', height: '34px' }}
+            ref={imageInputRef}
+            type="file"
+            accept="image/*,.png,.jpg,.jpeg,.webp,.gif"
+            style={{ display: 'none' }}
+            onChange={handleImageUpload}
           />
+
           <div>
             <span
               style={{
                 fontSize: '11px',
-                color: '#94a3b8',
+                fontWeight: 600,
+                color: '#e2e8f0',
                 display: 'block',
                 marginBottom: '6px',
               }}
             >
-              Texturas predefinidas:
+              Imagen de Fondo:
             </span>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
-              {BG_IMAGE_PRESETS.map((p) => (
-                <button
-                  key={p.name}
-                  type="button"
-                  onClick={() => handleUpdate({ bgImage: p.url })}
-                  style={{
-                    padding: '6px',
-                    borderRadius: '6px',
-                    border:
-                      custom.bgImage === p.url
-                        ? '1px solid var(--accent-primary, #00e5ff)'
-                        : '1px solid rgba(255, 255, 255, 0.1)',
-                    background: `url(${p.url}) center/cover no-repeat`,
-                    height: '48px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'flex-end',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <span
-                    style={{
-                      background: 'rgba(0,0,0,0.7)',
-                      padding: '1px 5px',
-                      borderRadius: '4px',
-                      fontSize: '9.5px',
-                      color: '#ffffff',
-                      fontWeight: 600,
-                    }}
-                  >
-                    {p.name}
-                  </span>
-                </button>
-              ))}
-            </div>
+            <button
+              type="button"
+              onClick={() => imageInputRef.current?.click()}
+              disabled={isUploading}
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                padding: '10px 14px',
+                borderRadius: '8px',
+                background: 'rgba(56, 189, 248, 0.1)',
+                border: '1px solid rgba(56, 189, 248, 0.3)',
+                color: 'var(--accent-primary, #38bdf8)',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: isUploading ? 'not-allowed' : 'pointer',
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              <Upload size={15} />
+              <span>{isUploading ? 'Subiendo imagen...' : 'Subir Imagen'}</span>
+            </button>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: '2px 0' }}>
+            <div style={{ flex: 1, height: '1px', background: 'rgba(255, 255, 255, 0.08)' }} />
+            <span
+              style={{
+                fontSize: '10px',
+                color: '#64748b',
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                fontWeight: 600,
+              }}
+            >
+              o pegar URL
+            </span>
+            <div style={{ flex: 1, height: '1px', background: 'rgba(255, 255, 255, 0.08)' }} />
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <label
+              htmlFor="bg-image-url-input"
+              style={{ fontSize: '11px', fontWeight: 600, color: '#94a3b8' }}
+            >
+              URL de Imagen Personalizada:
+            </label>
+            <input
+              id="bg-image-url-input"
+              type="text"
+              value={custom.bgImage ?? ''}
+              onChange={(e) => handleUpdate({ bgImage: e.target.value.trim() })}
+              placeholder="https://... o ruta de imagen"
+              aria-label="URL de imagen de fondo"
+              className="login-text-input"
+              style={{ fontSize: '11.5px', height: '34px' }}
+            />
           </div>
         </div>
       )}
 
       {currentBgType === 'video' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <input
+            ref={videoInputRef}
+            type="file"
+            accept="video/mp4,video/webm,video/ogg,image/webp,image/gif"
+            style={{ display: 'none' }}
+            onChange={handleVideoUpload}
+          />
+
+          <div>
+            <span
+              style={{
+                fontSize: '11px',
+                fontWeight: 600,
+                color: '#e2e8f0',
+                display: 'block',
+                marginBottom: '6px',
+              }}
+            >
+              Vídeo en Bucle:
+            </span>
+            <button
+              type="button"
+              onClick={() => videoInputRef.current?.click()}
+              disabled={isUploading}
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                padding: '10px 14px',
+                borderRadius: '8px',
+                background: 'rgba(56, 189, 248, 0.1)',
+                border: '1px solid rgba(56, 189, 248, 0.3)',
+                color: 'var(--accent-primary, #38bdf8)',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: isUploading ? 'not-allowed' : 'pointer',
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              <Upload size={15} />
+              <span>{isUploading ? 'Subiendo vídeo...' : 'Subir Vídeo'}</span>
+            </button>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: '2px 0' }}>
+            <div style={{ flex: 1, height: '1px', background: 'rgba(255, 255, 255, 0.08)' }} />
+            <span
+              style={{
+                fontSize: '10px',
+                color: '#64748b',
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                fontWeight: 600,
+              }}
+            >
+              o pegar URL
+            </span>
+            <div style={{ flex: 1, height: '1px', background: 'rgba(255, 255, 255, 0.08)' }} />
+          </div>
+
           <div>
             <label
               htmlFor="bg-video-url-input"
               style={{
                 fontSize: '11px',
                 fontWeight: 600,
-                color: '#e2e8f0',
+                color: '#94a3b8',
                 display: 'block',
                 marginBottom: '4px',
               }}
@@ -594,50 +679,6 @@ const CustomizerBackgroundTab: React.FC<CustomizerBackgroundTabProps> = ({
               aria-label="Opacidad del vídeo"
               style={{ width: '100%', accentColor: 'var(--accent-primary, #00e5ff)' }}
             />
-          </div>
-
-          <div>
-            <span
-              style={{
-                fontSize: '11px',
-                color: '#94a3b8',
-                display: 'block',
-                marginBottom: '6px',
-              }}
-            >
-              Vídeos animados predefinidos:
-            </span>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
-              {BG_VIDEO_PRESETS.map((vp) => (
-                <button
-                  key={vp.name}
-                  type="button"
-                  onClick={() => handleUpdate({ bgVideo: vp.url })}
-                  style={{
-                    padding: '8px 10px',
-                    borderRadius: '8px',
-                    border:
-                      custom.bgVideo === vp.url
-                        ? '1px solid var(--accent-primary, #00e5ff)'
-                        : '1px solid rgba(255, 255, 255, 0.08)',
-                    background:
-                      custom.bgVideo === vp.url
-                        ? 'rgba(0, 229, 255, 0.15)'
-                        : 'rgba(255, 255, 255, 0.03)',
-                    color: '#e2e8f0',
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                  }}
-                >
-                  <span>{vp.name}</span>
-                </button>
-              ))}
-            </div>
           </div>
         </div>
       )}
@@ -1353,6 +1394,7 @@ export const ButtonCustomizerModal: React.FC<ButtonCustomizerModalProps> = ({
         <div style={{ flex: 1, overflowY: 'auto', paddingRight: '4px', minHeight: '260px' }}>
           {activeTab === 'background' && (
             <CustomizerBackgroundTab
+              buttonId={activeBtnId}
               custom={custom}
               currentBgType={currentBgType}
               handleUpdate={handleUpdate}

@@ -407,5 +407,38 @@ describe('HomeDock Component & Helpers Suite', () => {
         '0 20px 50px rgba(0, 0, 0, 0.8)',
       );
     });
+
+    it('muestra dinámicamente el logo del loader según la instancia activa seleccionada', () => {
+      useLauncherStore.setState({
+        instances: [
+          {
+            id: 'inst-neoforge',
+            name: 'Instancia NeoForge',
+            mcVersion: '1.21.1',
+            loaderType: 'neoforge',
+            icon: 'crystal',
+            createdAt: 1000,
+          },
+          {
+            id: 'inst-fabric',
+            name: 'Instancia Fabric',
+            mcVersion: '1.21.1',
+            loaderType: 'fabric',
+            icon: 'sword',
+            createdAt: 2000,
+          },
+        ],
+        activeInstanceId: 'inst-neoforge',
+      });
+
+      const { rerender } = render(<HomeDock />);
+      expect(screen.getByLabelText('NeoForge Logo')).toBeDefined();
+
+      // Cambiar a instancia con Fabric
+      useLauncherStore.setState({ activeInstanceId: 'inst-fabric' });
+      rerender(<HomeDock />);
+      expect(screen.getByLabelText('Fabric Logo')).toBeDefined();
+    });
   });
 });
+

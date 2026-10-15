@@ -258,7 +258,7 @@ export const LoaderIconBadge: React.FC<LoaderIconProps> = ({
   } else if (norm.includes('forge')) {
     bg = 'rgba(217, 119, 6, 0.16)';
     borderColor = 'rgba(234, 179, 8, 0.35)';
-    iconSrc = '/icons/forge.ico';
+    iconSrc = '/icons/forge.png';
     altText = 'Forge';
     fallbackSvg = <ForgeLogo size={size - 4} />;
   } else {
@@ -309,3 +309,32 @@ export const LoaderIconBadge: React.FC<LoaderIconProps> = ({
     </span>
   );
 };
+
+export interface LoaderLogoProps {
+  type: LoaderBrand | string;
+  size?: number;
+  className?: string;
+  style?: React.CSSProperties;
+}
+
+export const LoaderLogo: React.FC<LoaderLogoProps> = ({
+  type,
+  size = 24,
+  style,
+}) => {
+  const norm = (type || '').toLowerCase().trim();
+  if (norm.includes('neoforge')) {
+    return <NeoForgeLogo size={size} style={style} />;
+  }
+  if (norm.includes('fabric')) {
+    return <FabricLogo size={size} style={style} />;
+  }
+  if (norm.includes('quilt')) {
+    return <QuiltLogo size={size} style={style} />;
+  }
+  if (norm.includes('forge')) {
+    return <ForgeLogo size={size} style={style} />;
+  }
+  return <VanillaLogo size={size} style={style} />;
+};
+

@@ -32,6 +32,7 @@ import {
   getSafeYBelowHudBar,
 } from '../utils/collisionSystem';
 import { DockButtonInspector, InspectorTab } from './DockButtonInspector';
+import { LoaderLogo } from './common/LoaderIcons';
 
 export type DraggingTargetId = 'dock' | DockButtonId | null;
 
@@ -1518,19 +1519,31 @@ export const HomeDock: React.FC = () => {
   const renderInstancesButton = (customColor?: string | null) => {
     const iconColor = customColor ?? (activeInstance?.isOfficial ? accentColor : '#22c55e');
     const shouldShowLabel = showLabels && !dockConfig.buttonCustomizations?.instances?.hideLabel;
+
+    const defaultIcon = activeInstance?.loaderType ? (
+      <LoaderLogo
+        type={activeInstance.loaderType}
+        size={iconSize}
+        style={{
+          filter: customColor
+            ? `drop-shadow(0 0 6px ${customColor}80)`
+            : 'drop-shadow(0 2px 4px rgba(0, 0, 0, 0.45))',
+          transition: 'transform 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+        }}
+      />
+    ) : (
+      <Layers
+        size={iconSize}
+        style={{
+          color: iconColor,
+          filter: customColor ? `drop-shadow(0 0 6px ${customColor}80)` : 'none',
+        }}
+      />
+    );
+
     return (
       <>
-        {renderIconWithCustomization(
-          'instances',
-          <Layers
-            size={iconSize}
-            style={{
-              color: iconColor,
-              filter: customColor ? `drop-shadow(0 0 6px ${customColor}80)` : 'none',
-            }}
-          />,
-          iconColor,
-        )}
+        {renderIconWithCustomization('instances', defaultIcon, iconColor)}
         {shouldShowLabel && (
           <span
             className="dock-label"

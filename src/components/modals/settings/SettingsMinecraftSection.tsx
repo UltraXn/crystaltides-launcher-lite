@@ -1,7 +1,9 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { Zap } from 'lucide-react';
 import { useT, resolveEffectiveLoaderVersion } from '../../../store/launcherStore';
 import { CustomSelect, SelectOption } from '../../common/CustomSelect';
+import { LoaderIconBadge } from '../../common/LoaderIcons';
 
 export interface SettingsMinecraftSectionProps {
   t: ReturnType<typeof useT>;
@@ -99,11 +101,11 @@ export const SettingsMinecraftSection: React.FC<SettingsMinecraftSectionProps> =
   ];
 
   const loaderTypeOptions: SelectOption[] = [
-    { value: 'neoforge', label: 'NeoForge' },
-    { value: 'fabric', label: 'Fabric' },
-    { value: 'forge', label: 'Forge' },
-    { value: 'quilt', label: 'Quilt' },
-    { value: 'vanilla', label: 'Vanilla' },
+    { value: 'neoforge', label: 'NeoForge', icon: <LoaderIconBadge type="neoforge" size={18} /> },
+    { value: 'fabric', label: 'Fabric', icon: <LoaderIconBadge type="fabric" size={18} /> },
+    { value: 'forge', label: 'Forge', icon: <LoaderIconBadge type="forge" size={18} /> },
+    { value: 'quilt', label: 'Quilt', icon: <LoaderIconBadge type="quilt" size={18} /> },
+    { value: 'vanilla', label: 'Vanilla', icon: <LoaderIconBadge type="vanilla" size={18} /> },
   ];
 
   const loaderVersionOptions: SelectOption[] = [
@@ -328,19 +330,21 @@ export const SettingsMinecraftSection: React.FC<SettingsMinecraftSectionProps> =
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
-                marginBottom: '4px',
+                flexWrap: 'wrap',
+                gap: '6px',
+                marginBottom: '6px',
               }}
             >
               <label className="settings-field-label" style={{ marginBottom: 0 }}>
                 Versión del Loader
               </label>
               {loaderType !== 'vanilla' && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                   {setShowBetaLoaders && (
                     <label
                       htmlFor="settings-show-beta-loaders"
                       className="settings-checkbox-item"
-                      style={{ cursor: 'pointer', marginRight: '4px' }}
+                      style={{ cursor: 'pointer', marginRight: '2px' }}
                     >
                       <input
                         id="settings-show-beta-loaders"
@@ -350,14 +354,15 @@ export const SettingsMinecraftSection: React.FC<SettingsMinecraftSectionProps> =
                         className="papyrus-checkbox"
                         aria-checked={showBetaLoaders ? 'true' : 'false'}
                       />
-                      <span className="checkbox-text">Ver Betas</span>
+                      <span className="checkbox-text" style={{ fontSize: '11px' }}>Ver Betas</span>
                     </label>
                   )}
                   <button
                     type="button"
                     onClick={() => setShowLoaderModal(true)}
                     className="settings-action-btn"
-                    style={{ fontSize: '11px', padding: '4px 10px' }}
+                    style={{ fontSize: '11px', padding: '3px 8px' }}
+                    title="Abrir asistente de instalación"
                   >
                     Elegir otra versión o loader
                   </button>
@@ -370,7 +375,7 @@ export const SettingsMinecraftSection: React.FC<SettingsMinecraftSectionProps> =
                       color: '#38bdf8',
                       fontSize: '11px',
                       cursor: 'pointer',
-                      padding: 0,
+                      padding: '2px 4px',
                       textDecoration: 'underline',
                     }}
                   >
@@ -380,50 +385,193 @@ export const SettingsMinecraftSection: React.FC<SettingsMinecraftSectionProps> =
               )}
             </div>
             {renderLoaderInput()}
-            {showLoaderModal && (
-              <div className="papyrus-modal-overlay" role="presentation">
-                <dialog
-                  open
-                  className="papyrus-settings-card"
-                  aria-label="Descargar e Instalar Mod Loader"
-                  style={{ margin: 'auto', padding: '16px', maxWidth: '420px' }}
-                >
+            {showLoaderModal &&
+              (typeof document !== 'undefined' ? (
+                createPortal(
                   <div
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      marginBottom: '12px',
+                    className="papyrus-modal-overlay"
+                    role="presentation"
+                    style={{ zIndex: 100000, background: 'rgba(2, 6, 23, 0.75)' }}
+                    onClick={(e) => {
+                      if (e.target === e.currentTarget) setShowLoaderModal(false);
                     }}
                   >
-                    <h3 style={{ margin: 0, fontSize: '14px', color: '#f8fafc' }}>
-                      Descargar e Instalar Mod Loader
-                    </h3>
-                    <button
-                      type="button"
-                      onClick={() => setShowLoaderModal(false)}
-                      className="settings-card-close"
-                      title="Cerrar"
+                    <dialog
+                      open
+                      className="papyrus-settings-card"
+                      aria-label="Descargar e Instalar Mod Loader"
+                      style={{
+                        margin: 'auto',
+                        padding: '24px',
+                        width: '460px',
+                        maxWidth: '92vw',
+                        background: 'rgba(11, 19, 34, 0.98)',
+                        border: '1px solid rgba(56, 189, 248, 0.3)',
+                        boxShadow:
+                          '0 25px 60px rgba(0, 0, 0, 0.85), 0 0 25px rgba(56, 189, 248, 0.15)',
+                      }}
                     >
-                      ✕
-                    </button>
-                  </div>
-                  <div
-                    style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '8px',
-                      fontSize: '12px',
-                      color: 'rgba(248, 250, 252, 0.8)',
-                    }}
-                  >
-                    <div>1. Versión Base de Minecraft:</div>
-                    <div>2. Mod Loader (Motor de Mods):</div>
-                    <div>3. Versión del Loader a descargar:</div>
-                  </div>
-                </dialog>
-              </div>
-            )}
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          marginBottom: '16px',
+                          paddingBottom: '10px',
+                          borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <Zap size={18} style={{ color: '#00e5ff' }} />
+                          <h3
+                            style={{
+                              margin: 0,
+                              fontSize: '15px',
+                              fontWeight: 700,
+                              color: '#f8fafc',
+                            }}
+                          >
+                            Descargar e Instalar Mod Loader
+                          </h3>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setShowLoaderModal(false)}
+                          className="settings-card-close"
+                          title="Cerrar"
+                          style={{ position: 'static' }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+
+                      <div
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '10px',
+                          fontSize: '12px',
+                          color: 'rgba(248, 250, 252, 0.85)',
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            padding: '10px 14px',
+                            background: 'rgba(255, 255, 255, 0.03)',
+                            borderRadius: '8px',
+                            border: '1px solid rgba(255, 255, 255, 0.06)',
+                          }}
+                        >
+                          <span>1. Versión Base de Minecraft:</span>
+                          <span
+                            style={{
+                              fontWeight: 700,
+                              color: '#22c55e',
+                              fontFamily: 'monospace',
+                              background: 'rgba(34, 197, 94, 0.12)',
+                              padding: '2px 8px',
+                              borderRadius: '4px',
+                            }}
+                          >
+                            {mcVersion}
+                          </span>
+                        </div>
+
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            padding: '10px 14px',
+                            background: 'rgba(255, 255, 255, 0.03)',
+                            borderRadius: '8px',
+                            border: '1px solid rgba(255, 255, 255, 0.06)',
+                          }}
+                        >
+                          <span>2. Mod Loader (Motor de Mods):</span>
+                          <span
+                            style={{
+                              fontWeight: 700,
+                              color: '#00e5ff',
+                              textTransform: 'uppercase',
+                              background: 'rgba(0, 229, 255, 0.12)',
+                              padding: '2px 8px',
+                              borderRadius: '4px',
+                            }}
+                          >
+                            {loaderType}
+                          </span>
+                        </div>
+
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            padding: '10px 14px',
+                            background: 'rgba(255, 255, 255, 0.03)',
+                            borderRadius: '8px',
+                            border: '1px solid rgba(255, 255, 255, 0.06)',
+                          }}
+                        >
+                          <span>3. Versión del Loader a descargar:</span>
+                          <span
+                            style={{
+                              fontWeight: 700,
+                              color: '#38bdf8',
+                              fontFamily: 'monospace',
+                              background: 'rgba(56, 189, 248, 0.12)',
+                              padding: '2px 8px',
+                              borderRadius: '4px',
+                            }}
+                          >
+                            {loaderVersion || 'Recomendada'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div
+                        style={{
+                          display: 'flex',
+                          gap: '10px',
+                          marginTop: '20px',
+                          justifyContent: 'flex-end',
+                        }}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => setShowLoaderModal(false)}
+                          className="settings-action-btn"
+                        >
+                          Cerrar
+                        </button>
+                        {loaderType !== 'vanilla' && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowLoaderModal(false);
+                              handleInstallLoader();
+                            }}
+                            className="settings-action-btn primary"
+                            style={{
+                              background: 'rgba(0, 229, 255, 0.2)',
+                              borderColor: '#00e5ff',
+                              color: '#00e5ff',
+                              fontWeight: 700,
+                            }}
+                          >
+                            Descargar e Instalar Ahora
+                          </button>
+                        )}
+                      </div>
+                    </dialog>
+                  </div>,
+                  document.body,
+                )
+              ) : null)}
           </div>
         </div>
 
@@ -431,48 +579,63 @@ export const SettingsMinecraftSection: React.FC<SettingsMinecraftSectionProps> =
           <div
             style={{
               display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
+              flexDirection: 'column',
+              gap: '8px',
               marginTop: '10px',
-              padding: '8px 12px',
+              padding: '10px 14px',
               background: 'rgba(255, 255, 255, 0.02)',
               borderRadius: '8px',
               border: '1px solid rgba(255, 255, 255, 0.05)',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '8px',
+              }}
+            >
               <span style={{ fontSize: '12px', color: '#f8fafc' }}>
                 ¿No tienes instalado {loaderType} {loaderVersion}?
               </span>
-              {loaderInstallStatus.message && (
-                <span
-                  style={{
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    color: loaderInstallStatus.success ? '#22c55e' : '#f43f5e',
-                  }}
-                >
-                  {loaderInstallStatus.message}
-                </span>
-              )}
+              <button
+                type="button"
+                onClick={handleInstallLoader}
+                disabled={loaderInstallStatus.loading}
+                className="settings-action-btn"
+                style={{
+                  fontSize: '11px',
+                  padding: '4px 12px',
+                  background: 'rgba(0, 229, 255, 0.15)',
+                  color: '#00e5ff',
+                  border: '1px solid rgba(0, 229, 255, 0.3)',
+                }}
+              >
+                {loaderInstallStatus.loading
+                  ? 'Descargando e instalando...'
+                  : `Descargar e Instalar ${loaderType} ${loaderVersion}`}
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={handleInstallLoader}
-              disabled={loaderInstallStatus.loading}
-              className="settings-action-btn"
-              style={{
-                fontSize: '11px',
-                padding: '4px 12px',
-                background: 'rgba(0, 229, 255, 0.15)',
-                color: '#00e5ff',
-                border: '1px solid rgba(0, 229, 255, 0.3)',
-              }}
-            >
-              {loaderInstallStatus.loading
-                ? 'Descargando e instalando...'
-                : `Descargar e Instalar ${loaderType} ${loaderVersion}`}
-            </button>
+            {loaderInstallStatus.message && (
+              <div
+                style={{
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  color: loaderInstallStatus.success ? '#22c55e' : '#f43f5e',
+                  padding: '6px 10px',
+                  borderRadius: '6px',
+                  background: loaderInstallStatus.success
+                    ? 'rgba(34, 197, 94, 0.1)'
+                    : 'rgba(244, 63, 94, 0.1)',
+                  border: `1px solid ${loaderInstallStatus.success ? 'rgba(34, 197, 94, 0.25)' : 'rgba(244, 63, 94, 0.25)'}`,
+                  wordBreak: 'break-word',
+                }}
+              >
+                {loaderInstallStatus.message}
+              </div>
+            )}
           </div>
         )}
       </div>

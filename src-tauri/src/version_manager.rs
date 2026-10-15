@@ -801,6 +801,25 @@ pub fn cleanup_installer_artifacts(game_dir: &Path) {
     }
 }
 
+fn sanitize_mc_version(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.starts_with("quilt-loader-") || trimmed.starts_with("fabric-loader-") {
+        if let Some(idx) = trimmed.rfind('-') {
+            let candidate = &trimmed[idx + 1..];
+            if candidate.chars().any(|c| c.is_ascii_digit()) {
+                return candidate.to_string();
+            }
+        }
+    }
+    if let Some(idx) = trimmed.find("-NeoForge") {
+        return trimmed[..idx].to_string();
+    }
+    if let Some(idx) = trimmed.find("-forge") {
+        return trimmed[..idx].to_string();
+    }
+    trimmed.to_string()
+}
+
 pub async fn install_mod_loader(
     loader_type: &str,
     loader_version: &str,
@@ -808,6 +827,9 @@ pub async fn install_mod_loader(
     game_dir: &str,
     java_path: &str,
 ) -> Result<String, String> {
+    let clean_mc = sanitize_mc_version(mc_version);
+    let mc_version = clean_mc.as_str();
+
     let game_path = Path::new(game_dir);
     ensure_launcher_profiles(game_path);
     cleanup_installer_artifacts(game_path);
@@ -948,8 +970,23 @@ async fn install_quilt(
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        let err_msg = format!("Instalador Quilt falló: {}", stderr);
-        crate::logger::log("ERROR", "VersionManager", &err_msg);
+        crate::logger::log("ERROR", "VersionManager", &format!("Instalador Quilt falló (stderr completo): {}", stderr));
+        let concise_err = stderr
+            .lines()
+            .find(|line| line.contains("IllegalArgumentException:") || line.contains("Exception:") || line.contains("Error:"))
+            .map(|l| {
+                if let Some(pos) = l.find("IllegalArgumentException:") {
+                    l[pos + "IllegalArgumentException:".len()..].trim().to_string()
+                } else if let Some(pos) = l.find("Exception:") {
+                    l[pos + "Exception:".len()..].trim().to_string()
+                } else {
+                    l.trim().to_string()
+                }
+            })
+            .unwrap_or_else(|| {
+                stderr.lines().filter(|l| !l.trim().is_empty()).take(1).collect::<Vec<_>>().join(" ")
+            });
+        let err_msg = format!("Instalador Quilt falló: {}", if concise_err.is_empty() { "Error desconocido al ejecutar instalador" } else { &concise_err });
         return Err(err_msg);
     }
 

@@ -13,7 +13,7 @@ import {
   importInstanceToLauncher,
   ImportableInstance,
 } from '../../services/instanceImportService';
-import { useLauncherStore, LauncherState } from '../../store/launcherStore';
+import { useLauncherStore, LauncherState, useT } from '../../store/launcherStore';
 import { getSavedInstances } from '../../services/instanceService';
 import { LauncherBrandIcon, CrystalTidesLogo } from '../icons/LauncherBrandIcon';
 
@@ -21,18 +21,26 @@ interface InstancesImportTabProps {
   onImportSuccess: () => void;
 }
 
-const resolveCustomImportLabel = (imported: boolean, importing: boolean) => {
-  if (imported) return 'Ya Importada';
-  if (importing) return 'Importando...';
-  return 'Importar ahora';
+const resolveCustomImportLabel = (
+  imported: boolean,
+  importing: boolean,
+  labels: { already: string; importing: string; importNow: string },
+) => {
+  if (imported) return labels.already;
+  if (importing) return labels.importing;
+  return labels.importNow;
 };
 
-const renderImportButtonLabel = (already: boolean, isWorking: boolean) => {
+const renderImportButtonLabel = (
+  already: boolean,
+  isWorking: boolean,
+  labels: { already: string; importing: string; importBtn: string },
+) => {
   if (already) {
     return (
       <>
         <CheckCircle2 style={{ width: '14px', height: '14px' }} />
-        Ya importada en CrystalTides
+        {labels.already}
       </>
     );
   }
@@ -40,19 +48,20 @@ const renderImportButtonLabel = (already: boolean, isWorking: boolean) => {
     return (
       <>
         <RefreshCw style={{ width: '13px', height: '13px', animation: 'spin 1s linear infinite' }} />
-        Importando...
+        {labels.importing}
       </>
     );
   }
   return (
     <>
       <CrystalTidesLogo size={14} />
-      Importar a CrystalTides
+      {labels.importBtn}
     </>
   );
 };
 
 export const InstancesImportTab: React.FC<InstancesImportTabProps> = ({ onImportSuccess }) => {
+  const t = useT();
   const instances = useLauncherStore((s: LauncherState) => s.instances);
   const [loading, setLoading] = useState(true);
   const [scannedInstances, setScannedInstances] = useState<ImportableInstance[]>([]);
@@ -101,7 +110,7 @@ export const InstancesImportTab: React.FC<InstancesImportTabProps> = ({ onImport
     if (res) {
       setCustomResult(res);
     } else {
-      setCustomError('No se detectó una instalación o estructura válida de Minecraft en la ruta.');
+      setCustomError(t.instances.importInvalidMinecraftDir);
     }
   };
 
@@ -184,6 +193,13 @@ export const InstancesImportTab: React.FC<InstancesImportTabProps> = ({ onImport
     }
   };
 
+  const importLabels = {
+    already: t.instances.alreadyImported,
+    importing: t.instances.importingStatus,
+    importBtn: t.instances.importBtn,
+    importNow: t.instances.importBtn,
+  };
+
   return (
     <div
       style={{
@@ -198,46 +214,58 @@ export const InstancesImportTab: React.FC<InstancesImportTabProps> = ({ onImport
       {/* Top Banner / Custom Directory Box */}
       <div
         style={{
-          background: 'rgba(15, 23, 42, 0.65)',
-          border: '1px solid rgba(0, 229, 255, 0.22)',
-          borderRadius: '12px',
-          padding: '16px',
+          background: 'rgba(20, 37, 62, 0.35)',
+          border: '1px solid rgba(21, 61, 76, 0.45)',
+          borderRadius: '14px',
+          padding: '16px 18px',
           display: 'flex',
           flexDirection: 'column',
-          gap: '12px',
+          gap: '14px',
+          boxShadow: '0 4px 16px -2px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.04)',
         }}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <div style={{ fontSize: '14px', fontWeight: 700, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <FolderDown style={{ width: '18px', height: '18px', color: '#00e5ff' }} />
-              Importador Automático de Instancias
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
+            <div
+              style={{
+                width: '36px',
+                height: '36px',
+                borderRadius: '9px',
+                background: 'rgba(22, 160, 133, 0.12)',
+                border: '1px solid rgba(22, 160, 133, 0.28)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+              }}
+            >
+              <FolderDown style={{ width: '18px', height: '18px', color: '#16A085' }} />
             </div>
-            <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '2px' }}>
-              Escanea perfiles existentes de Minecraft Oficial, CurseForge, Modrinth y Prism Launcher, o selecciona cualquier carpeta manual.
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: '14.5px', fontWeight: 700, color: '#f8fafc', letterSpacing: '-0.01em' }}>
+                {t.instances.importTitle}
+              </div>
+              <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '2px', lineHeight: 1.4 }}>
+                {t.instances.importSubtitle}
+              </div>
             </div>
           </div>
           <button
             type="button"
             onClick={loadInstances}
             disabled={loading}
+            className="instance-action-btn"
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '6px 14px',
-              borderRadius: '8px',
-              border: '1px solid rgba(255, 255, 255, 0.12)',
-              background: 'rgba(255, 255, 255, 0.05)',
-              color: '#f8fafc',
+              height: '32px',
+              padding: '0 14px',
               fontSize: '12px',
               fontWeight: 600,
               cursor: loading ? 'not-allowed' : 'pointer',
-              transition: 'all 0.15s ease',
+              flexShrink: 0,
             }}
           >
             <RefreshCw style={{ width: '13px', height: '13px', animation: loading ? 'spin 1s linear infinite' : 'none' }} />
-            Re-escanear
+            {t.instances.rescanBtn}
           </button>
         </div>
 
@@ -247,13 +275,13 @@ export const InstancesImportTab: React.FC<InstancesImportTabProps> = ({ onImport
             type="text"
             value={customPath}
             onChange={(e) => setCustomPath(e.target.value)}
-            placeholder="O escribe la ruta de una carpeta de Minecraft (ej. D:\Juegos\MiModpack)..."
+            placeholder={t.instances.customPathPlaceholder}
             style={{
               flex: 1,
               padding: '8px 12px',
               borderRadius: '8px',
               border: '1px solid rgba(255, 255, 255, 0.1)',
-              background: 'rgba(10, 14, 23, 0.8)',
+              background: 'rgba(0, 0, 0, 0.35)',
               color: '#f8fafc',
               fontSize: '12px',
               outline: 'none',
@@ -262,41 +290,27 @@ export const InstancesImportTab: React.FC<InstancesImportTabProps> = ({ onImport
           <button
             type="button"
             onClick={handleBrowseFolder}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '8px 14px',
-              borderRadius: '8px',
-              border: '1px solid rgba(0, 229, 255, 0.3)',
-              background: 'rgba(0, 229, 255, 0.1)',
-              color: '#00e5ff',
-              fontSize: '12px',
-              fontWeight: 600,
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-            }}
+            className="instance-action-btn edit"
+            style={{ height: '34px', padding: '0 14px', fontSize: '12px' }}
           >
             <FolderOpen style={{ width: '14px', height: '14px' }} />
-            Examinar
+            {t.instances.browseBtn}
           </button>
           <button
             type="button"
             onClick={() => handleInspectPath()}
             disabled={customScanning || !customPath.trim()}
+            className="instance-play-btn"
             style={{
-              padding: '8px 16px',
-              borderRadius: '8px',
-              border: 'none',
-              background: '#00e5ff',
-              color: '#0a0a0f',
+              height: '34px',
+              padding: '0 16px',
               fontSize: '12px',
-              fontWeight: 700,
+              borderRadius: '8px',
+              opacity: customScanning || !customPath.trim() ? 0.6 : 1,
               cursor: customScanning || !customPath.trim() ? 'not-allowed' : 'pointer',
-              whiteSpace: 'nowrap',
             }}
           >
-            {customScanning ? 'Inspeccionando...' : 'Inspeccionar'}
+            {customScanning ? t.instances.importInspectingStatus : t.instances.importInspectBtn}
           </button>
         </div>
 
@@ -310,8 +324,8 @@ export const InstancesImportTab: React.FC<InstancesImportTabProps> = ({ onImport
         {customResult && (
           <div
             style={{
-              background: 'rgba(0, 229, 255, 0.05)',
-              border: '1px solid rgba(0, 229, 255, 0.35)',
+              background: 'rgba(21, 61, 76, 0.15)',
+              border: '1px solid rgba(21, 86, 91, 0.4)',
               borderRadius: '10px',
               padding: '12px 14px',
               display: 'flex',
@@ -322,9 +336,9 @@ export const InstancesImportTab: React.FC<InstancesImportTabProps> = ({ onImport
             <div>
               <div style={{ fontSize: '13px', fontWeight: 700, color: '#f8fafc' }}>{customResult.name}</div>
               <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px', display: 'flex', gap: '8px' }}>
-                <span>Versión: {customResult.mc_version}</span>
-                <span>Loader: {customResult.loader_type.toUpperCase()}</span>
-                <span>Mods: {customResult.mods_count}</span>
+                <span>{t.instances.importVersionPrefix}: {customResult.mc_version}</span>
+                <span>{t.instances.importLoaderPrefix}: {customResult.loader_type.toUpperCase()}</span>
+                <span>{t.instances.importModsPrefix}: {customResult.mods_count}</span>
               </div>
               <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>{customResult.game_dir}</div>
             </div>
@@ -332,18 +346,17 @@ export const InstancesImportTab: React.FC<InstancesImportTabProps> = ({ onImport
               type="button"
               onClick={() => handleImport(customResult)}
               disabled={importingId === customResult.id || isAlreadyImported(customResult)}
+              className={isAlreadyImported(customResult) ? 'instance-action-btn' : 'instance-play-btn'}
               style={{
-                padding: '7px 16px',
+                height: '32px',
+                padding: '0 16px',
                 borderRadius: '8px',
-                border: 'none',
-                background: isAlreadyImported(customResult) ? 'rgba(34, 197, 94, 0.2)' : '#00e5ff',
-                color: isAlreadyImported(customResult) ? '#22c55e' : '#0a0a0f',
                 fontSize: '12px',
-                fontWeight: 700,
+                fontWeight: 600,
                 cursor: isAlreadyImported(customResult) ? 'default' : 'pointer',
               }}
             >
-              {resolveCustomImportLabel(isAlreadyImported(customResult), importingId === customResult.id)}
+              {resolveCustomImportLabel(isAlreadyImported(customResult), importingId === customResult.id, importLabels)}
             </button>
           </div>
         )}
@@ -353,8 +366,8 @@ export const InstancesImportTab: React.FC<InstancesImportTabProps> = ({ onImport
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
         <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '2px' }}>
           {[
-            { id: 'all', label: 'Todos' },
-            { id: 'mojang', label: 'Minecraft Oficial' },
+            { id: 'all', label: t.instances.importFilterAll },
+            { id: 'mojang', label: t.instances.importFilterOfficial },
             { id: 'curseforge', label: 'CurseForge' },
             { id: 'modrinth', label: 'Modrinth' },
             { id: 'prism', label: 'Prism / MultiMC' },
@@ -369,9 +382,9 @@ export const InstancesImportTab: React.FC<InstancesImportTabProps> = ({ onImport
                 gap: '6px',
                 padding: '5px 12px',
                 borderRadius: '6px',
-                border: 'none',
-                background: filterSource === f.id ? '#00e5ff' : 'rgba(255, 255, 255, 0.06)',
-                color: filterSource === f.id ? '#0a0a0f' : '#cbd5e1',
+                border: filterSource === f.id ? '1px solid rgba(22, 160, 133, 0.45)' : '1px solid rgba(255, 255, 255, 0.08)',
+                background: filterSource === f.id ? 'rgba(22, 160, 133, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                color: filterSource === f.id ? '#16A085' : '#cbd5e1',
                 fontSize: '11px',
                 fontWeight: 600,
                 cursor: 'pointer',
@@ -391,7 +404,7 @@ export const InstancesImportTab: React.FC<InstancesImportTabProps> = ({ onImport
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Buscar por nombre o versión..."
+            placeholder={t.instances.importSearchPlaceholder}
             style={{
               width: '100%',
               padding: '6px 10px 6px 28px',
@@ -409,12 +422,12 @@ export const InstancesImportTab: React.FC<InstancesImportTabProps> = ({ onImport
       {/* Scanned Instances Grid */}
       {loading && (
         <div style={{ textAlign: 'center', padding: '40px', color: '#94a3b8', fontSize: '13px' }}>
-          Escaneando launchers instalados en el sistema...
+          {t.instances.importScanningLaunchers}
         </div>
       )}
       {!loading && filteredList.length === 0 && (
         <div style={{ textAlign: 'center', padding: '40px', color: '#94a3b8', fontSize: '13px', background: 'rgba(255,255,255,0.02)', borderRadius: '10px' }}>
-          No se encontraron instancias en los launchers seleccionados. Usa el selector de carpetas superior para importar manualmente.
+          {t.instances.importNoInstancesFound}
         </div>
       )}
       {!loading && filteredList.length > 0 && (
@@ -425,7 +438,7 @@ export const InstancesImportTab: React.FC<InstancesImportTabProps> = ({ onImport
             gap: '12px',
           }}
         >
-          {filteredList.map((item) => {
+          {filteredList.map((item, index) => {
             const already = isAlreadyImported(item);
             const badge = getLoaderBadgeColor(item.loader_type);
             const isWorking = importingId === item.id;
@@ -433,16 +446,14 @@ export const InstancesImportTab: React.FC<InstancesImportTabProps> = ({ onImport
             return (
               <div
                 key={item.id}
+                className="instance-subitem-card"
                 style={{
-                  background: 'rgba(15, 23, 42, 0.75)',
-                  border: `1px solid ${already ? 'rgba(34, 197, 94, 0.25)' : 'rgba(255, 255, 255, 0.08)'}`,
-                  borderRadius: '12px',
-                  padding: '14px',
                   display: 'flex',
                   flexDirection: 'column',
                   justifyContent: 'space-between',
                   gap: '12px',
-                  transition: 'border-color 0.15s ease',
+                  animation: 'instanceCardEntrance 0.22s cubic-bezier(0.16, 1, 0.3, 1) backwards',
+                  animationDelay: `${Math.min(index * 35, 210)}ms`,
                 }}
               >
                 <div>
@@ -474,7 +485,7 @@ export const InstancesImportTab: React.FC<InstancesImportTabProps> = ({ onImport
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>
                     <span>Minecraft {item.mc_version}</span>
                     <span>•</span>
-                    <span>{item.mods_count > 0 ? `${item.mods_count} mods` : 'Sin mods'}</span>
+                    <span>{item.mods_count > 0 ? `${item.mods_count} mods` : t.instances.importNoMods}</span>
                   </div>
 
                   <div
@@ -496,24 +507,21 @@ export const InstancesImportTab: React.FC<InstancesImportTabProps> = ({ onImport
                   type="button"
                   onClick={() => handleImport(item)}
                   disabled={already || isWorking}
+                  className={already ? 'instance-action-btn' : 'instance-play-btn'}
                   style={{
                     width: '100%',
-                    padding: '8px 12px',
+                    height: '34px',
                     borderRadius: '8px',
-                    border: 'none',
-                    background: already ? 'rgba(34, 197, 94, 0.15)' : '#00e5ff',
-                    color: already ? '#22c55e' : '#0a0a0f',
                     fontSize: '12px',
-                    fontWeight: 700,
+                    fontWeight: 600,
                     cursor: already ? 'default' : 'pointer',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     gap: '6px',
-                    transition: 'all 0.15s ease',
                   }}
                 >
-                  {renderImportButtonLabel(already, isWorking)}
+                  {renderImportButtonLabel(already, isWorking, importLabels)}
                 </button>
               </div>
             );

@@ -244,6 +244,91 @@ export const translations = {
       edit: 'Editar',
       editTitle: 'Editar Instancia',
       noInstances: 'No hay instancias creadas.',
+      tabWorlds: 'Mundos',
+      tabServers: 'Servidores',
+      tabMods: 'Mods',
+      tabImport: 'Importar',
+      selectInstance: 'Seleccionar',
+
+      // Mods Tab
+      modsSubtitle: 'Mods instalados en mods/ para esta instancia.',
+      modsHint: 'Puedes activar, desactivar o eliminar mods comunitarios.',
+      scanningMods: 'Escaneando mods...',
+      openModsFolder: 'Abrir carpeta mods',
+      noModsFound: 'No se encontraron mods en la carpeta mods de esta instancia.',
+      modOfficial: 'Oficial',
+      modCommunity: 'Comunidad',
+      modActive: 'Activo',
+      modDisabled: 'Desactivado',
+      modDisableBtn: 'Desactivar',
+      modEnableBtn: 'Activar',
+      modDeleteTitle: 'Eliminar mod',
+
+      // Worlds / Saves Tab
+      savesSubtitle:
+        'Mundos locales singleplayer leídos directamente en Rust con fastnbt desde saves/.',
+      parsingLevelDat: 'Parseando level.dat...',
+      noSavesFound: 'No se encontraron mundos singleplayer en esta instancia.',
+      gameTypeCreative: 'Creativo',
+      gameTypeSurvival: 'Supervivencia',
+      gameTypeHardcore: 'Hardcore',
+      unregisteredVersion: 'Versión no registrada',
+      noDate: 'Sin fecha',
+
+      // Servers Tab
+      serversSubtitle:
+        'Servidores multijugador guardados en servers.dat serializados y parseados en Rust.',
+      readingServersDat: 'Leyendo servers.dat...',
+      serverNamePlaceholder: 'Nombre del servidor (ej. CrystalTides SMP)',
+      serverIpPlaceholder: 'Dirección IP / Host (ej. mc.crystaltides.net)',
+      addServerBtn: 'Añadir Servidor',
+      noServersFound: 'No hay servidores multijugador registrados en servers.dat.',
+      ipCopied: 'Copiada',
+      copyIp: 'Copiar IP',
+      deleteServerTitle: 'Eliminar servidor de servers.dat',
+
+      // Create / Edit Tab form
+      loaderVersionLabel: 'Versión del Loader',
+      viewBetas: 'Ver Betas',
+      modeManual: 'Manual',
+      modeList: 'Lista',
+      customResolutionTitle: 'Resolución Personalizada (Opcional)',
+      widthPx: 'Ancho (px):',
+      heightPx: 'Alto (px):',
+      defaultGlobal: 'Por defecto global',
+      alwaysFullscreen: 'Iniciar esta instancia siempre en Pantalla Completa',
+      lifecycleHooksTitle: 'Comandos Hook & Ciclo de Vida (Opcional)',
+      preLaunchCmd: 'Comando Pre-Launch:',
+      wrapperCmd: 'Comando Wrapper (Envoltorio Java):',
+      postExitCmd: 'Comando Post-Exit:',
+      envVars: 'Variables de Entorno:',
+      maxRamLabel: 'RAM Máxima Asignada (GB, opcional):',
+
+      // Import Tab
+      importTitle: 'Importador Automático de Instancias',
+      importSubtitle:
+        'Escanea perfiles existentes de Minecraft Oficial, CurseForge, Modrinth y Prism Launcher, o selecciona cualquier carpeta manual.',
+      rescanBtn: 'Re-escanear',
+      customPathPlaceholder:
+        'O escribe la ruta de una carpeta de Minecraft (ej. D:\\Juegos\\MiModpack)...',
+      browseBtn: 'Examinar',
+      importBtn: 'Importar a CrystalTides',
+      alreadyImported: 'Ya importada en CrystalTides',
+      importingStatus: 'Importando...',
+      importFilterAll: 'Todos',
+      importFilterOfficial: 'Minecraft Oficial',
+      importSearchPlaceholder: 'Buscar por nombre o versión...',
+      importInspectBtn: 'Inspeccionar',
+      importInspectingStatus: 'Inspeccionando...',
+      importScanningLaunchers: 'Escaneando launchers instalados en el sistema...',
+      importNoInstancesFound:
+        'No se encontraron instancias en los launchers seleccionados. Usa el selector de carpetas superior para importar manualmente.',
+      importNoMods: 'Sin mods',
+      importVersionPrefix: 'Versión',
+      importModsPrefix: 'Mods',
+      importLoaderPrefix: 'Loader',
+      importInvalidMinecraftDir:
+        'No se detectó una instalación o estructura válida de Minecraft en la ruta.',
     },
     // Login Screen
     login: {
@@ -510,6 +595,91 @@ export const translations = {
       edit: 'Edit',
       editTitle: 'Edit Instance',
       noInstances: 'No instances created yet.',
+      tabWorlds: 'Worlds',
+      tabServers: 'Servers',
+      tabMods: 'Mods',
+      tabImport: 'Import',
+      selectInstance: 'Select',
+
+      // Mods Tab
+      modsSubtitle: 'Installed mods in mods/ for this instance.',
+      modsHint: 'You can enable, disable or remove community mods.',
+      scanningMods: 'Scanning mods...',
+      openModsFolder: 'Open mods folder',
+      noModsFound: 'No mods found in this instance\'s mods folder.',
+      modOfficial: 'Official',
+      modCommunity: 'Community',
+      modActive: 'Active',
+      modDisabled: 'Disabled',
+      modDisableBtn: 'Disable',
+      modEnableBtn: 'Enable',
+      modDeleteTitle: 'Delete mod',
+
+      // Worlds / Saves Tab
+      savesSubtitle:
+        'Singleplayer worlds read directly in Rust with fastnbt from saves/.',
+      parsingLevelDat: 'Parsing level.dat...',
+      noSavesFound: 'No singleplayer worlds found in this instance.',
+      gameTypeCreative: 'Creative',
+      gameTypeSurvival: 'Survival',
+      gameTypeHardcore: 'Hardcore',
+      unregisteredVersion: 'Unregistered version',
+      noDate: 'No date',
+
+      // Servers Tab
+      serversSubtitle:
+        'Multiplayer servers saved in servers.dat serialized and parsed in Rust.',
+      readingServersDat: 'Reading servers.dat...',
+      serverNamePlaceholder: 'Server name (e.g. CrystalTides SMP)',
+      serverIpPlaceholder: 'Server IP / Host (e.g. mc.crystaltides.net)',
+      addServerBtn: 'Add Server',
+      noServersFound: 'No multiplayer servers found in servers.dat.',
+      ipCopied: 'Copied',
+      copyIp: 'Copy IP',
+      deleteServerTitle: 'Delete server from servers.dat',
+
+      // Create / Edit Tab form
+      loaderVersionLabel: 'Loader Version',
+      viewBetas: 'View Betas',
+      modeManual: 'Manual',
+      modeList: 'List',
+      customResolutionTitle: 'Custom Resolution (Optional)',
+      widthPx: 'Width (px):',
+      heightPx: 'Height (px):',
+      defaultGlobal: 'Global default',
+      alwaysFullscreen: 'Always launch this instance in Fullscreen',
+      lifecycleHooksTitle: 'Hook Commands & Lifecycle (Optional)',
+      preLaunchCmd: 'Pre-Launch Command:',
+      wrapperCmd: 'Wrapper Command (Java Wrapper):',
+      postExitCmd: 'Post-Exit Command:',
+      envVars: 'Environment Variables:',
+      maxRamLabel: 'Maximum Allocated RAM (GB, optional):',
+
+      // Import Tab
+      importTitle: 'Automatic Instance Importer',
+      importSubtitle:
+        'Scan existing profiles from Official Minecraft, CurseForge, Modrinth, and Prism Launcher, or select any custom folder.',
+      rescanBtn: 'Rescan',
+      customPathPlaceholder:
+        'Or enter a Minecraft folder path (e.g. D:\\Games\\MyModpack)...',
+      browseBtn: 'Browse',
+      importBtn: 'Import to CrystalTides',
+      alreadyImported: 'Already imported in CrystalTides',
+      importingStatus: 'Importing...',
+      importFilterAll: 'All',
+      importFilterOfficial: 'Official Minecraft',
+      importSearchPlaceholder: 'Search by name or version...',
+      importInspectBtn: 'Inspect',
+      importInspectingStatus: 'Inspecting...',
+      importScanningLaunchers: 'Scanning launchers installed on your system...',
+      importNoInstancesFound:
+        'No instances found in selected launchers. Use the folder picker above to import manually.',
+      importNoMods: 'No mods',
+      importVersionPrefix: 'Version',
+      importModsPrefix: 'Mods',
+      importLoaderPrefix: 'Loader',
+      importInvalidMinecraftDir:
+        'No valid Minecraft installation or folder structure was detected in the path.',
     },
     // Login Screen
     login: {

@@ -134,6 +134,7 @@ export const SettingsModal: React.FC = () => {
   const [localVersions, setLocalVersions] = useState<string[]>([]);
   const [availableLoaderVersions, setAvailableLoaderVersions] = useState<string[]>([]);
   const [isLoadingVersions, setIsLoadingVersions] = useState(false);
+  const [showBetaLoaders, setShowBetaLoaders] = useState(false);
   const [loaderInstallStatus, setLoaderInstallStatus] = useState<{
     loading: boolean;
     success?: boolean;
@@ -176,7 +177,21 @@ export const SettingsModal: React.FC = () => {
     };
   }, [activeModal, showAllVersions]);
 
-  // Fetch available loader versions whenever mcVersion or loaderType changes
+  // Helper para resolver la versión vanilla base de Minecraft en caso de nombres locales compuestos
+  const resolveBaseMinecraftVersion = (version: string): string => {
+    if (!version) return '1.21.1';
+    const trimmed = version.trim();
+    if (trimmed.startsWith('quilt-loader-') || trimmed.startsWith('fabric-loader-')) {
+      const parts = trimmed.split('-');
+      const last = parts[parts.length - 1];
+      if (last && /\d+\.\d+/.test(last)) return last;
+    }
+    const match = trimmed.match(/(\d+\.\d+(?:\.\d+)?)/);
+    if (match) return match[1];
+    return trimmed;
+  };
+
+  // Fetch available loader versions whenever mcVersion, loaderType or showBetaLoaders changes
   useEffect(() => {
     if (activeModal !== 'settings') return;
     let isMounted = true;
@@ -186,8 +201,10 @@ export const SettingsModal: React.FC = () => {
       return;
     }
 
+    const cleanMc = resolveBaseMinecraftVersion(mcVersion);
+
     if (loaderType === 'fabric') {
-      fetchFabricLoaderVersions(mcVersion)
+      fetchFabricLoaderVersions(cleanMc, showBetaLoaders)
         .then((loaders) => {
           if (isMounted && loaders.length > 0) {
             setAvailableLoaderVersions(loaders);
@@ -196,7 +213,7 @@ export const SettingsModal: React.FC = () => {
         })
         .catch(() => {});
     } else if (loaderType === 'quilt') {
-      fetchQuiltLoaderVersions(mcVersion)
+      fetchQuiltLoaderVersions(cleanMc, showBetaLoaders)
         .then((loaders) => {
           if (isMounted && loaders.length > 0) {
             setAvailableLoaderVersions(loaders);
@@ -205,7 +222,7 @@ export const SettingsModal: React.FC = () => {
         })
         .catch(() => {});
     } else if (loaderType === 'neoforge') {
-      fetchNeoForgeVersions(mcVersion)
+      fetchNeoForgeVersions(cleanMc, showBetaLoaders)
         .then((versions) => {
           if (isMounted) {
             setAvailableLoaderVersions(versions);
@@ -216,7 +233,7 @@ export const SettingsModal: React.FC = () => {
         })
         .catch(() => {});
     } else if (loaderType === 'forge') {
-      fetchForgeVersions(mcVersion)
+      fetchForgeVersions(cleanMc, showBetaLoaders)
         .then((versions) => {
           if (isMounted) {
             setAvailableLoaderVersions(versions);
@@ -231,10 +248,18 @@ export const SettingsModal: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [activeModal, loaderType, mcVersion]);
+  }, [activeModal, loaderType, mcVersion, showBetaLoaders]);
 
   useEffect(() => {
     if (activeModal === 'settings') {
+      setMcVersion(settings.mcVersion || '1.21.1');
+      setLoaderType(settings.loaderType || 'neoforge');
+      setLoaderVersion(
+        !settings.loaderVersion || settings.loaderVersion === '21.1.65'
+          ? '21.1.252'
+          : settings.loaderVersion,
+      );
+      setRamMb((settings.maxRamGb || 4) * 1024);
       setKeepLauncher(!settings.autoCloseLauncher);
       setDisableBgAnim(settings.disableBgAnim ?? false);
       setDisableAnimations(settings.disableAnimations ?? false);
@@ -243,7 +268,16 @@ export const SettingsModal: React.FC = () => {
           window.localStorage.getItem('ct_disable_hw_accel') === 'true',
       );
     }
-  }, [activeModal, settings.autoCloseLauncher, settings.disableBgAnim, settings.disableAnimations]);
+  }, [
+    activeModal,
+    settings.mcVersion,
+    settings.loaderType,
+    settings.loaderVersion,
+    settings.maxRamGb,
+    settings.autoCloseLauncher,
+    settings.disableBgAnim,
+    settings.disableAnimations,
+  ]);
 
   if (activeModal !== 'settings') return null;
 
@@ -322,9 +356,10 @@ export const SettingsModal: React.FC = () => {
       message: `Descargando e instalando ${loaderType} ${loaderVersion}...`,
     });
     try {
+      const cleanMc = resolveBaseMinecraftVersion(mcVersion);
       let javaToUse = '';
       try {
-        const requiredJava = getJavaVersionForMinecraft(mcVersion, loaderType, loaderVersion);
+        const requiredJava = getJavaVersionForMinecraft(cleanMc, loaderType, loaderVersion);
         const home = await invoke<string | null>('get_home_dir');
         const runtimesDir = `${(home || 'C:/Users/Default').replace(/\\/g, '/')}/.crystaltides/runtimes`;
         javaToUse = await ensureJava(requiredJava, runtimesDir).catch(() => '');
@@ -335,7 +370,7 @@ export const SettingsModal: React.FC = () => {
       const result = await installLoader(
         loaderType,
         loaderVersion,
-        mcVersion,
+        cleanMc,
         launcherDir.replace(/\\/g, '/'),
         javaToUse,
       );
@@ -599,6 +634,8 @@ export const SettingsModal: React.FC = () => {
             availableLoaderVersions={availableLoaderVersions}
             loaderInstallStatus={loaderInstallStatus}
             handleInstallLoader={handleInstallLoader}
+            showBetaLoaders={showBetaLoaders}
+            setShowBetaLoaders={setShowBetaLoaders}
             ramMb={ramMb}
             setRamMb={setRamMb}
             width={width}

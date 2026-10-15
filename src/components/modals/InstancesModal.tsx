@@ -43,11 +43,12 @@ import {
 } from '../../services/nbtService';
 import { InstancesCreateTab } from './InstancesCreateTab';
 import { InstancesImportTab } from './InstancesImportTab';
+import { LoaderIconBadge, LoaderLogo } from '../common/LoaderIcons';
 
 const getIconComponent = (iconName: string) => {
   switch (iconName) {
     case 'crystal':
-      return <Sparkles style={{ width: '22px', height: '22px', color: '#00e5ff' }} />;
+      return <Sparkles style={{ width: '22px', height: '22px', color: '#16A085' }} />;
     case 'sword':
       return <Sword style={{ width: '22px', height: '22px', color: '#f59e0b' }} />;
     case 'feather':
@@ -106,6 +107,7 @@ export const InstancesModal: React.FC = () => {
   const instances = useLauncherStore((s: LauncherState) => s.instances);
   const activeInstanceId = useLauncherStore((s: LauncherState) => s.activeInstanceId);
   const launchStatus = useLauncherStore((s: LauncherState) => s.launch.status);
+  const activeInstance = instances.find((i) => i.id === activeInstanceId) || instances[0];
 
   const [activeTab, setActiveTab] = useState<
     'list' | 'create' | 'saves' | 'servers' | 'mods' | 'import' | 'edit'
@@ -340,7 +342,22 @@ export const InstancesModal: React.FC = () => {
         >
           <div style={{ minWidth: '220px', flex: '1 1 auto' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Layers style={{ width: '22px', height: '22px', color: '#00e5ff', flexShrink: 0 }} />
+              {activeInstance?.loaderType ? (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    filter: 'drop-shadow(0 2px 5px rgba(0, 0, 0, 0.45))',
+                    flexShrink: 0,
+                  }}
+                >
+                  <LoaderLogo type={activeInstance.loaderType} size={22} />
+                </div>
+              ) : (
+                <Layers
+                  style={{ width: '22px', height: '22px', color: '#16A085', flexShrink: 0 }}
+                />
+              )}
               <h2 id="instances-modal-title" className="settings-main-title" style={{ margin: 0 }}>
                 {t.instances.title}
               </h2>
@@ -363,7 +380,8 @@ export const InstancesModal: React.FC = () => {
             <div
               style={{
                 display: 'flex',
-                background: 'rgba(255,255,255,0.06)',
+                background: 'rgba(20, 37, 62, 0.55)',
+                border: '1px solid rgba(21, 61, 76, 0.4)',
                 borderRadius: '10px',
                 padding: '3px',
                 gap: '2px',
@@ -376,17 +394,7 @@ export const InstancesModal: React.FC = () => {
                   setEditingInstance(null);
                   setActiveTab('list');
                 }}
-                style={{
-                  padding: '6px 12px',
-                  borderRadius: '7px',
-                  border: 'none',
-                  background: activeTab === 'list' ? '#00e5ff' : 'transparent',
-                  color: activeTab === 'list' ? '#0a0a0f' : '#cbd5e1',
-                  fontWeight: 600,
-                  fontSize: '12px',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease',
-                }}
+                className={`instance-tab-btn ${activeTab === 'list' ? 'is-active' : ''}`}
               >
                 {t.instances.tabInstances} ({instances.length})
               </button>
@@ -396,23 +404,10 @@ export const InstancesModal: React.FC = () => {
                   setEditingInstance(null);
                   setActiveTab('saves');
                 }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '5px',
-                  padding: '6px 12px',
-                  borderRadius: '7px',
-                  border: 'none',
-                  background: activeTab === 'saves' ? '#00e5ff' : 'transparent',
-                  color: activeTab === 'saves' ? '#0a0a0f' : '#cbd5e1',
-                  fontWeight: 600,
-                  fontSize: '12px',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease',
-                }}
+                className={`instance-tab-btn ${activeTab === 'saves' ? 'is-active' : ''}`}
               >
                 <Compass style={{ width: '13px', height: '13px' }} />
-                Mundos
+                {t.instances.tabWorlds}
               </button>
               <button
                 type="button"
@@ -420,23 +415,10 @@ export const InstancesModal: React.FC = () => {
                   setEditingInstance(null);
                   setActiveTab('servers');
                 }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '5px',
-                  padding: '6px 12px',
-                  borderRadius: '7px',
-                  border: 'none',
-                  background: activeTab === 'servers' ? '#00e5ff' : 'transparent',
-                  color: activeTab === 'servers' ? '#0a0a0f' : '#cbd5e1',
-                  fontWeight: 600,
-                  fontSize: '12px',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease',
-                }}
+                className={`instance-tab-btn ${activeTab === 'servers' ? 'is-active' : ''}`}
               >
                 <Globe style={{ width: '13px', height: '13px' }} />
-                Servidores
+                {t.instances.tabServers}
               </button>
               <button
                 type="button"
@@ -444,23 +426,10 @@ export const InstancesModal: React.FC = () => {
                   setEditingInstance(null);
                   setActiveTab('mods');
                 }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '5px',
-                  padding: '6px 12px',
-                  borderRadius: '7px',
-                  border: 'none',
-                  background: activeTab === 'mods' ? '#00e5ff' : 'transparent',
-                  color: activeTab === 'mods' ? '#0a0a0f' : '#cbd5e1',
-                  fontWeight: 600,
-                  fontSize: '12px',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease',
-                }}
+                className={`instance-tab-btn ${activeTab === 'mods' ? 'is-active' : ''}`}
               >
                 <Box style={{ width: '13px', height: '13px' }} />
-                Mods
+                {t.instances.tabMods}
               </button>
               <button
                 type="button"
@@ -468,20 +437,7 @@ export const InstancesModal: React.FC = () => {
                   setEditingInstance(null);
                   setActiveTab('create');
                 }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '5px',
-                  padding: '6px 12px',
-                  borderRadius: '7px',
-                  border: 'none',
-                  background: activeTab === 'create' ? '#00e5ff' : 'transparent',
-                  color: activeTab === 'create' ? '#0a0a0f' : '#cbd5e1',
-                  fontWeight: 600,
-                  fontSize: '12px',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease',
-                }}
+                className={`instance-tab-btn ${activeTab === 'create' ? 'is-active' : ''}`}
               >
                 <Plus style={{ width: '13px', height: '13px' }} />
                 {t.instances.tabNew}
@@ -492,40 +448,16 @@ export const InstancesModal: React.FC = () => {
                   setEditingInstance(null);
                   setActiveTab('import');
                 }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '5px',
-                  padding: '6px 12px',
-                  borderRadius: '7px',
-                  border: 'none',
-                  background: activeTab === 'import' ? '#00e5ff' : 'transparent',
-                  color: activeTab === 'import' ? '#0a0a0f' : '#cbd5e1',
-                  fontWeight: 600,
-                  fontSize: '12px',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease',
-                }}
+                className={`instance-tab-btn ${activeTab === 'import' ? 'is-active' : ''}`}
               >
                 <FolderDown style={{ width: '13px', height: '13px' }} />
-                Importar
+                {t.instances.tabImport}
               </button>
               {activeTab === 'edit' && (
                 <button
                   type="button"
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '5px',
-                    padding: '6px 12px',
-                    borderRadius: '7px',
-                    border: 'none',
-                    background: '#00e5ff',
-                    color: '#0a0a0f',
-                    fontWeight: 600,
-                    fontSize: '12px',
-                    cursor: 'default',
-                  }}
+                  className="instance-tab-btn is-active"
+                  style={{ cursor: 'default' }}
                 >
                   <Pencil style={{ width: '13px', height: '13px' }} />
                   {t.instances.editTitle}
@@ -562,28 +494,15 @@ export const InstancesModal: React.FC = () => {
               width: '100%',
             }}
           >
-            {instances.map((inst) => {
+            {instances.map((inst, index) => {
               const isActive = inst.id === activeInstanceId;
               return (
                 <div
                   key={inst.id}
+                  className={`instance-card ${isActive ? 'is-active' : ''}`}
                   style={{
-                    backgroundColor: isActive
-                      ? 'rgba(0, 229, 255, 0.04)'
-                      : 'rgba(255, 255, 255, 0.025)',
-                    border: `1px solid ${isActive ? 'rgba(0, 229, 255, 0.55)' : 'rgba(255, 255, 255, 0.08)'}`,
-                    boxShadow: isActive
-                      ? '0 0 18px rgba(0, 229, 255, 0.12), inset 0 1px 0 rgba(0, 229, 255, 0.15)'
-                      : '0 2px 8px rgba(0, 0, 0, 0.2)',
-                    borderRadius: '12px',
-                    padding: '14px 16px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'space-between',
-                    gap: '12px',
-                    transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                    minWidth: 0,
-                    boxSizing: 'border-box',
+                    animation: 'instanceCardEntrance 0.22s cubic-bezier(0.16, 1, 0.3, 1) backwards',
+                    animationDelay: `${Math.min(index * 40, 240)}ms`,
                   }}
                 >
                   <div
@@ -604,22 +523,18 @@ export const InstancesModal: React.FC = () => {
                         flex: 1,
                       }}
                     >
-                      <div
-                        style={{
-                          width: '42px',
-                          height: '42px',
-                          borderRadius: '10px',
-                          backgroundColor: isActive
-                            ? 'rgba(0, 229, 255, 0.08)'
-                            : 'rgba(255, 255, 255, 0.04)',
-                          border: `1px solid ${isActive ? 'rgba(0, 229, 255, 0.25)' : 'rgba(255, 255, 255, 0.08)'}`,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          flexShrink: 0,
-                        }}
-                      >
+                      <div className="instance-icon-box" style={{ position: 'relative' }}>
                         {getIconComponent(inst.icon)}
+                        <span
+                          style={{
+                            position: 'absolute',
+                            bottom: '-3px',
+                            right: '-3px',
+                            filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.6))',
+                          }}
+                        >
+                          <LoaderIconBadge type={inst.loaderType} size={15} />
+                        </span>
                       </div>
                       <div
                         style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}
@@ -648,8 +563,8 @@ export const InstancesModal: React.FC = () => {
                                 textTransform: 'uppercase',
                                 padding: '2px 6px',
                                 borderRadius: '4px',
-                                background: 'rgba(0, 229, 255, 0.15)',
-                                color: '#00e5ff',
+                                background: 'rgba(21, 111, 105, 0.16)',
+                                color: '#16A085',
                                 fontWeight: 700,
                                 flexShrink: 0,
                                 letterSpacing: '0.04em',
@@ -678,10 +593,16 @@ export const InstancesModal: React.FC = () => {
                               overflow: 'hidden',
                               textOverflow: 'ellipsis',
                               whiteSpace: 'nowrap',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '5px',
                             }}
                           >
-                            {inst.mcVersion} • {inst.loaderType.toUpperCase()}
-                            {inst.loaderVersion ? ` (${inst.loaderVersion})` : ''}
+                            <LoaderIconBadge type={inst.loaderType} size={15} />
+                            <span>
+                              {inst.mcVersion} • {inst.loaderType.toUpperCase()}
+                              {inst.loaderVersion ? ` (${inst.loaderVersion})` : ''}
+                            </span>
                           </span>
                           {renderScreenResolutionTag(inst)}
                         </div>
@@ -693,18 +614,19 @@ export const InstancesModal: React.FC = () => {
                         style={{
                           display: 'inline-flex',
                           alignItems: 'center',
-                          gap: '4px',
+                          gap: '5px',
                           fontSize: '10.5px',
-                          color: '#00e5ff',
+                          color: '#16A085',
                           fontWeight: 700,
-                          background: 'rgba(0, 229, 255, 0.12)',
-                          border: '1px solid rgba(0, 229, 255, 0.3)',
-                          padding: '3px 7px',
+                          background: 'rgba(21, 111, 105, 0.16)',
+                          border: '1px solid rgba(22, 160, 133, 0.35)',
+                          padding: '3px 8px',
                           borderRadius: '6px',
                           flexShrink: 0,
                           letterSpacing: '0.04em',
                         }}
                       >
+                        <LoaderLogo type={inst.loaderType} size={12} />
                         <CheckCircle2 style={{ width: '12px', height: '12px' }} />
                         {t.instances.activeTag}
                       </span>
@@ -736,22 +658,7 @@ export const InstancesModal: React.FC = () => {
                         type="button"
                         onClick={() => handleOpenFolder(inst)}
                         title={t.instances.openFolder}
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '5px',
-                          padding: '4px 8px',
-                          height: '28px',
-                          borderRadius: '6px',
-                          border: '1px solid rgba(255, 255, 255, 0.09)',
-                          background: 'rgba(255, 255, 255, 0.035)',
-                          color: '#cbd5e1',
-                          fontSize: '11.5px',
-                          fontWeight: 500,
-                          cursor: 'pointer',
-                          whiteSpace: 'nowrap',
-                          transition: 'all 0.15s ease',
-                        }}
+                        className="instance-action-btn"
                       >
                         <FolderOpen style={{ width: '13px', height: '13px', flexShrink: 0 }} />
                         <span>{t.instances.folder}</span>
@@ -764,22 +671,7 @@ export const InstancesModal: React.FC = () => {
                           setActiveTab('edit');
                         }}
                         title={t.instances.edit}
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '5px',
-                          padding: '4px 8px',
-                          height: '28px',
-                          borderRadius: '6px',
-                          border: '1px solid rgba(0, 229, 255, 0.25)',
-                          background: 'rgba(0, 229, 255, 0.06)',
-                          color: '#00e5ff',
-                          fontSize: '11.5px',
-                          fontWeight: 500,
-                          cursor: 'pointer',
-                          whiteSpace: 'nowrap',
-                          transition: 'all 0.15s ease',
-                        }}
+                        className="instance-action-btn edit"
                       >
                         <Pencil style={{ width: '12px', height: '12px', flexShrink: 0 }} />
                         <span>{t.instances.edit}</span>
@@ -789,22 +681,7 @@ export const InstancesModal: React.FC = () => {
                         type="button"
                         onClick={() => launcherActions.duplicateInstance(inst.id)}
                         title={t.instances.duplicate}
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '5px',
-                          padding: '4px 8px',
-                          height: '28px',
-                          borderRadius: '6px',
-                          border: '1px solid rgba(255, 255, 255, 0.09)',
-                          background: 'rgba(255, 255, 255, 0.035)',
-                          color: '#cbd5e1',
-                          fontSize: '11.5px',
-                          fontWeight: 500,
-                          cursor: 'pointer',
-                          whiteSpace: 'nowrap',
-                          transition: 'all 0.15s ease',
-                        }}
+                        className="instance-action-btn"
                       >
                         <Copy style={{ width: '12px', height: '12px', flexShrink: 0 }} />
                         <span>{t.instances.duplicate}</span>
@@ -815,21 +692,7 @@ export const InstancesModal: React.FC = () => {
                           type="button"
                           onClick={() => handleDelete(inst.id, inst.name)}
                           title={t.instances.delete}
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            width: '28px',
-                            height: '28px',
-                            borderRadius: '6px',
-                            border: '1px solid rgba(244, 63, 94, 0.25)',
-                            background: 'rgba(244, 63, 94, 0.08)',
-                            color: '#fb7185',
-                            fontSize: '11.5px',
-                            cursor: 'pointer',
-                            flexShrink: 0,
-                            transition: 'all 0.15s ease',
-                          }}
+                          className="instance-action-btn delete"
                         >
                           <Trash2 style={{ width: '13px', height: '13px' }} />
                         </button>
@@ -840,25 +703,9 @@ export const InstancesModal: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => handleSelectInstance(inst.id)}
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          height: '28px',
-                          padding: '0 12px',
-                          borderRadius: '6px',
-                          border: '1px solid rgba(255, 255, 255, 0.12)',
-                          background: 'rgba(255, 255, 255, 0.08)',
-                          color: '#f8fafc',
-                          fontWeight: 600,
-                          fontSize: '11.5px',
-                          cursor: 'pointer',
-                          whiteSpace: 'nowrap',
-                          flexShrink: 0,
-                          transition: 'all 0.15s ease',
-                        }}
+                        className="instance-select-btn"
                       >
-                        {t.accounts.select}
+                        {t.instances.selectInstance}
                       </button>
                     ) : (
                       <button
@@ -869,27 +716,9 @@ export const InstancesModal: React.FC = () => {
                             launcherActions.startLaunchFlow();
                           }
                         }}
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '5px',
-                          height: '28px',
-                          padding: '0 12px',
-                          borderRadius: '6px',
-                          border: 'none',
-                          background: '#22c55e',
-                          color: '#0a0a0f',
-                          fontWeight: 700,
-                          fontSize: '11.5px',
-                          cursor: 'pointer',
-                          whiteSpace: 'nowrap',
-                          flexShrink: 0,
-                          boxShadow: '0 0 10px rgba(34, 197, 94, 0.3)',
-                          transition: 'all 0.15s ease',
-                        }}
+                        className="instance-play-btn"
                       >
-                        <Play style={{ width: '11px', height: '11px', fill: '#0a0a0f' }} />
+                        <Play style={{ width: '11px', height: '11px', fill: '#ffffff' }} />
                         {t.instances.play}
                       </button>
                     )}
@@ -936,21 +765,19 @@ export const InstancesModal: React.FC = () => {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <p style={{ margin: 0, fontSize: '13px', color: '#94a3b8' }}>
-                Mundos locales singleplayer leídos directamente en Rust con{' '}
-                <code style={{ color: '#00e5ff' }}>fastnbt</code> desde{' '}
-                <code style={{ color: '#00e5ff' }}>saves/</code>.
+                {t.instances.savesSubtitle}
               </p>
               {loadingNbt && (
                 <span
                   style={{
                     fontSize: '12px',
-                    color: '#00e5ff',
+                    color: '#16A085',
                     display: 'flex',
                     alignItems: 'center',
                     gap: '6px',
                   }}
                 >
-                  <HardDrive size={14} /> Parseando level.dat...
+                  <HardDrive size={14} /> {t.instances.parsingLevelDat}
                 </span>
               )}
             </div>
@@ -967,9 +794,7 @@ export const InstancesModal: React.FC = () => {
                 }}
               >
                 <Compass size={32} style={{ marginBottom: '10px', opacity: 0.5 }} />
-                <p style={{ margin: 0, fontSize: '13px' }}>
-                  No se encontraron mundos singleplayer en esta instancia.
-                </p>
+                <p style={{ margin: 0, fontSize: '13px' }}>{t.instances.noSavesFound}</p>
               </div>
             ) : (
               <div
@@ -982,17 +807,17 @@ export const InstancesModal: React.FC = () => {
                   paddingRight: '6px',
                 }}
               >
-                {localSaves.map((save) => (
+                {localSaves.map((save, idx) => (
                   <div
                     key={save.folder_name}
+                    className="instance-subitem-card"
                     style={{
-                      background: 'rgba(255, 255, 255, 0.03)',
-                      border: '1px solid rgba(255, 255, 255, 0.08)',
-                      borderRadius: '12px',
-                      padding: '14px',
                       display: 'flex',
                       gap: '12px',
                       alignItems: 'center',
+                      animation:
+                        'instanceCardEntrance 0.22s cubic-bezier(0.16, 1, 0.3, 1) backwards',
+                      animationDelay: `${Math.min(idx * 35, 210)}ms`,
                     }}
                   >
                     <div
@@ -1013,6 +838,7 @@ export const InstancesModal: React.FC = () => {
                         <img
                           src={save.icon_base64}
                           alt={save.level_name}
+                          className="instance-image-outline"
                           style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                         />
                       ) : (
@@ -1036,7 +862,11 @@ export const InstancesModal: React.FC = () => {
                           {save.level_name}
                         </h4>
                         {(() => {
-                          const badge = getGameTypeBadge(save.hardcore, save.game_type);
+                          const badge = getGameTypeBadge(save.hardcore, save.game_type, {
+                            hardcore: t.instances.gameTypeHardcore,
+                            creative: t.instances.gameTypeCreative,
+                            survival: t.instances.gameTypeSurvival,
+                          });
                           return (
                             <span
                               style={{
@@ -1054,10 +884,10 @@ export const InstancesModal: React.FC = () => {
                         })()}
                       </div>
                       <p style={{ margin: '4px 0 0 0', fontSize: '11px', color: '#94a3b8' }}>
-                        {save.version_name ?? 'Versión no registrada'} •{' '}
+                        {save.version_name ?? t.instances.unregisteredVersion} •{' '}
                         {save.last_played
                           ? new Date(save.last_played).toLocaleDateString()
-                          : 'Sin fecha'}
+                          : t.instances.noDate}
                       </p>
                       <p style={{ margin: '2px 0 0 0', fontSize: '10px', color: '#64748b' }}>
                         saves/{save.folder_name}
@@ -1075,21 +905,19 @@ export const InstancesModal: React.FC = () => {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <p style={{ margin: 0, fontSize: '13px', color: '#94a3b8' }}>
-                Servidores multijugador guardados en{' '}
-                <code style={{ color: '#00e5ff' }}>servers.dat</code> serializados y parseados en
-                Rust.
+                {t.instances.serversSubtitle}
               </p>
               {loadingNbt && (
                 <span
                   style={{
                     fontSize: '12px',
-                    color: '#00e5ff',
+                    color: '#16A085',
                     display: 'flex',
                     alignItems: 'center',
                     gap: '6px',
                   }}
                 >
-                  <HardDrive size={14} /> Leyendo servers.dat...
+                  <HardDrive size={14} /> {t.instances.readingServersDat}
                 </span>
               )}
             </div>
@@ -1110,7 +938,7 @@ export const InstancesModal: React.FC = () => {
             >
               <input
                 type="text"
-                placeholder="Nombre del servidor (ej. CrystalTides SMP)"
+                placeholder={t.instances.serverNamePlaceholder}
                 value={newServerName}
                 onChange={(e) => setNewServerName(e.target.value)}
                 style={{
@@ -1126,7 +954,7 @@ export const InstancesModal: React.FC = () => {
               />
               <input
                 type="text"
-                placeholder="Dirección IP / Host (ej. mc.crystaltides.net)"
+                placeholder={t.instances.serverIpPlaceholder}
                 value={newServerIp}
                 onChange={(e) => setNewServerIp(e.target.value)}
                 style={{
@@ -1149,22 +977,28 @@ export const InstancesModal: React.FC = () => {
                   gap: '5px',
                   padding: '7px 14px',
                   borderRadius: '6px',
-                  border: 'none',
+                  border:
+                    !newServerName.trim() || !newServerIp.trim()
+                      ? '1px solid rgba(255, 255, 255, 0.1)'
+                      : '1px solid rgba(22, 160, 133, 0.45)',
                   background:
                     !newServerName.trim() || !newServerIp.trim()
-                      ? 'rgba(0, 229, 255, 0.2)'
-                      : '#00e5ff',
-                  color: '#0a0a0f',
+                      ? 'rgba(255, 255, 255, 0.05)'
+                      : 'linear-gradient(135deg, #16A085 0%, #156F69 100%)',
+                  color: !newServerName.trim() || !newServerIp.trim() ? '#64748b' : '#ffffff',
                   fontSize: '12px',
                   fontWeight: 600,
-                  cursor:
-                    !newServerName.trim() || !newServerIp.trim() ? 'not-allowed' : 'pointer',
+                  cursor: !newServerName.trim() || !newServerIp.trim() ? 'not-allowed' : 'pointer',
+                  boxShadow:
+                    !newServerName.trim() || !newServerIp.trim()
+                      ? 'none'
+                      : '0 2px 10px rgba(22, 160, 133, 0.28)',
                   transition: 'all 0.15s ease',
                   flexShrink: 0,
                 }}
               >
                 <Plus size={13} />
-                Añadir Servidor
+                {t.instances.addServerBtn}
               </button>
             </form>
 
@@ -1180,9 +1014,7 @@ export const InstancesModal: React.FC = () => {
                 }}
               >
                 <Globe size={32} style={{ marginBottom: '10px', opacity: 0.5 }} />
-                <p style={{ margin: 0, fontSize: '13px' }}>
-                  No hay servidores multijugador registrados en servers.dat.
-                </p>
+                <p style={{ margin: 0, fontSize: '13px' }}>{t.instances.noServersFound}</p>
               </div>
             ) : (
               <div
@@ -1198,15 +1030,15 @@ export const InstancesModal: React.FC = () => {
                 {savedServers.map((server, srvIdx) => (
                   <div
                     key={`${server.name}-${server.ip}-${srvIdx}`}
+                    className="instance-subitem-card"
                     style={{
-                      background: 'rgba(255, 255, 255, 0.03)',
-                      border: '1px solid rgba(255, 255, 255, 0.08)',
-                      borderRadius: '12px',
-                      padding: '14px',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
                       gap: '12px',
+                      animation:
+                        'instanceCardEntrance 0.22s cubic-bezier(0.16, 1, 0.3, 1) backwards',
+                      animationDelay: `${Math.min(srvIdx * 35, 210)}ms`,
                     }}
                   >
                     <div
@@ -1234,10 +1066,11 @@ export const InstancesModal: React.FC = () => {
                                 : `data:image/png;base64,${server.icon}`
                             }
                             alt={server.name}
+                            className="instance-image-outline"
                             style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                           />
                         ) : (
-                          <Globe size={20} color="#00e5ff" />
+                          <Globe size={20} color="#16A085" />
                         )}
                       </div>
 
@@ -1255,13 +1088,15 @@ export const InstancesModal: React.FC = () => {
                         >
                           {server.name}
                         </h4>
-                        <p style={{ margin: '2px 0 0 0', fontSize: '11px', color: '#00e5ff' }}>
+                        <p style={{ margin: '2px 0 0 0', fontSize: '11px', color: '#16A085' }}>
                           {server.ip}
                         </p>
                       </div>
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                    <div
+                      style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}
+                    >
                       <button
                         type="button"
                         onClick={() => {
@@ -1269,48 +1104,27 @@ export const InstancesModal: React.FC = () => {
                           setCopiedServerIp(server.ip);
                           setTimeout(() => setCopiedServerIp(null), 2000);
                         }}
+                        className="instance-action-btn"
                         style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                          padding: '6px 12px',
-                          borderRadius: '6px',
-                          border: '1px solid rgba(255, 255, 255, 0.12)',
-                          background: 'rgba(255, 255, 255, 0.06)',
                           color: copiedServerIp === server.ip ? '#22c55e' : '#cbd5e1',
-                          fontSize: '11px',
-                          cursor: 'pointer',
-                          transition: 'all 0.15s ease',
                         }}
                       >
                         {copiedServerIp === server.ip ? (
                           <>
-                            <Check size={12} /> Copiada
+                            <Check size={12} /> {t.instances.ipCopied}
                           </>
                         ) : (
                           <>
-                            <Copy size={12} /> Copiar IP
+                            <Copy size={12} /> {t.instances.copyIp}
                           </>
                         )}
                       </button>
                       <button
                         type="button"
                         onClick={() => handleDeleteServer(srvIdx)}
-                        title="Eliminar servidor de servers.dat"
+                        title={t.instances.deleteServerTitle}
                         aria-label={`Eliminar servidor ${server.name}`}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          padding: '6px 8px',
-                          borderRadius: '6px',
-                          border: '1px solid rgba(239, 68, 68, 0.25)',
-                          background: 'rgba(239, 68, 68, 0.1)',
-                          color: '#ef4444',
-                          fontSize: '11px',
-                          cursor: 'pointer',
-                          transition: 'all 0.15s ease',
-                        }}
+                        className="instance-action-btn delete"
                       >
                         <Trash2 size={12} />
                       </button>
@@ -1336,10 +1150,10 @@ export const InstancesModal: React.FC = () => {
             >
               <div>
                 <p style={{ margin: 0, fontSize: '13px', color: '#94a3b8' }}>
-                  Mods instalados en <code style={{ color: '#00e5ff' }}>mods/</code> para esta instancia.
+                  {t.instances.modsSubtitle}
                 </p>
                 <p style={{ margin: '2px 0 0 0', fontSize: '11px', color: '#64748b' }}>
-                  Puedes activar, desactivar o eliminar mods comunitarios.
+                  {t.instances.modsHint}
                 </p>
               </div>
 
@@ -1348,35 +1162,23 @@ export const InstancesModal: React.FC = () => {
                   <span
                     style={{
                       fontSize: '12px',
-                      color: '#00e5ff',
+                      color: '#16A085',
                       display: 'flex',
                       alignItems: 'center',
                       gap: '6px',
                     }}
                   >
-                    <HardDrive size={14} /> Escaneando mods...
+                    <HardDrive size={14} /> {t.instances.scanningMods}
                   </span>
                 )}
                 <button
                   type="button"
                   onClick={handleOpenModsFolder}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    padding: '6px 12px',
-                    borderRadius: '7px',
-                    border: '1px solid rgba(0, 229, 255, 0.3)',
-                    background: 'rgba(0, 229, 255, 0.08)',
-                    color: '#00e5ff',
-                    fontSize: '12px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                  }}
+                  className="instance-action-btn edit"
+                  style={{ height: '30px', padding: '6px 12px' }}
                 >
                   <FolderOpen size={14} />
-                  Abrir carpeta mods
+                  {t.instances.openModsFolder}
                 </button>
               </div>
             </div>
@@ -1393,9 +1195,7 @@ export const InstancesModal: React.FC = () => {
                 }}
               >
                 <Box size={32} style={{ marginBottom: '10px', opacity: 0.5 }} />
-                <p style={{ margin: 0, fontSize: '13px' }}>
-                  No se encontraron mods en la carpeta mods de esta instancia.
-                </p>
+                <p style={{ margin: 0, fontSize: '13px' }}>{t.instances.noModsFound}</p>
               </div>
             ) : (
               <div
@@ -1408,28 +1208,32 @@ export const InstancesModal: React.FC = () => {
                   paddingRight: '6px',
                 }}
               >
-                {localMods.map((mod) => {
+                {localMods.map((mod, modIdx) => {
                   const sizeMb = (mod.size_bytes / (1024 * 1024)).toFixed(2);
                   return (
                     <div
                       key={mod.filename}
+                      className="instance-subitem-card"
                       style={{
-                        background: mod.enabled
-                          ? 'rgba(255, 255, 255, 0.03)'
-                          : 'rgba(255, 255, 255, 0.01)',
-                        border: `1px solid ${mod.enabled ? 'rgba(255, 255, 255, 0.08)' : 'rgba(255, 255, 255, 0.03)'}`,
-                        borderRadius: '12px',
-                        padding: '12px 14px',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
                         gap: '12px',
                         opacity: mod.enabled ? 1 : 0.65,
-                        transition: 'all 0.2s ease',
+                        animation:
+                          'instanceCardEntrance 0.22s cubic-bezier(0.16, 1, 0.3, 1) backwards',
+                        animationDelay: `${Math.min(modIdx * 25, 200)}ms`,
                       }}
                     >
                       <div style={{ minWidth: 0, flex: 1 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            flexWrap: 'wrap',
+                          }}
+                        >
                           <h4
                             style={{
                               margin: 0,
@@ -1452,61 +1256,51 @@ export const InstancesModal: React.FC = () => {
                               padding: '1px 6px',
                               borderRadius: '4px',
                               background: mod.official
-                                ? 'rgba(0, 229, 255, 0.15)'
+                                ? 'rgba(21, 111, 105, 0.18)'
                                 : 'rgba(148, 163, 184, 0.15)',
-                              color: mod.official ? '#00e5ff' : '#94a3b8',
+                              color: mod.official ? '#16A085' : '#94a3b8',
                             }}
                           >
-                            {mod.official ? 'Oficial' : 'Comunidad'}
+                            {mod.official ? t.instances.modOfficial : t.instances.modCommunity}
                           </span>
                         </div>
                         <p style={{ margin: '3px 0 0 0', fontSize: '11px', color: '#64748b' }}>
                           {sizeMb} MB •{' '}
-                          <span style={{ color: mod.enabled ? '#22c55e' : '#f59e0b', fontWeight: 600 }}>
-                            {mod.enabled ? 'Activo' : 'Desactivado'}
+                          <span
+                            style={{ color: mod.enabled ? '#22c55e' : '#f59e0b', fontWeight: 600 }}
+                          >
+                            {mod.enabled ? t.instances.modActive : t.instances.modDisabled}
                           </span>
                         </p>
                       </div>
 
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                      <div
+                        style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}
+                      >
                         <button
                           type="button"
                           onClick={() => handleToggleMod(mod)}
+                          className="instance-action-btn"
                           style={{
-                            padding: '5px 10px',
-                            borderRadius: '6px',
-                            border: `1px solid ${mod.enabled ? 'rgba(245, 158, 11, 0.3)' : 'rgba(34, 197, 94, 0.3)'}`,
+                            borderColor: mod.enabled
+                              ? 'rgba(245, 158, 11, 0.3)'
+                              : 'rgba(34, 197, 94, 0.3)',
                             background: mod.enabled
                               ? 'rgba(245, 158, 11, 0.1)'
                               : 'rgba(34, 197, 94, 0.1)',
                             color: mod.enabled ? '#f59e0b' : '#22c55e',
-                            fontSize: '11px',
                             fontWeight: 600,
-                            cursor: 'pointer',
-                            transition: 'all 0.15s ease',
                           }}
                         >
-                          {mod.enabled ? 'Desactivar' : 'Activar'}
+                          {mod.enabled ? t.instances.modDisableBtn : t.instances.modEnableBtn}
                         </button>
                         {!mod.official && (
                           <button
                             type="button"
                             onClick={() => handleDeleteMod(mod.filename)}
-                            title="Eliminar mod"
+                            title={t.instances.modDeleteTitle}
                             aria-label={`Eliminar mod ${mod.filename}`}
-                            style={{
-                              padding: '5px 8px',
-                              borderRadius: '6px',
-                              border: '1px solid rgba(239, 68, 68, 0.25)',
-                              background: 'rgba(239, 68, 68, 0.1)',
-                              color: '#ef4444',
-                              fontSize: '11px',
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              transition: 'all 0.15s ease',
-                            }}
+                            className="instance-action-btn delete"
                           >
                             <Trash2 size={12} />
                           </button>
@@ -1584,16 +1378,8 @@ export const InstancesModal: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setDeletingInstance(null)}
-                  style={{
-                    padding: '9px 18px',
-                    borderRadius: '8px',
-                    border: '1px solid rgba(255, 255, 255, 0.15)',
-                    background: 'transparent',
-                    color: '#cbd5e1',
-                    fontSize: '13px',
-                    fontWeight: 500,
-                    cursor: 'pointer',
-                  }}
+                  className="instance-action-btn"
+                  style={{ height: '34px', padding: '0 18px', fontSize: '13px' }}
                 >
                   {t.instances.formCancelBtn}
                 </button>
@@ -1604,15 +1390,13 @@ export const InstancesModal: React.FC = () => {
                     setDeletingInstance(null);
                     launcherActions.deleteInstance(id);
                   }}
+                  className="instance-action-btn delete"
                   style={{
-                    padding: '9px 20px',
-                    borderRadius: '8px',
-                    border: 'none',
-                    background: '#ef4444',
-                    color: '#fff',
+                    height: '34px',
+                    padding: '0 20px',
                     fontSize: '13px',
                     fontWeight: 600,
-                    cursor: 'pointer',
+                    width: 'auto',
                   }}
                 >
                   {t.instances.delete}

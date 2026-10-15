@@ -322,6 +322,19 @@ export const fetchForgeVersions = async (
   return [];
 };
 
+export const resolveBaseMinecraftVersion = (version: string): string => {
+  if (!version) return '1.21.1';
+  const trimmed = version.trim();
+  if (trimmed.startsWith('quilt-loader-') || trimmed.startsWith('fabric-loader-')) {
+    const parts = trimmed.split('-');
+    const last = parts[parts.length - 1];
+    if (last && /\d+\.\d+/.test(last)) return last;
+  }
+  const match = trimmed.match(/(\d+\.\d+(?:\.\d+)?)/);
+  if (match) return match[1];
+  return trimmed;
+};
+
 export const installLoader = async (
   loaderType: string,
   loaderVersion: string,

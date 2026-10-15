@@ -97,7 +97,7 @@ export const WALLPAPERS: WallpaperOption[] = [
     id: 'ct_night',
     name: 'Santuario Nocturno',
     url: '/wallpapers/crystaltides_night.png',
-    accent: '#00e5ff',
+    accent: '#16A085',
   },
   {
     id: 'ct_day',
@@ -120,7 +120,7 @@ export interface AccentColorPreset {
 }
 
 export const ACCENT_PRESETS: AccentColorPreset[] = [
-  { id: 'cyan', name: 'Cian Cristalino', hex: '#00e5ff' },
+  { id: 'emerald_tides', name: 'Jade Abisal', hex: '#16A085' },
   { id: 'emerald', name: 'Verde Esmeralda', hex: '#22c55e' },
   { id: 'sapphire', name: 'Zafiro Océano', hex: '#38bdf8' },
   { id: 'amethyst', name: 'Amatista Neón', hex: '#a855f7' },
@@ -161,9 +161,9 @@ export interface GuiThemeConfig {
 export const DEFAULT_GUI_THEME: GuiThemeConfig = {
   fontFamily: 'jost',
   bgMode: 'obsidian',
-  customBgColor: '#0a0f18',
+  customBgColor: '#140C30',
   borderMode: 'subtle',
-  customBorderColor: '#00e5ff',
+  customBorderColor: '#16A085',
   borderRadius: 16,
 };
 
@@ -1433,7 +1433,8 @@ export const launcherActions = {
     if (inst) {
       const merged: GameInstance = { ...inst, ...updates };
       updateInstance(merged);
-      const isCurrentlyActive = (state.activeInstanceId ?? current[0]?.id) === id;
+      const activeId = state.activeInstanceId ?? getActiveInstanceId();
+      const isCurrentlyActive = activeId === id || (!activeId && current[0]?.id === id);
       setStoreState((prev) => {
         let nextSettings = prev.settings;
         if (isCurrentlyActive) {
@@ -1649,7 +1650,26 @@ export const launcherActions = {
   updateSettings: (newSettings: Partial<LauncherSettings>) => {
     const updated = { ...state.settings, ...newSettings };
     localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(updated));
-    setStoreState(() => ({ settings: updated }));
+
+    // Sincronizar automáticamente con la instancia activa para que los cambios se reflejen en Instancias
+    const activeId = state.activeInstanceId ?? getActiveInstanceId();
+    const currentInstances = getSavedInstances();
+    const activeInst = currentInstances.find((i) => i.id === activeId) ?? currentInstances[0];
+    if (activeInst) {
+      const mergedInst: GameInstance = {
+        ...activeInst,
+        mcVersion: updated.mcVersion ?? activeInst.mcVersion,
+        loaderType: updated.loaderType ?? activeInst.loaderType,
+        loaderVersion: updated.loaderVersion ?? activeInst.loaderVersion,
+        maxRamGb: updated.maxRamGb ?? activeInst.maxRamGb,
+      };
+      updateInstance(mergedInst);
+    }
+
+    setStoreState(() => ({
+      settings: updated,
+      instances: getSavedInstances(),
+    }));
   },
 
   setWallpaper: (id: string) => {

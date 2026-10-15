@@ -27,7 +27,7 @@ export const getIconComponent = (
 ) => {
   switch (icon) {
     case 'crystal':
-      return <Sparkles style={{ width: '22px', height: '22px', color: '#00e5ff' }} />;
+      return <Sparkles style={{ width: '22px', height: '22px', color: '#16A085' }} />;
     case 'sword':
       return <Sword style={{ width: '22px', height: '22px', color: '#38bdf8' }} />;
     case 'feather':
@@ -62,15 +62,6 @@ export const InstancesCreateTab: React.FC<InstancesCreateTabProps> = ({
   const [formMcVersion, setFormMcVersion] = useState(initialInstance?.mcVersion ?? '1.21.1');
   const [formLoader, setFormLoader] = useState<LoaderType>(
     initialInstance?.loaderType ?? 'neoforge',
-  );
-  const [formLoaderVersion, setFormLoaderVersion] = useState(
-    initialInstance?.loaderVersion ??
-      resolveEffectiveLoaderVersion(
-        initialInstance?.loaderType ?? 'neoforge',
-        '',
-        initialInstance?.mcVersion ?? '1.21.1',
-      ) ??
-      '',
   );
   const [formIcon, setFormIcon] = useState<
     'cube' | 'sword' | 'feather' | 'flame' | 'shield' | 'crystal'
@@ -120,15 +111,6 @@ export const InstancesCreateTab: React.FC<InstancesCreateTabProps> = ({
         initialInstance.resolutionHeight ? String(initialInstance.resolutionHeight) : '',
       );
       setFormFullscreen(Boolean(initialInstance.fullscreen));
-      setFormLoaderVersion(
-        initialInstance.loaderVersion ??
-          resolveEffectiveLoaderVersion(
-            initialInstance.loaderType,
-            initialInstance.loaderVersion,
-            initialInstance.mcVersion,
-          ) ??
-          '',
-      );
       setFormPreLaunch(initialInstance.preLaunchCommand ?? '');
       setFormWrapper(initialInstance.wrapperCommand ?? '');
       setFormPostExit(initialInstance.postExitCommand ?? '');
@@ -162,14 +144,10 @@ export const InstancesCreateTab: React.FC<InstancesCreateTabProps> = ({
       detectedLoader = 'forge';
     }
     setFormLoader(detectedLoader);
-    setFormLoaderVersion(
-      resolveEffectiveLoaderVersion(detectedLoader, formLoaderVersion, val) ?? '',
-    );
   };
 
   const handleLoaderChange = (newLoader: LoaderType) => {
     setFormLoader(newLoader);
-    setFormLoaderVersion(resolveEffectiveLoaderVersion(newLoader, '', formMcVersion) ?? '');
   };
 
   const instanceVersionOptions: SelectOption[] = (
@@ -216,7 +194,6 @@ export const InstancesCreateTab: React.FC<InstancesCreateTabProps> = ({
     },
   ];
 
-
   const handleSubmit = (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
     const finalName = formName.trim() || `Minecraft ${formMcVersion} (${formLoader})`;
@@ -225,7 +202,7 @@ export const InstancesCreateTab: React.FC<InstancesCreateTabProps> = ({
     const parsedRam = formMaxRam.trim() ? Number.parseInt(formMaxRam.trim(), 10) : undefined;
     const finalLoaderVersion = resolveEffectiveLoaderVersion(
       formLoader,
-      formLoaderVersion,
+      initialInstance?.loaderType === formLoader ? initialInstance?.loaderVersion : undefined,
       formMcVersion,
     );
 
@@ -245,6 +222,8 @@ export const InstancesCreateTab: React.FC<InstancesCreateTabProps> = ({
         postExitCommand: formPostExit.trim() || undefined,
         environmentVariables: formEnvVars.trim() || undefined,
       });
+      // Sincronizar y activar la instancia editada para que Ajustes y el launcher queden alineados
+      launcherActions.selectInstance(initialInstance.id);
       if (onSubmitSuccess) {
         onSubmitSuccess();
       } else {
@@ -290,15 +269,15 @@ export const InstancesCreateTab: React.FC<InstancesCreateTabProps> = ({
             justifyContent: 'space-between',
             padding: '10px 14px',
             borderRadius: '8px',
-            background: 'rgba(0, 229, 255, 0.08)',
-            border: '1px solid rgba(0, 229, 255, 0.25)',
+            background: 'rgba(21, 111, 105, 0.12)',
+            border: '1px solid rgba(22, 160, 133, 0.3)',
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Pencil size={15} style={{ color: '#00e5ff' }} />
+            <Pencil size={15} style={{ color: '#16A085' }} />
             <span style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>
               {t.instances.editTitle}:{' '}
-              <span style={{ color: '#00e5ff' }}>{initialInstance.name}</span>
+              <span style={{ color: '#16A085' }}>{initialInstance.name}</span>
             </span>
           </div>
           <button
@@ -387,32 +366,6 @@ export const InstancesCreateTab: React.FC<InstancesCreateTabProps> = ({
             options={instanceLoaderOptions}
             height={38}
           />
-          {formLoader !== 'vanilla' && (
-            <div style={{ marginTop: '8px' }}>
-              <input
-                id="create-instance-loader-version"
-                type="text"
-                placeholder={
-                  resolveEffectiveLoaderVersion(formLoader, '', formMcVersion) ?? 'Versión'
-                }
-                value={formLoaderVersion}
-                onChange={(e) => setFormLoaderVersion(e.target.value)}
-                className="login-text-input"
-                aria-label="Versión del loader"
-                style={{
-                  width: '100%',
-                  height: '32px',
-                  padding: '4px 10px',
-                  borderRadius: '6px',
-                  border: '1px solid rgba(255, 255, 255, 0.12)',
-                  background: 'rgba(0, 0, 0, 0.25)',
-                  color: '#38bdf8',
-                  fontSize: '11.5px',
-                  fontFamily: 'var(--font-inter)',
-                }}
-              />
-            </div>
-          )}
         </div>
       </div>
 
@@ -440,12 +393,15 @@ export const InstancesCreateTab: React.FC<InstancesCreateTabProps> = ({
                   flex: 1,
                   padding: '10px',
                   borderRadius: '8px',
-                  border: `1px solid ${isSelected ? '#00e5ff' : 'rgba(255,255,255,0.08)'}`,
-                  background: isSelected ? 'rgba(0, 229, 255, 0.12)' : 'rgba(255,255,255,0.03)',
+                  border: isSelected
+                    ? '1px solid rgba(56, 189, 248, 0.4)'
+                    : '1px solid rgba(255,255,255,0.08)',
+                  background: isSelected ? 'rgba(56, 189, 248, 0.14)' : 'rgba(255,255,255,0.03)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   cursor: 'pointer',
+                  transition: 'all 0.15s ease',
                 }}
               >
                 {getIconComponent(ico)}
@@ -481,8 +437,8 @@ export const InstancesCreateTab: React.FC<InstancesCreateTabProps> = ({
           }}
         >
           <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <Monitor size={14} style={{ color: '#00e5ff' }} />
-            Resolución Personalizada (Opcional)
+            <Monitor size={14} style={{ color: '#38bdf8' }} />
+            {t.instances.customResolutionTitle}
           </span>
           {showAdvancedRes ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
         </button>
@@ -509,11 +465,11 @@ export const InstancesCreateTab: React.FC<InstancesCreateTabProps> = ({
                     borderRadius: '6px',
                     border:
                       formWidth === p.w && formHeight === p.h && !formFullscreen
-                        ? '1px solid #00e5ff'
+                        ? '1px solid rgba(22, 160, 133, 0.45)'
                         : '1px solid rgba(255,255,255,0.08)',
                     background:
                       formWidth === p.w && formHeight === p.h && !formFullscreen
-                        ? 'rgba(0,229,255,0.12)'
+                        ? 'rgba(22, 160, 133, 0.18)'
                         : 'rgba(255,255,255,0.03)',
                     color: '#e2e8f0',
                     fontSize: '10.5px',
@@ -536,11 +492,11 @@ export const InstancesCreateTab: React.FC<InstancesCreateTabProps> = ({
                     marginBottom: '4px',
                   }}
                 >
-                  Ancho (px):
+                  {t.instances.widthPx}
                 </span>
                 <input
                   type="number"
-                  placeholder="Por defecto global"
+                  placeholder={t.instances.defaultGlobal}
                   disabled={formFullscreen}
                   value={formWidth}
                   onChange={(e) => setFormWidth(e.target.value)}
@@ -564,11 +520,11 @@ export const InstancesCreateTab: React.FC<InstancesCreateTabProps> = ({
                     marginBottom: '4px',
                   }}
                 >
-                  Alto (px):
+                  {t.instances.heightPx}
                 </span>
                 <input
                   type="number"
-                  placeholder="Por defecto global"
+                  placeholder={t.instances.defaultGlobal}
                   disabled={formFullscreen}
                   value={formHeight}
                   onChange={(e) => setFormHeight(e.target.value)}
@@ -603,7 +559,7 @@ export const InstancesCreateTab: React.FC<InstancesCreateTabProps> = ({
                 onChange={(e) => setFormFullscreen(e.target.checked)}
                 className="papyrus-checkbox"
               />
-              <span>Iniciar esta instancia siempre en Pantalla Completa</span>
+              <span>{t.instances.alwaysFullscreen}</span>
             </label>
           </div>
         )}
@@ -634,8 +590,8 @@ export const InstancesCreateTab: React.FC<InstancesCreateTabProps> = ({
           }}
         >
           <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <HardDrive size={14} style={{ color: '#00e5ff' }} />
-            Comandos Hook & Ciclo de Vida (Opcional)
+            <HardDrive size={14} style={{ color: '#38bdf8' }} />
+            {t.instances.lifecycleHooksTitle}
           </span>
           {showAdvancedHooks ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
         </button>
@@ -651,7 +607,7 @@ export const InstancesCreateTab: React.FC<InstancesCreateTabProps> = ({
                   marginBottom: '3px',
                 }}
               >
-                Comando Pre-Launch:
+                {t.instances.preLaunchCmd}
               </span>
               <input
                 type="text"
@@ -680,7 +636,7 @@ export const InstancesCreateTab: React.FC<InstancesCreateTabProps> = ({
                   marginBottom: '3px',
                 }}
               >
-                Comando Wrapper (Envoltorio Java):
+                {t.instances.wrapperCmd}
               </span>
               <input
                 type="text"
@@ -709,7 +665,7 @@ export const InstancesCreateTab: React.FC<InstancesCreateTabProps> = ({
                   marginBottom: '3px',
                 }}
               >
-                Comando Post-Exit:
+                {t.instances.postExitCmd}
               </span>
               <input
                 type="text"
@@ -738,7 +694,7 @@ export const InstancesCreateTab: React.FC<InstancesCreateTabProps> = ({
                   marginBottom: '3px',
                 }}
               >
-                Variables de Entorno:
+                {t.instances.envVars}
               </span>
               <input
                 type="text"
@@ -767,7 +723,7 @@ export const InstancesCreateTab: React.FC<InstancesCreateTabProps> = ({
                   marginBottom: '3px',
                 }}
               >
-                RAM Máxima Asignada (GB, opcional):
+                {t.instances.maxRamLabel}
               </span>
               <input
                 type="number"
@@ -795,30 +751,15 @@ export const InstancesCreateTab: React.FC<InstancesCreateTabProps> = ({
         <button
           type="button"
           onClick={onCancel}
-          style={{
-            padding: '10px 18px',
-            borderRadius: '8px',
-            border: '1px solid rgba(255,255,255,0.1)',
-            background: 'transparent',
-            color: '#94a3b8',
-            fontSize: '13px',
-            cursor: 'pointer',
-          }}
+          className="instance-action-btn"
+          style={{ height: '36px', padding: '0 18px', fontSize: '13px' }}
         >
           {t.instances.formCancelBtn}
         </button>
         <button
           type="submit"
-          style={{
-            padding: '10px 22px',
-            borderRadius: '8px',
-            border: 'none',
-            background: '#00e5ff',
-            color: '#0a0a0f',
-            fontWeight: 700,
-            fontSize: '13px',
-            cursor: 'pointer',
-          }}
+          className="instance-play-btn"
+          style={{ height: '36px', padding: '0 22px', fontSize: '13px', borderRadius: '8px' }}
         >
           {isEditing ? t.instances.formSaveBtn : t.instances.formCreateBtn}
         </button>
