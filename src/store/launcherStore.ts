@@ -1857,6 +1857,13 @@ export const launcherActions = {
     };
 
     try {
+      syncInstancesWithDatabase()
+        .then((saved) => {
+          const insts = saved.length > 0 ? saved : [DEFAULT_OFFICIAL_INSTANCE];
+          setStoreState(() => ({ instances: insts }));
+        })
+        .catch((e) => console.warn('[Launcher Store] Error syncing instances with SQLite:', e));
+
       await registerGameStartedListener(registerListener as any, setStoreState);
       await registerGameIpcReadyListener(registerListener as any, state);
       await registerGameExitedListener(registerListener as any, state, setStoreState);
