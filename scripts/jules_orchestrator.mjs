@@ -269,7 +269,7 @@ async function main() {
 
   console.log(`Repositorios objetivo identificados (${targetSources.length}):`);
   targetSources.forEach(s => {
-    const branch = customBranch || s.githubRepo?.defaultBranch?.displayName || 'main';
+    const branch = customBranch || s.githubRepo?.defaultBranch?.displayName || 'dev';
     console.log(`  📁 \x1b[1m${s.id || s.name}\x1b[0m (branch: ${branch})`);
   });
   console.log('');
@@ -299,7 +299,7 @@ async function main() {
     console.log('\x1b[33m--- SIMULACIÓN DE DESPACHO (--dry-run) ---\x1b[0m\n');
     for (const source of targetSources) {
       const repoName = source.id || source.name;
-      const branch = customBranch || source.githubRepo?.defaultBranch?.displayName || 'main';
+      const branch = customBranch || source.githubRepo?.defaultBranch?.displayName || 'dev';
       console.log(`\x1b[1m\x1b[35m=== Repositorio: ${repoName} (Branch: ${branch}) ===\x1b[0m`);
       for (const spec of specsToRun) {
         console.log(`  🤖 [${spec.id}] [${spec.category}] ${spec.title}`);
@@ -323,7 +323,7 @@ async function main() {
 
     for (const source of targetSources) {
       const repoName = source.id || source.name;
-      const branch = customBranch || source.githubRepo?.defaultBranch?.displayName || 'main';
+      const branch = customBranch || source.githubRepo?.defaultBranch?.displayName || 'dev';
       console.log(`\x1b[1m\x1b[34m>> Coordinando ${specsToRun.length} agente(s) hacia ${repoName} (branch: ${branch})...\x1b[0m`);
 
       for (const spec of specsToRun) {
