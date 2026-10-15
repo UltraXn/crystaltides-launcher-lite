@@ -2,7 +2,11 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-pub fn register_system_app(target_exe: &Path, install_dir: &Path, _create_desktop_shortcut: bool) -> Result<(), String> {
+pub fn register_system_app(
+    target_exe: &Path,
+    install_dir: &Path,
+    _create_desktop_shortcut: bool,
+) -> Result<(), String> {
     if let Some(home) = dirs::home_dir() {
         let desktop_dir = home.join(".local/share/applications");
         let _ = fs::create_dir_all(&desktop_dir);

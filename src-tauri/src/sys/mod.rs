@@ -16,7 +16,18 @@ mod macos;
 pub use macos::*;
 
 pub fn get_default_install_dir() -> Option<PathBuf> {
+    if let Some(custom) = std::env::var_os("CRYSTALTIDES_HOME") {
+        let trimmed = custom.to_string_lossy().trim().to_string();
+        if !trimmed.is_empty() {
+            return Some(PathBuf::from(trimmed));
+        }
+    }
     dirs::home_dir().map(|home| home.join(".crystaltides"))
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn get_registered_install_location() -> Option<PathBuf> {
+    None
 }
 
 pub fn is_app_installed(install_dir: &Path) -> bool {
@@ -79,5 +90,3 @@ pub(crate) fn cleanup_install_dir(install_dir: &Path, remove_user_data: bool) {
         }
     }
 }
-
-

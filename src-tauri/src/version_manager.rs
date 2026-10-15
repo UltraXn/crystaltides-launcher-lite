@@ -1,6 +1,6 @@
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
-use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct MojangVersionManifestEntry {
@@ -61,7 +61,10 @@ pub fn is_library_allowed_on_current_os(rules: &Option<Vec<serde_json::Value>>) 
 
     let mut allowed = false;
     for rule in rules {
-        let action = rule.get("action").and_then(|a| a.as_str()).unwrap_or("disallow");
+        let action = rule
+            .get("action")
+            .and_then(|a| a.as_str())
+            .unwrap_or("disallow");
         if let Some(os) = rule.get("os").and_then(|o| o.as_object()) {
             if let Some(os_name) = os.get("name").and_then(|n| n.as_str()) {
                 if os_name == current_os {
@@ -110,7 +113,9 @@ fn get_appdata_minecraft_dir() -> Option<PathBuf> {
         }
         #[cfg(target_os = "macos")]
         {
-            h.join("Library").join("Application Support").join("minecraft")
+            h.join("Library")
+                .join("Application Support")
+                .join("minecraft")
         }
         #[cfg(not(any(target_os = "windows", target_os = "macos")))]
         {
@@ -227,7 +232,10 @@ fn try_copy_from_local_minecraft(version_id: &str, target_jar: &Path, target_jso
         }
         if mc_jar.exists() && !target_jar.exists() {
             let _ = fs::copy(&mc_jar, target_jar);
-            println!("[VersionManager] Copied {} jar and json from .minecraft", version_id);
+            println!(
+                "[VersionManager] Copied {} jar and json from .minecraft",
+                version_id
+            );
             return true;
         }
     }
@@ -239,20 +247,34 @@ async fn fetch_mojang_version_detail(
     version_id: &str,
     target_json: &Path,
 ) -> Result<MojangVersionDetail, String> {
-    println!("[VersionManager] Downloading manifest for {} from Mojang...", version_id);
+    println!(
+        "[VersionManager] Downloading manifest for {} from Mojang...",
+        version_id
+    );
     let manifest_url = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
-    let manifest_resp = client.get(manifest_url).send().await
+    let manifest_resp = client
+        .get(manifest_url)
+        .send()
+        .await
         .map_err(|e| format!("Error conectando con Mojang: {}", e))?
         .error_for_status()
         .map_err(|e| format!("Error HTTP en manifiesto de Mojang: {}", e))?;
-    let manifest: MojangVersionManifest = manifest_resp.json().await
+    let manifest: MojangVersionManifest = manifest_resp
+        .json()
+        .await
         .map_err(|e| format!("Error parseando manifiesto de Mojang: {}", e))?;
 
     let version_entry = manifest.versions.iter().find(|v| v.id == version_id)
         .ok_or_else(|| format!("Versión '{}' no encontrada en el catálogo oficial de Mojang ni en instalaciones locales.", version_id))?;
 
-    println!("[VersionManager] Found version entry URL: {}", version_entry.url);
-    let detail_resp = client.get(&version_entry.url).send().await
+    println!(
+        "[VersionManager] Found version entry URL: {}",
+        version_entry.url
+    );
+    let detail_resp = client
+        .get(&version_entry.url)
+        .send()
+        .await
         .map_err(|e| format!("Error descargando json de versión: {}", e))?
         .error_for_status()
         .map_err(|e| format!("Error HTTP al descargar json de versión: {}", e))?;
@@ -281,7 +303,10 @@ async fn download_client_jar(
     let sha1_expected = client_download.and_then(|c| c.sha1.as_deref());
 
     println!("[VersionManager] Downloading client.jar from {}...", url);
-    let jar_resp = client.get(url).send().await
+    let jar_resp = client
+        .get(url)
+        .send()
+        .await
         .map_err(|e| format!("Error descargando client.jar: {}", e))?
         .error_for_status()
         .map_err(|e| format!("Error HTTP descargando client.jar: {}", e))?;
@@ -302,7 +327,10 @@ async fn download_client_jar(
 
     fs::write(target_jar, &jar_bytes)
         .map_err(|e| format!("Error guardando {}.jar: {}", version_id, e))?;
-    println!("[VersionManager] client.jar downloaded successfully ({} bytes).", jar_bytes.len());
+    println!(
+        "[VersionManager] client.jar downloaded successfully ({} bytes).",
+        jar_bytes.len()
+    );
     Ok(())
 }
 
@@ -313,65 +341,59 @@ async fn download_single_library(
     sha1_expected: Option<String>,
     libraries_dir: PathBuf,
     mc_lib_dir: Option<PathBuf>,
-) {
+) -> Result<(), String> {
     let rel_p = Path::new(&rel_path);
-    if rel_p.is_absolute() || rel_p.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
-        eprintln!(
-            "[VersionManager] rel_path inválido o intento de path traversal: {}",
+    if rel_p.is_absolute()
+        || rel_p
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return Err(format!(
+            "rel_path inválido o intento de path traversal: {}",
             rel_path
-        );
-        return;
+        ));
     }
 
     let target_lib_path = libraries_dir.join(&rel_path);
+    let expected_hash = match sha1_expected {
+        Some(ref h) => crate::downloader::ExpectedHash::Sha1(h.clone()),
+        None => crate::downloader::ExpectedHash::None,
+    };
+
     if target_lib_path.exists() {
-        return;
+        if let Ok(true) = crate::downloader::verify_file_hash(&target_lib_path, &expected_hash) {
+            return Ok(());
+        }
+        let _ = fs::remove_file(&target_lib_path);
     }
 
     if let Some(ref mc_libs) = mc_lib_dir {
         let mc_lib_path = mc_libs.join(&rel_path);
         if mc_lib_path.exists() {
-            if let Some(parent) = target_lib_path.parent() {
-                let _ = fs::create_dir_all(parent);
+            if let Ok(true) = crate::downloader::verify_file_hash(&mc_lib_path, &expected_hash) {
+                if let Some(parent) = target_lib_path.parent() {
+                    let _ = fs::create_dir_all(parent);
+                }
+                if fs::copy(&mc_lib_path, &target_lib_path).is_ok() {
+                    return Ok(());
+                }
             }
-            let _ = fs::copy(&mc_lib_path, &target_lib_path);
-            return;
         }
     }
 
-    if let Some(parent) = target_lib_path.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-    if let Ok(resp) = client.get(&url).send().await {
-        if resp.status().is_success() {
-            if let Ok(bytes) = resp.bytes().await {
-                if let Some(ref expected_hash) = sha1_expected {
-                    use sha1::Digest;
-                    let mut hasher = sha1::Sha1::new();
-                    hasher.update(&bytes);
-                    let computed = format!("{:x}", hasher.finalize());
-                    if !computed.eq_ignore_ascii_case(expected_hash) {
-                        eprintln!(
-                            "[VersionManager] SHA-1 mismatch para biblioteca {}: esperada {}, obtenida {}",
-                            rel_path, expected_hash, computed
-                        );
-                        return;
-                    }
-                }
-                let _ = fs::write(&target_lib_path, bytes);
-            }
-        }
-    }
+    crate::downloader::download_verified(&client, &url, &target_lib_path, &expected_hash, true)
+        .await
+        .map_err(|e| format!("Error descargando biblioteca {}: {}", rel_path, e))
 }
 
 async fn download_missing_libraries(
     client: &reqwest::Client,
     game_dir: &Path,
     detail: &MojangVersionDetail,
-) {
+) -> Result<(), String> {
     let libraries = match &detail.libraries {
         Some(libs) => libs,
-        None => return,
+        None => return Ok(()),
     };
 
     let libraries_dir = game_dir.join("libraries");
@@ -391,6 +413,7 @@ async fn download_missing_libraries(
         }
     }
 
+    let mut errors = Vec::new();
     for chunk in missing_libs.chunks(15) {
         let mut handles = Vec::new();
         for (rel_path, url, sha1) in chunk {
@@ -403,9 +426,23 @@ async fn download_missing_libraries(
             handles.push(tokio::spawn(download_single_library(c, rp, u, s, ld, mc)));
         }
         for h in handles {
-            let _ = h.await;
+            match h.await {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => errors.push(e),
+                Err(join_err) => errors.push(format!("Error en tarea de biblioteca: {}", join_err)),
+            }
         }
     }
+
+    if !errors.is_empty() {
+        return Err(format!(
+            "Falló la descarga de {} biblioteca(s) de Minecraft (ej: {})",
+            errors.len(),
+            errors[0]
+        ));
+    }
+
+    Ok(())
 }
 
 fn read_cached_asset_index(
@@ -430,7 +467,10 @@ async fn download_asset_index_content(
     target_index_file: &Path,
     mc_index_file: Option<&PathBuf>,
 ) -> Option<String> {
-    println!("[VersionManager] Downloading asset index {} from {}...", asset_ref.id, asset_ref.url);
+    println!(
+        "[VersionManager] Downloading asset index {} from {}...",
+        asset_ref.id, asset_ref.url
+    );
     let resp = client.get(&asset_ref.url).send().await.ok()?;
     if !resp.status().is_success() {
         return None;
@@ -470,20 +510,51 @@ fn collect_missing_asset_objects(
             _ => continue,
         };
 
+        let size = obj_val.get("size").and_then(|s| s.as_u64());
         let prefix = &hash[..2];
         let target_obj = objects_dir.join(prefix).join(hash);
         if target_obj.exists() {
-            continue;
+            let valid = if let Some(expected_size) = size {
+                target_obj
+                    .metadata()
+                    .map(|m| m.len() == expected_size)
+                    .unwrap_or(false)
+            } else {
+                crate::downloader::verify_file_hash(
+                    &target_obj,
+                    &crate::downloader::ExpectedHash::Sha1(hash.to_string()),
+                )
+                .unwrap_or(false)
+            };
+            if valid {
+                continue;
+            }
+            let _ = fs::remove_file(&target_obj);
         }
 
         if let Some(mc_objs) = mc_objects_dir {
             let mc_obj = mc_objs.join(prefix).join(hash);
             if mc_obj.exists() {
-                if let Some(parent) = target_obj.parent() {
-                    let _ = fs::create_dir_all(parent);
+                let valid = if let Some(expected_size) = size {
+                    mc_obj
+                        .metadata()
+                        .map(|m| m.len() == expected_size)
+                        .unwrap_or(false)
+                } else {
+                    crate::downloader::verify_file_hash(
+                        &mc_obj,
+                        &crate::downloader::ExpectedHash::Sha1(hash.to_string()),
+                    )
+                    .unwrap_or(false)
+                };
+                if valid {
+                    if let Some(parent) = target_obj.parent() {
+                        let _ = fs::create_dir_all(parent);
+                    }
+                    if fs::copy(&mc_obj, &target_obj).is_ok() {
+                        continue;
+                    }
                 }
-                let _ = fs::copy(&mc_obj, &target_obj);
-                continue;
             }
         }
 
@@ -492,44 +563,26 @@ fn collect_missing_asset_objects(
     missing_objects
 }
 
-fn write_asset_file_copies(target_file: &Path, mc_file: Option<&PathBuf>, bytes: &[u8]) {
-    if let Some(p) = target_file.parent() {
-        let _ = fs::create_dir_all(p);
-    }
-    let _ = fs::write(target_file, bytes);
-    if let Some(mc_f) = mc_file {
-        if let Some(p) = mc_f.parent() {
-            let _ = fs::create_dir_all(p);
-        }
-        let _ = fs::write(mc_f, bytes);
-    }
-}
-
 async fn fetch_single_asset_object(
     client: reqwest::Client,
     url: String,
     expected_hash: String,
     target_file: PathBuf,
     mc_file: Option<PathBuf>,
-) {
-    if let Ok(resp) = client.get(&url).send().await {
-        if resp.status().is_success() {
-            if let Ok(bytes) = resp.bytes().await {
-                use sha1::Digest;
-                let mut hasher = sha1::Sha1::new();
-                hasher.update(&bytes);
-                let computed = format!("{:x}", hasher.finalize());
-                if computed.eq_ignore_ascii_case(&expected_hash) {
-                    write_asset_file_copies(&target_file, mc_file.as_ref(), &bytes);
-                } else {
-                    eprintln!(
-                        "[VersionManager] SHA-1 mismatch para asset {}: esperada {}, obtenida {}",
-                        expected_hash, expected_hash, computed
-                    );
-                }
-            }
+) -> Result<(), String> {
+    let expected = crate::downloader::ExpectedHash::Sha1(expected_hash);
+    crate::downloader::download_verified(&client, &url, &target_file, &expected, true)
+        .await
+        .map_err(|e| format!("Error descargando asset {}: {}", url, e))?;
+
+    if let Some(mc_f) = mc_file {
+        if let Some(p) = mc_f.parent() {
+            let _ = fs::create_dir_all(p);
         }
+        let _ = fs::copy(&target_file, &mc_f);
     }
+
+    Ok(())
 }
 
 async fn download_missing_asset_objects_parallel(
@@ -537,11 +590,15 @@ async fn download_missing_asset_objects_parallel(
     missing_objects: &[(String, String)],
     objects_dir: &Path,
     mc_objects_dir: Option<&PathBuf>,
-) {
+) -> Result<(), String> {
+    let mut errors = Vec::new();
     for chunk in missing_objects.chunks(25) {
         let mut handles = Vec::new();
         for (prefix, hash) in chunk {
-            let url = format!("https://resources.download.minecraft.net/{}/{}", prefix, hash);
+            let url = format!(
+                "https://resources.download.minecraft.net/{}/{}",
+                prefix, hash
+            );
             let target_file = objects_dir.join(prefix).join(hash);
             let mc_file = mc_objects_dir.map(|d| d.join(prefix).join(hash));
             let c = client.clone();
@@ -555,20 +612,34 @@ async fn download_missing_asset_objects_parallel(
             )));
         }
         for h in handles {
-            let _ = h.await;
+            match h.await {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => errors.push(e),
+                Err(join_err) => errors.push(format!("Error en tarea de asset: {}", join_err)),
+            }
         }
     }
+
+    if !errors.is_empty() {
+        return Err(format!(
+            "Falló la descarga de {} asset(s) de Minecraft (ej: {})",
+            errors.len(),
+            errors[0]
+        ));
+    }
+
     println!("[VersionManager] Asset objects downloaded successfully.");
+    Ok(())
 }
 
 async fn download_missing_assets(
     client: &reqwest::Client,
     game_dir: &Path,
     detail: &MojangVersionDetail,
-) {
+) -> Result<(), String> {
     let asset_ref = match &detail.asset_index {
         Some(r) => r,
-        None => return,
+        None => return Ok(()),
     };
 
     let assets_dir = game_dir.join("assets");
@@ -579,23 +650,57 @@ async fn download_missing_assets(
     let target_index_file = indexes_dir.join(format!("{}.json", asset_ref.id));
 
     let mc_assets_dir = get_appdata_minecraft_dir().map(|d| d.join("assets"));
-    let mc_index_file = mc_assets_dir.as_ref().map(|a| a.join("indexes").join(format!("{}.json", asset_ref.id)));
+    let mc_index_file = mc_assets_dir
+        .as_ref()
+        .map(|a| a.join("indexes").join(format!("{}.json", asset_ref.id)));
 
-    let index_content = resolve_asset_index_content(client, asset_ref, &target_index_file, mc_index_file.as_ref()).await;
+    let index_content = resolve_asset_index_content(
+        client,
+        asset_ref,
+        &target_index_file,
+        mc_index_file.as_ref(),
+    )
+    .await
+    .ok_or_else(|| {
+        format!(
+            "No se pudo descargar o resolver el índice de assets '{}' desde {}",
+            asset_ref.id, asset_ref.url
+        )
+    })?;
 
-    if let Some(content) = index_content {
-        if let Ok(parsed_idx) = serde_json::from_str::<serde_json::Value>(&content) {
-            if let Some(objects) = parsed_idx.get("objects").and_then(|o| o.as_object()) {
-                let mc_objects_dir = mc_assets_dir.as_ref().map(|a| a.join("objects"));
-                let missing_objects = collect_missing_asset_objects(objects, &objects_dir, mc_objects_dir.as_ref());
+    let parsed_idx: serde_json::Value = serde_json::from_str(&index_content)
+        .map_err(|e| format!("Error parseando índice de assets '{}': {}", asset_ref.id, e))?;
 
-                if !missing_objects.is_empty() {
-                    println!("[VersionManager] Downloading {} missing assets for index {}...", missing_objects.len(), asset_ref.id);
-                    download_missing_asset_objects_parallel(client, &missing_objects, &objects_dir, mc_objects_dir.as_ref()).await;
-                }
-            }
-        }
+    let objects = parsed_idx
+        .get("objects")
+        .and_then(|o| o.as_object())
+        .ok_or_else(|| {
+            format!(
+                "El índice de assets '{}' no contiene un objeto 'objects' válido",
+                asset_ref.id
+            )
+        })?;
+
+    let mc_objects_dir = mc_assets_dir.as_ref().map(|a| a.join("objects"));
+    let missing_objects =
+        collect_missing_asset_objects(objects, &objects_dir, mc_objects_dir.as_ref());
+
+    if !missing_objects.is_empty() {
+        println!(
+            "[VersionManager] Downloading {} missing assets for index {}...",
+            missing_objects.len(),
+            asset_ref.id
+        );
+        download_missing_asset_objects_parallel(
+            client,
+            &missing_objects,
+            &objects_dir,
+            mc_objects_dir.as_ref(),
+        )
+        .await?;
     }
+
+    Ok(())
 }
 
 /// Ensures the version's jar and json exist in the game directory.
@@ -613,10 +718,7 @@ pub async fn prepare_version(version_id: &str, game_dir_str: &str) -> Result<Str
     let _ = try_copy_from_local_minecraft(version_id, &target_jar, &target_json);
 
     // 2. Download from Mojang Piston Meta or load existing version JSON
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .map_err(|e| e.to_string())?;
+    let client = crate::get_shared_http_client();
 
     let detail = if target_json.exists() {
         if let Ok(bytes) = fs::read(&target_json) {
@@ -630,10 +732,12 @@ pub async fn prepare_version(version_id: &str, game_dir_str: &str) -> Result<Str
 
     let detail = match detail {
         Some(d) => d,
-        None => fetch_mojang_version_detail(&client, version_id, &target_json).await?,
+        None => fetch_mojang_version_detail(client, version_id, &target_json).await?,
     };
 
-    let client_sha1 = detail.downloads.as_ref()
+    let client_sha1 = detail
+        .downloads
+        .as_ref()
         .and_then(|d| d.client.as_ref())
         .and_then(|c| c.sha1.as_deref());
 
@@ -662,11 +766,11 @@ pub async fn prepare_version(version_id: &str, game_dir_str: &str) -> Result<Str
     };
 
     if need_download_jar {
-        download_client_jar(&client, version_id, &detail, &target_jar).await?;
+        download_client_jar(client, version_id, &detail, &target_jar).await?;
     }
 
-    download_missing_libraries(&client, game_dir, &detail).await;
-    download_missing_assets(&client, game_dir, &detail).await;
+    download_missing_libraries(client, game_dir, &detail).await?;
+    download_missing_assets(client, game_dir, &detail).await?;
 
     Ok(format!("Versión {} preparada exitosamente.", version_id))
 }
@@ -701,40 +805,17 @@ fn ensure_launcher_profiles(game_dir: &Path) {
 }
 
 fn resolve_java_path(provided: &str, game_dir: &str) -> PathBuf {
-    let candidate = (|| {
-        if !provided.is_empty() {
-            let p = PathBuf::from(provided);
-            if p.exists() {
-                return p;
-            }
-        }
-        // 1. Search in game_dir / runtimes
+    let req = if !provided.is_empty() {
+        Some(provided)
+    } else {
+        None
+    };
+
+    let candidate = crate::java_manager::resolve(req, None).unwrap_or_else(|_| {
         let runtimes_dir = Path::new(game_dir).join("runtimes");
-        if let Some(found) = crate::java_manager::find_java_binary(&runtimes_dir) {
-            return found;
-        }
-        // 2. Search in default ~/.crystaltides/runtimes
-        if let Some(home) = dirs::home_dir() {
-            let ct_runtimes = home.join(".crystaltides").join("runtimes");
-            if let Some(found) = crate::java_manager::find_java_binary(&ct_runtimes) {
-                return found;
-            }
-        }
-        // 3. Search common system Java directories on Windows
-        #[cfg(target_os = "windows")]
-        {
-            for vendor_parent in &[r"C:\Program Files\Java", r"C:\Program Files\Eclipse Adoptium", r"C:\Program Files\Microsoft"] {
-                let p = Path::new(vendor_parent);
-                if p.is_dir() {
-                    if let Some(found) = crate::java_manager::find_java_binary(p) {
-                        return found;
-                    }
-                }
-            }
-        }
-        // Fallback to "java" on system PATH
-        PathBuf::from("java")
-    })();
+        crate::java_manager::find_java_binary(&runtimes_dir)
+            .unwrap_or_else(|| PathBuf::from("java"))
+    });
 
     #[cfg(target_os = "windows")]
     {
@@ -754,7 +835,8 @@ fn resolve_java_path(provided: &str, game_dir: &str) -> PathBuf {
 
 fn is_disposable_artifact(name_lower: &str) -> bool {
     let is_jar = name_lower.ends_with(".jar") && name_lower.contains("installer");
-    let is_log = (name_lower.ends_with(".log") || name_lower.ends_with(".txt")) && name_lower.contains("installer");
+    let is_log = (name_lower.ends_with(".log") || name_lower.ends_with(".txt"))
+        && name_lower.contains("installer");
     let is_crash = (name_lower.starts_with("hs_err_pid") || name_lower.starts_with("replay_pid"))
         && name_lower.ends_with(".log");
     is_jar || is_log || is_crash
@@ -782,7 +864,10 @@ fn remove_artifact_entry(entry: fs::DirEntry) {
         crate::logger::log(
             "INFO",
             "VersionManager",
-            &format!("Residuo de instalación eliminado automáticamente: {:?}", file_name),
+            &format!(
+                "Residuo de instalación eliminado automáticamente: {:?}",
+                file_name
+            ),
         );
     }
 }
@@ -820,6 +905,43 @@ fn sanitize_mc_version(raw: &str) -> String {
     trimmed.to_string()
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum LoaderType {
+    Fabric,
+    Quilt,
+    Neoforge,
+    Forge,
+    Vanilla,
+}
+
+impl std::str::FromStr for LoaderType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "fabric" => Ok(LoaderType::Fabric),
+            "quilt" => Ok(LoaderType::Quilt),
+            "neoforge" => Ok(LoaderType::Neoforge),
+            "forge" => Ok(LoaderType::Forge),
+            "vanilla" => Ok(LoaderType::Vanilla),
+            _ => Err(format!("Tipo de cargador desconocido: {}", s)),
+        }
+    }
+}
+
+impl LoaderType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            LoaderType::Fabric => "fabric",
+            LoaderType::Quilt => "quilt",
+            LoaderType::Neoforge => "neoforge",
+            LoaderType::Forge => "forge",
+            LoaderType::Vanilla => "vanilla",
+        }
+    }
+}
+
 pub async fn install_mod_loader(
     loader_type: &str,
     loader_version: &str,
@@ -837,35 +959,71 @@ pub async fn install_mod_loader(
     // Ensure the base vanilla version files exist before installing mod loader
     let _ = prepare_version(mc_version, game_dir).await;
 
-    let res = match loader_type.to_lowercase().as_str() {
-        "fabric" => install_fabric(loader_version, mc_version, game_dir, java_path).await,
-        "quilt" => install_quilt(loader_version, mc_version, game_dir, java_path).await,
-        "neoforge" | "forge" => {
-            install_forge_family(loader_type, loader_version, mc_version, game_dir, java_path).await
+    let parsed_loader = loader_type.parse::<LoaderType>()?;
+    let res = match parsed_loader {
+        LoaderType::Fabric => install_fabric(loader_version, mc_version, game_dir, java_path).await,
+        LoaderType::Quilt => install_quilt(loader_version, mc_version, game_dir, java_path).await,
+        LoaderType::Neoforge | LoaderType::Forge => {
+            install_forge_family(
+                parsed_loader.as_str(),
+                loader_version,
+                mc_version,
+                game_dir,
+                java_path,
+            )
+            .await
         }
-        _ => Err(format!("Tipo de cargador desconocido: {}", loader_type)),
+        LoaderType::Vanilla => Ok("Instancia Vanilla lista.".to_string()),
     };
 
     cleanup_installer_artifacts(game_path);
     res
 }
 
-async fn download_file_to(url: &str, path: &Path) -> Result<(), String> {
-    println!("[VersionManager] Descargando instalador: {}", url);
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(60))
-        .build()
-        .map_err(|e| e.to_string())?;
-
-    let resp = client.get(url).send().await.map_err(|e| format!("Error conectando: {}", e))?;
-    let resp = resp.error_for_status().map_err(|e| format!("Error HTTP: {}", e))?;
-    let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
-
-    if let Some(parent) = path.parent() {
-        let _ = fs::create_dir_all(parent);
+async fn fetch_maven_checksum(
+    client: &reqwest::Client,
+    jar_url: &str,
+) -> crate::downloader::ExpectedHash {
+    let sha256_url = format!("{}.sha256", jar_url);
+    if let Ok(resp) = client.get(&sha256_url).send().await {
+        if resp.status().is_success() {
+            if let Ok(text) = resp.text().await {
+                let clean = text.split_whitespace().next().unwrap_or("").trim();
+                if clean.len() == 64 && clean.chars().all(|c| c.is_ascii_hexdigit()) {
+                    return crate::downloader::ExpectedHash::Sha256(clean.to_string());
+                }
+            }
+        }
     }
-    fs::write(path, bytes).map_err(|e| format!("Error guardando archivo: {}", e))?;
-    Ok(())
+
+    let sha1_url = format!("{}.sha1", jar_url);
+    if let Ok(resp) = client.get(&sha1_url).send().await {
+        if resp.status().is_success() {
+            if let Ok(text) = resp.text().await {
+                let clean = text.split_whitespace().next().unwrap_or("").trim();
+                if clean.len() == 40 && clean.chars().all(|c| c.is_ascii_hexdigit()) {
+                    return crate::downloader::ExpectedHash::Sha1(clean.to_string());
+                }
+            }
+        }
+    }
+
+    crate::downloader::ExpectedHash::None
+}
+
+async fn download_file_to(
+    url: &str,
+    path: &Path,
+    expected_hash: &crate::downloader::ExpectedHash,
+) -> Result<(), String> {
+    crate::logger::log(
+        "INFO",
+        "VersionManager",
+        &format!("Descargando instalador: {}", url),
+    );
+    let client = crate::get_shared_http_client();
+
+    crate::downloader::download_verified(client, url, path, expected_hash, false).await
 }
 
 async fn install_fabric(
@@ -874,14 +1032,26 @@ async fn install_fabric(
     game_dir: &str,
     java_path: &str,
 ) -> Result<String, String> {
-    let installer_url = "https://maven.fabricmc.net/net/fabricmc/fabric-installer/1.0.1/fabric-installer-1.0.1.jar";
+    let installer_url =
+        "https://maven.fabricmc.net/net/fabricmc/fabric-installer/1.0.1/fabric-installer-1.0.1.jar";
     let installer_path = Path::new(game_dir).join("fabric-installer.jar");
 
-    crate::logger::log("INFO", "VersionManager", &format!("Descargando Fabric installer: {}", installer_url));
-    download_file_to(installer_url, &installer_path).await?;
+    crate::logger::log(
+        "INFO",
+        "VersionManager",
+        &format!("Descargando Fabric installer: {}", installer_url),
+    );
+    const FABRIC_INSTALLER_SHA256: &str =
+        "62edf170bdcc41edea85d33acf3eb85474258699b3d41f9418d286c836cb088d";
+    let hash = crate::downloader::ExpectedHash::Sha256(FABRIC_INSTALLER_SHA256.to_string());
+    download_file_to(installer_url, &installer_path, &hash).await?;
 
     let resolved_java = resolve_java_path(java_path, game_dir);
-    crate::logger::log("INFO", "VersionManager", &format!("Ejecutando Fabric Installer con Java: {:?}", resolved_java));
+    crate::logger::log(
+        "INFO",
+        "VersionManager",
+        &format!("Ejecutando Fabric Installer con Java: {:?}", resolved_java),
+    );
     let mut cmd = std::process::Command::new(resolved_java);
     cmd.arg("-jar")
         .arg(&installer_path)
@@ -920,7 +1090,10 @@ async fn install_fabric(
         return Err(err_msg);
     }
 
-    let ok_msg = format!("Fabric {} para Minecraft {} instalado exitosamente.", loader_version, mc_version);
+    let ok_msg = format!(
+        "Fabric {} para Minecraft {} instalado exitosamente.",
+        loader_version, mc_version
+    );
     crate::logger::log("INFO", "VersionManager", &ok_msg);
     Ok(ok_msg)
 }
@@ -934,11 +1107,22 @@ async fn install_quilt(
     let installer_url = "https://maven.quiltmc.org/repository/release/org/quiltmc/quilt-installer/0.9.2/quilt-installer-0.9.2.jar";
     let installer_path = Path::new(game_dir).join("quilt-installer.jar");
 
-    crate::logger::log("INFO", "VersionManager", &format!("Descargando Quilt installer: {}", installer_url));
-    download_file_to(installer_url, &installer_path).await?;
+    crate::logger::log(
+        "INFO",
+        "VersionManager",
+        &format!("Descargando Quilt installer: {}", installer_url),
+    );
+    const QUILT_INSTALLER_SHA256: &str =
+        "c3ad3e23eee860e5185c594e7cb280e4fabe7e766a83945381d9a99c64855c5b";
+    let hash = crate::downloader::ExpectedHash::Sha256(QUILT_INSTALLER_SHA256.to_string());
+    download_file_to(installer_url, &installer_path, &hash).await?;
 
     let resolved_java = resolve_java_path(java_path, game_dir);
-    crate::logger::log("INFO", "VersionManager", &format!("Ejecutando Quilt Installer con Java: {:?}", resolved_java));
+    crate::logger::log(
+        "INFO",
+        "VersionManager",
+        &format!("Ejecutando Quilt Installer con Java: {:?}", resolved_java),
+    );
     let mut cmd = std::process::Command::new(resolved_java);
     cmd.arg("-jar")
         .arg(&installer_path)
@@ -970,13 +1154,23 @@ async fn install_quilt(
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        crate::logger::log("ERROR", "VersionManager", &format!("Instalador Quilt falló (stderr completo): {}", stderr));
+        crate::logger::log(
+            "ERROR",
+            "VersionManager",
+            &format!("Instalador Quilt falló (stderr completo): {}", stderr),
+        );
         let concise_err = stderr
             .lines()
-            .find(|line| line.contains("IllegalArgumentException:") || line.contains("Exception:") || line.contains("Error:"))
+            .find(|line| {
+                line.contains("IllegalArgumentException:")
+                    || line.contains("Exception:")
+                    || line.contains("Error:")
+            })
             .map(|l| {
                 if let Some(pos) = l.find("IllegalArgumentException:") {
-                    l[pos + "IllegalArgumentException:".len()..].trim().to_string()
+                    l[pos + "IllegalArgumentException:".len()..]
+                        .trim()
+                        .to_string()
                 } else if let Some(pos) = l.find("Exception:") {
                     l[pos + "Exception:".len()..].trim().to_string()
                 } else {
@@ -984,13 +1178,28 @@ async fn install_quilt(
                 }
             })
             .unwrap_or_else(|| {
-                stderr.lines().filter(|l| !l.trim().is_empty()).take(1).collect::<Vec<_>>().join(" ")
+                stderr
+                    .lines()
+                    .filter(|l| !l.trim().is_empty())
+                    .take(1)
+                    .collect::<Vec<_>>()
+                    .join(" ")
             });
-        let err_msg = format!("Instalador Quilt falló: {}", if concise_err.is_empty() { "Error desconocido al ejecutar instalador" } else { &concise_err });
+        let err_msg = format!(
+            "Instalador Quilt falló: {}",
+            if concise_err.is_empty() {
+                "Error desconocido al ejecutar instalador"
+            } else {
+                &concise_err
+            }
+        );
         return Err(err_msg);
     }
 
-    let ok_msg = format!("Quilt {} para Minecraft {} instalado exitosamente.", loader_version, mc_version);
+    let ok_msg = format!(
+        "Quilt {} para Minecraft {} instalado exitosamente.",
+        loader_version, mc_version
+    );
     crate::logger::log("INFO", "VersionManager", &ok_msg);
     Ok(ok_msg)
 }
@@ -1030,11 +1239,24 @@ async fn install_forge_family(
     };
 
     let installer_path = Path::new(game_dir).join(&file_name);
-    crate::logger::log("INFO", "VersionManager", &format!("Descargando {} installer: {}", loader_type, url));
-    download_file_to(&url, &installer_path).await?;
+    crate::logger::log(
+        "INFO",
+        "VersionManager",
+        &format!("Descargando {} installer: {}", loader_type, url),
+    );
+    let client = crate::get_shared_http_client();
+    let hash = fetch_maven_checksum(client, &url).await;
+    download_file_to(&url, &installer_path, &hash).await?;
 
     let resolved_java = resolve_java_path(java_path, game_dir);
-    crate::logger::log("INFO", "VersionManager", &format!("Ejecutando instalador de {} con Java: {:?}", loader_type, resolved_java));
+    crate::logger::log(
+        "INFO",
+        "VersionManager",
+        &format!(
+            "Ejecutando instalador de {} con Java: {:?}",
+            loader_type, resolved_java
+        ),
+    );
     let mut cmd = std::process::Command::new(resolved_java);
     cmd.arg("-jar")
         .arg(&installer_path)
@@ -1091,15 +1313,7 @@ mod tests {
         versions.sort_by(|a, b| to_natural_chunks(b).cmp(&to_natural_chunks(a)));
         assert_eq!(
             versions,
-            vec![
-                "1.21.1",
-                "1.21",
-                "1.20.1",
-                "1.16.5",
-                "1.12.2",
-                "1.9",
-                "1.8.9"
-            ]
+            vec!["1.21.1", "1.21", "1.20.1", "1.16.5", "1.12.2", "1.9", "1.8.9"]
         );
     }
 
@@ -1128,9 +1342,25 @@ mod tests {
             serde_json::json!({
                 "action": "disallow",
                 "os": {"name": match std::env::consts::OS { "windows" => "windows", "macos" => "osx", "linux" => "linux", o => o }}
-            })
+            }),
         ]);
         assert!(!is_library_allowed_on_current_os(&disallow_current_os));
     }
-}
 
+    #[test]
+    fn test_loader_type_parsing() {
+        assert_eq!("fabric".parse::<LoaderType>().unwrap(), LoaderType::Fabric);
+        assert_eq!("FABRIC".parse::<LoaderType>().unwrap(), LoaderType::Fabric);
+        assert_eq!("Quilt".parse::<LoaderType>().unwrap(), LoaderType::Quilt);
+        assert_eq!(
+            "NeoForge".parse::<LoaderType>().unwrap(),
+            LoaderType::Neoforge
+        );
+        assert_eq!("forge".parse::<LoaderType>().unwrap(), LoaderType::Forge);
+        assert_eq!(
+            "vanilla".parse::<LoaderType>().unwrap(),
+            LoaderType::Vanilla
+        );
+        assert!("unknown".parse::<LoaderType>().is_err());
+    }
+}

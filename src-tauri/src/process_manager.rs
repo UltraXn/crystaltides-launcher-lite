@@ -13,6 +13,11 @@ pub struct GameLogPayload {
 }
 
 #[derive(serde::Serialize, Clone, Debug)]
+pub struct GameLogBatchPayload {
+    pub lines: Vec<GameLogPayload>,
+}
+
+#[derive(serde::Serialize, Clone, Debug)]
 pub struct GameStoppedPayload {
     pub exit_code: Option<i32>,
     pub success: bool,
@@ -38,11 +43,19 @@ pub fn set_high_resolution_timer(enable: bool) {
         if enable {
             if !TIMER_ACTIVE.swap(true, Ordering::SeqCst) {
                 winmm::timeBeginPeriod(1);
-                crate::logger::log("INFO", "ProcessManager", "Windows high-resolution timer (1ms) enabled.");
+                crate::logger::log(
+                    "INFO",
+                    "ProcessManager",
+                    "Windows high-resolution timer (1ms) enabled.",
+                );
             }
         } else if TIMER_ACTIVE.swap(false, Ordering::SeqCst) {
             winmm::timeEndPeriod(1);
-            crate::logger::log("INFO", "ProcessManager", "Windows high-resolution timer restored.");
+            crate::logger::log(
+                "INFO",
+                "ProcessManager",
+                "Windows high-resolution timer restored.",
+            );
         }
     }
 }
@@ -51,22 +64,96 @@ fn get_game_process_handle() -> &'static Arc<Mutex<Option<Child>>> {
     GAME_PROCESS.get_or_init(|| Arc::new(Mutex::new(None)))
 }
 
-fn find_in_system_path(path_str: &str) -> Option<std::path::PathBuf> {
-    let paths = std::env::var_os("PATH")?;
-    for p in std::env::split_paths(&paths) {
-        let full = p.join(path_str);
-        if full.exists() {
-            return Some(full);
+#[cfg(target_os = "windows")]
+#[derive(Debug)]
+pub struct ProcessJobGuard {
+    job_handle: isize,
+}
+
+#[cfg(target_os = "windows")]
+impl ProcessJobGuard {
+    #[allow(unsafe_code)]
+    pub fn new() -> Option<Self> {
+        use windows::Win32::System::JobObjects::{
+            CreateJobObjectW, JobObjectExtendedLimitInformation, SetInformationJobObject,
+            JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+        };
+        // SAFETY: Crea un nuevo Job Object de Windows para encapsular el árbol de procesos de Minecraft.
+        // Si el launcher termina inesperadamente, Windows liquida automáticamente todos los procesos del Job.
+        unsafe {
+            let job = CreateJobObjectW(None, None).ok()?;
+            let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+            info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+            let res = SetInformationJobObject(
+                job,
+                JobObjectExtendedLimitInformation,
+                &info as *const _ as *const std::ffi::c_void,
+                std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+            );
+            if res.is_err() {
+                let _ = windows::Win32::Foundation::CloseHandle(job);
+                return None;
+            }
+            Some(Self {
+                job_handle: job.0 as isize,
+            })
         }
-        #[cfg(target_os = "windows")]
-        {
-            let full_exe = p.join(format!("{}.exe", path_str));
-            if full_exe.exists() {
-                return Some(full_exe);
+    }
+
+    #[allow(unsafe_code)]
+    pub fn assign_process(&self, process_handle: windows::Win32::Foundation::HANDLE) -> bool {
+        use windows::Win32::Foundation::HANDLE;
+        use windows::Win32::System::JobObjects::AssignProcessToJobObject;
+        // SAFETY: Asigna el proceso hijo al Job Object activo.
+        unsafe {
+            AssignProcessToJobObject(HANDLE(self.job_handle as *mut _), process_handle).is_ok()
+        }
+    }
+
+    #[allow(unsafe_code)]
+    pub fn terminate(&self, exit_code: u32) -> bool {
+        use windows::Win32::Foundation::HANDLE;
+        use windows::Win32::System::JobObjects::TerminateJobObject;
+        // SAFETY: Termina atómicamente todos los procesos del árbol asignado al Job Object.
+        unsafe { TerminateJobObject(HANDLE(self.job_handle as *mut _), exit_code).is_ok() }
+    }
+}
+
+#[cfg(target_os = "windows")]
+impl Drop for ProcessJobGuard {
+    #[allow(unsafe_code)]
+    fn drop(&mut self) {
+        use windows::Win32::Foundation::{CloseHandle, HANDLE};
+        // SAFETY: Cierra el handle de Job Object al liberarse la guardia.
+        unsafe {
+            let _ = CloseHandle(HANDLE(self.job_handle as *mut _));
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+static GAME_JOB_GUARD: std::sync::OnceLock<Arc<Mutex<Option<ProcessJobGuard>>>> =
+    std::sync::OnceLock::new();
+
+#[cfg(target_os = "windows")]
+fn get_game_job_guard() -> &'static Arc<Mutex<Option<ProcessJobGuard>>> {
+    GAME_JOB_GUARD.get_or_init(|| Arc::new(Mutex::new(None)))
+}
+
+pub fn find_java_pid_under_wrapper(wrapper_pid: u32) -> u32 {
+    use sysinfo::{Pid, System};
+    let mut sys = System::new();
+    sys.refresh_processes();
+    let target_parent = Pid::from_u32(wrapper_pid);
+    for (pid, process) in sys.processes() {
+        if process.parent() == Some(target_parent) {
+            let name = process.name().to_lowercase();
+            if name.contains("java") {
+                return pid.as_u32();
             }
         }
     }
-    None
+    wrapper_pid
 }
 
 fn resolve_candidate_path(path_str: &str) -> Option<std::path::PathBuf> {
@@ -75,14 +162,7 @@ fn resolve_candidate_path(path_str: &str) -> Option<std::path::PathBuf> {
         return Some(candidate);
     }
 
-    if let Some(home) = dirs::home_dir() {
-        let ct_runtimes = home.join(".crystaltides").join("runtimes");
-        if let Some(found) = crate::java_manager::find_java_binary(&ct_runtimes) {
-            return Some(found);
-        }
-    }
-
-    find_in_system_path(path_str)
+    crate::java_manager::resolve(Some(path_str), None).ok()
 }
 
 fn check_java_file_name(canonical: &std::path::Path) -> Result<(), String> {
@@ -111,9 +191,12 @@ pub fn validate_java_binary(path_str: &str) -> Result<std::path::PathBuf, String
     let candidate = resolve_candidate_path(path_str)
         .ok_or_else(|| format!("No existe el ejecutable Java especificado: {}", path_str))?;
 
-    let canonical = candidate
-        .canonicalize()
-        .map_err(|e| format!("No se pudo resolver la ruta canónica del ejecutable Java: {}", e))?;
+    let canonical = candidate.canonicalize().map_err(|e| {
+        format!(
+            "No se pudo resolver la ruta canónica del ejecutable Java: {}",
+            e
+        )
+    })?;
 
     #[cfg(target_os = "windows")]
     let canonical = {
@@ -134,9 +217,20 @@ fn split_command_line(cmd: &str) -> Vec<String> {
     let mut current = String::new();
     let mut in_quotes = false;
     let mut quote_char = ' ';
+    let mut chars = cmd.chars().peekable();
 
-    for c in cmd.chars() {
+    while let Some(c) = chars.next() {
         match c {
+            '\\' => {
+                // Preservar escapes ante comillas o barras invertidas
+                if let Some(&next) = chars.peek() {
+                    if (next == '"' || next == '\'' || next == '\\') && chars.next().is_some() {
+                        current.push(next);
+                        continue;
+                    }
+                }
+                current.push('\\');
+            }
             '"' | '\'' if !in_quotes => {
                 in_quotes = true;
                 quote_char = c;
@@ -146,8 +240,7 @@ fn split_command_line(cmd: &str) -> Vec<String> {
             }
             ' ' | '\t' if !in_quotes => {
                 if !current.is_empty() {
-                    args.push(current.clone());
-                    current.clear();
+                    args.push(std::mem::take(&mut current));
                 }
             }
             _ => {
@@ -162,7 +255,14 @@ fn split_command_line(cmd: &str) -> Vec<String> {
 }
 
 fn check_running_instance(process_lock: &Arc<Mutex<Option<Child>>>) -> Result<(), String> {
-    let mut lock = process_lock.lock().unwrap_or_else(|e| { crate::logger::log("WARN", "ProcessManager", &format!("Mutex envenenado, recuperando lock... {}", e)); e.into_inner() });
+    let mut lock = process_lock.lock().unwrap_or_else(|e| {
+        crate::logger::log(
+            "WARN",
+            "ProcessManager",
+            &format!("Mutex envenenado, recuperando lock... {}", e),
+        );
+        e.into_inner()
+    });
     if let Some(ref mut child) = *lock {
         if let Ok(None) = child.try_wait() {
             return Err("Ya existe una instancia de Minecraft en ejecución.".to_string());
@@ -222,11 +322,33 @@ fn execute_hook_command(cmd_str: &str, dir: &str, envs: &[(&str, &str)]) -> Resu
         proc.env(k, v);
     }
 
-    let status = proc.status().map_err(|e| format!("Error ejecutando hook '{}': {}", program, e))?;
-    if !status.success() {
-        return Err(format!("Comando hook falló con código de salida {:?}", status.code()));
+    let mut child = proc
+        .spawn()
+        .map_err(|e| format!("Error ejecutando hook '{}': {}", program, e))?;
+
+    let timeout = Duration::from_secs(10);
+    let start = std::time::Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                if !status.success() {
+                    return Err(format!(
+                        "Comando hook falló con código de salida {:?}",
+                        status.code()
+                    ));
+                }
+                return Ok(());
+            }
+            Ok(None) => {
+                if start.elapsed() >= timeout {
+                    let _ = child.kill();
+                    return Err(format!("Hook '{}' abortado por timeout (10s)", program));
+                }
+                thread::sleep(Duration::from_millis(100));
+            }
+            Err(e) => return Err(format!("Error esperando hook '{}': {}", program, e)),
+        }
     }
-    Ok(())
 }
 
 fn execute_pre_launch_hook(pre_cmd_raw: &str, game_dir: &str) -> Result<(), String> {
@@ -261,7 +383,10 @@ fn build_command_with_wrapper(
                     crate::logger::log(
                         "WARN",
                         "ProcessManager",
-                        &format!("Violación de Seguridad RCE: Wrapper shell ignorado: {}", program),
+                        &format!(
+                            "Violación de Seguridad RCE: Wrapper shell ignorado: {}",
+                            program
+                        ),
                     );
                 } else {
                     crate::logger::log(
@@ -298,6 +423,20 @@ fn is_blocked_env_key(key: &str) -> bool {
     )
 }
 
+pub fn is_dangerous_jvm_arg(arg: &str) -> bool {
+    let clean = arg
+        .trim()
+        .trim_start_matches(['-', '/'])
+        .to_ascii_lowercase();
+    clean.starts_with("agentpath")
+        || clean.starts_with("agentlib")
+        || clean.starts_with("xrun")
+        || clean.starts_with("xx:onerror")
+        || clean.starts_with("xx:onoutofmemoryerror")
+        || clean.starts_with("djava.security.policy")
+        || clean.starts_with("djava.security.manager")
+}
+
 fn inject_json_env(command: &mut Command, json_str: &str) {
     if let Ok(map) = serde_json::from_str::<std::collections::HashMap<String, String>>(json_str) {
         for (k, v) in map {
@@ -307,7 +446,10 @@ fn inject_json_env(command: &mut Command, json_str: &str) {
                 crate::logger::log(
                     "WARN",
                     "ProcessManager",
-                    &format!("Variable de entorno no autorizada bloqueada por seguridad: {}", k),
+                    &format!(
+                        "Variable de entorno no autorizada bloqueada por seguridad: {}",
+                        k
+                    ),
                 );
             }
         }
@@ -327,7 +469,10 @@ fn inject_dotenv_line(command: &mut Command, line: &str) {
             crate::logger::log(
                 "WARN",
                 "ProcessManager",
-                &format!("Variable de entorno no autorizada bloqueada por seguridad: {}", key),
+                &format!(
+                    "Variable de entorno no autorizada bloqueada por seguridad: {}",
+                    key
+                ),
             );
         }
     }
@@ -359,10 +504,68 @@ fn inject_environment_variables(command: &mut Command, env_raw: Option<&str>) {
     }
 }
 
-fn spawn_stdout_streamer(app: AppHandle, stdout: std::process::ChildStdout) {
+fn flush_log_batch(app: &AppHandle, batch: &mut Vec<GameLogPayload>) {
+    if batch.is_empty() {
+        return;
+    }
+    let lines = std::mem::take(batch);
+    if lines.len() <= 5 {
+        for item in &lines {
+            let _ = app.emit("game-log", item);
+        }
+    }
+    let _ = app.emit("game-log-batch", GameLogBatchPayload { lines });
+}
+
+fn spawn_log_batcher(app: AppHandle, rx: std::sync::mpsc::Receiver<GameLogPayload>) {
     thread::spawn(move || {
-        let reader = BufReader::new(stdout);
-        for line in reader.lines().map_while(Result::ok) {
+        let mut batch = Vec::with_capacity(200);
+        let mut last_flush = std::time::Instant::now();
+
+        loop {
+            match rx.recv_timeout(Duration::from_millis(100)) {
+                Ok(payload) => {
+                    batch.push(payload);
+                    if batch.len() >= 200 || last_flush.elapsed() >= Duration::from_millis(100) {
+                        flush_log_batch(&app, &mut batch);
+                        last_flush = std::time::Instant::now();
+                    }
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                    if !batch.is_empty() {
+                        flush_log_batch(&app, &mut batch);
+                        last_flush = std::time::Instant::now();
+                    }
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                    if !batch.is_empty() {
+                        flush_log_batch(&app, &mut batch);
+                    }
+                    break;
+                }
+            }
+        }
+    });
+}
+
+fn spawn_stdout_streamer(
+    tx: std::sync::mpsc::Sender<GameLogPayload>,
+    stdout: std::process::ChildStdout,
+) {
+    thread::spawn(move || {
+        let mut reader = BufReader::new(stdout);
+        let mut buffer = Vec::new();
+        while let Ok(bytes_read) = reader.read_until(b'\n', &mut buffer) {
+            if bytes_read == 0 {
+                break;
+            }
+            let raw_str = String::from_utf8_lossy(&buffer);
+            let line = raw_str.trim_end_matches(&['\r', '\n'][..]).to_string();
+            buffer.clear();
+            if line.is_empty() {
+                continue;
+            }
+
             let level = if line.contains("[ERROR]")
                 || line.contains(" Exception")
                 || line.contains("FATAL")
@@ -378,29 +581,37 @@ fn spawn_stdout_streamer(app: AppHandle, stdout: std::process::ChildStdout) {
             };
 
             crate::logger::log_minecraft(&line, level);
-            let _ = app.emit(
-                "game-log",
-                GameLogPayload {
-                    line,
-                    level: level.to_string(),
-                },
-            );
+            let _ = tx.send(GameLogPayload {
+                line,
+                level: level.to_string(),
+            });
         }
     });
 }
 
-fn spawn_stderr_streamer(app: AppHandle, stderr: std::process::ChildStderr) {
+fn spawn_stderr_streamer(
+    tx: std::sync::mpsc::Sender<GameLogPayload>,
+    stderr: std::process::ChildStderr,
+) {
     thread::spawn(move || {
-        let reader = BufReader::new(stderr);
-        for line in reader.lines().map_while(Result::ok) {
+        let mut reader = BufReader::new(stderr);
+        let mut buffer = Vec::new();
+        while let Ok(bytes_read) = reader.read_until(b'\n', &mut buffer) {
+            if bytes_read == 0 {
+                break;
+            }
+            let raw_str = String::from_utf8_lossy(&buffer);
+            let line = raw_str.trim_end_matches(&['\r', '\n'][..]).to_string();
+            buffer.clear();
+            if line.is_empty() {
+                continue;
+            }
+
             crate::logger::log_minecraft(&line, "ERROR");
-            let _ = app.emit(
-                "game-log",
-                GameLogPayload {
-                    line,
-                    level: "ERROR".to_string(),
-                },
-            );
+            let _ = tx.send(GameLogPayload {
+                line,
+                level: "ERROR".to_string(),
+            });
         }
     });
 }
@@ -416,7 +627,9 @@ fn handle_post_exit_command(
     if post_cmd.is_empty() {
         return;
     }
-    let exit_code_str = exit_code.map(|c| c.to_string()).unwrap_or_else(|| "-1".to_string());
+    let exit_code_str = exit_code
+        .map(|c| c.to_string())
+        .unwrap_or_else(|| "-1".to_string());
     let success_str = if success { "1" } else { "0" };
     let pid_str = pid.to_string();
     let envs = [
@@ -445,23 +658,30 @@ fn handle_child_exit(
         ),
     );
     set_high_resolution_timer(false);
+    crate::agent::reset_live_metrics();
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(mut job_lock) = get_game_job_guard().lock() {
+            *job_lock = None;
+        }
+    }
 
     if let Some(post_cmd) = post_exit_cmd {
         handle_post_exit_command(post_cmd, game_dir, pid, exit_code, success);
     }
 
-    let _ = app_handle.emit(
-        "game-stopped",
-        GameStoppedPayload {
-            exit_code,
-            success,
-        },
-    );
+    let _ = app_handle.emit("game-stopped", GameStoppedPayload { exit_code, success });
 }
 
 fn handle_child_error(app_handle: &AppHandle, err: std::io::Error) {
     println!("[ProcessManager] Error checking process status: {}", err);
     set_high_resolution_timer(false);
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(mut job_lock) = get_game_job_guard().lock() {
+            *job_lock = None;
+        }
+    }
     let _ = app_handle.emit(
         "game-stopped",
         GameStoppedPayload {
@@ -484,7 +704,14 @@ fn poll_child_status(
     game_dir: &str,
 ) -> PollResult {
     let process_lock = get_game_process_handle();
-    let mut lock = process_lock.lock().unwrap_or_else(|e| { crate::logger::log("WARN", "ProcessManager", &format!("Mutex envenenado, recuperando lock... {}", e)); e.into_inner() });
+    let mut lock = process_lock.lock().unwrap_or_else(|e| {
+        crate::logger::log(
+            "WARN",
+            "ProcessManager",
+            &format!("Mutex envenenado, recuperando lock... {}", e),
+        );
+        e.into_inner()
+    });
 
     let Some(ref mut child) = *lock else {
         set_high_resolution_timer(false);
@@ -494,12 +721,14 @@ fn poll_child_status(
     match child.try_wait() {
         Ok(Some(status)) => {
             *lock = None;
+            drop(lock);
             handle_child_exit(app_handle, pid, status, post_exit_cmd, game_dir);
             PollResult::Exited
         }
         Ok(None) => PollResult::Running,
         Err(e) => {
             *lock = None;
+            drop(lock);
             handle_child_error(app_handle, e);
             PollResult::Exited
         }
@@ -533,6 +762,16 @@ pub fn launch_minecraft_process(
     environment_variables: Option<String>,
 ) -> Result<u32, String> {
     let validated_java_path = validate_java_binary(&java_path)?;
+    for arg in &args {
+        if is_dangerous_jvm_arg(arg) {
+            let err_msg = format!(
+                "Argumento JVM no permitido por razones de seguridad: {}",
+                arg
+            );
+            crate::logger::log("WARN", "ProcessManager", &err_msg);
+            return Err(err_msg);
+        }
+    }
     enforce_high_performance_gpu(&validated_java_path);
     let process_lock = get_game_process_handle();
 
@@ -545,10 +784,15 @@ pub fn launch_minecraft_process(
     crate::logger::log(
         "INFO",
         "ProcessManager",
-        &format!("Iniciando Minecraft con Java: {:?} (Argumentos: {})", validated_java_path, args.len()),
+        &format!(
+            "Iniciando Minecraft con Java: {:?} (Argumentos: {})",
+            validated_java_path,
+            args.len()
+        ),
     );
 
-    let mut command = build_command_with_wrapper(&validated_java_path, &args, wrapper_command.as_deref());
+    let mut command =
+        build_command_with_wrapper(&validated_java_path, &args, wrapper_command.as_deref());
     command
         .current_dir(&game_dir)
         .stdout(Stdio::piped())
@@ -563,25 +807,68 @@ pub fn launch_minecraft_process(
     })?;
 
     let pid = child.id();
-    crate::logger::log("INFO", "ProcessManager", &format!("Proceso de Minecraft iniciado exitosamente. PID: {}", pid));
+    crate::logger::log(
+        "INFO",
+        "ProcessManager",
+        &format!("Proceso de Minecraft iniciado exitosamente. PID: {}", pid),
+    );
 
     #[cfg(target_os = "windows")]
-    apply_os_optimizations(pid);
+    {
+        use std::os::windows::io::AsRawHandle;
+        if let Some(guard) = ProcessJobGuard::new() {
+            let win_handle = windows::Win32::Foundation::HANDLE(child.as_raw_handle() as _);
+            guard.assign_process(win_handle);
+            if let Ok(mut job_lock) = get_game_job_guard().lock() {
+                *job_lock = Some(guard);
+            }
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        if wrapper_command.is_some() {
+            let wrapper_pid = pid;
+            tauri::async_runtime::spawn(async move {
+                for _ in 0..10 {
+                    tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
+                    let target_pid = find_java_pid_under_wrapper(wrapper_pid);
+                    if target_pid != wrapper_pid {
+                        apply_os_optimizations(target_pid);
+                        return;
+                    }
+                }
+                apply_os_optimizations(wrapper_pid);
+            });
+        } else {
+            apply_os_optimizations(pid);
+        }
+    }
     set_high_resolution_timer(true);
     let app_for_ipc = app_handle.clone();
     tauri::async_runtime::spawn(async move {
         let _ = crate::agent::start_game_ipc_server(app_for_ipc).await;
     });
 
+    let (log_tx, log_rx) = std::sync::mpsc::channel::<GameLogPayload>();
+    spawn_log_batcher(app_handle.clone(), log_rx);
+
     if let Some(stdout) = child.stdout.take() {
-        spawn_stdout_streamer(app_handle.clone(), stdout);
+        spawn_stdout_streamer(log_tx.clone(), stdout);
     }
     if let Some(stderr) = child.stderr.take() {
-        spawn_stderr_streamer(app_handle.clone(), stderr);
+        spawn_stderr_streamer(log_tx, stderr);
     }
 
     {
-        let mut lock = process_lock.lock().unwrap_or_else(|e| { crate::logger::log("WARN", "ProcessManager", &format!("Mutex envenenado, recuperando lock... {}", e)); e.into_inner() });
+        let mut lock = process_lock.lock().unwrap_or_else(|e| {
+            crate::logger::log(
+                "WARN",
+                "ProcessManager",
+                &format!("Mutex envenenado, recuperando lock... {}", e),
+            );
+            e.into_inner()
+        });
         *lock = Some(child);
     }
 
@@ -592,10 +879,30 @@ pub fn launch_minecraft_process(
 }
 
 pub fn kill_minecraft_process() -> Result<bool, String> {
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(mut job_lock) = get_game_job_guard().lock() {
+            if let Some(ref guard) = *job_lock {
+                guard.terminate(1);
+            }
+            *job_lock = None;
+        }
+    }
+
     let process_lock = get_game_process_handle();
-    let mut lock = process_lock.lock().unwrap_or_else(|e| { crate::logger::log("WARN", "ProcessManager", &format!("Mutex envenenado, recuperando lock... {}", e)); e.into_inner() });
+    let mut lock = process_lock.lock().unwrap_or_else(|e| {
+        crate::logger::log(
+            "WARN",
+            "ProcessManager",
+            &format!("Mutex envenenado, recuperando lock... {}", e),
+        );
+        e.into_inner()
+    });
     if let Some(ref mut child) = *lock {
-        println!("[ProcessManager] Forcefully killing active game process PID: {}", child.id());
+        println!(
+            "[ProcessManager] Forcefully killing active game process PID: {}",
+            child.id()
+        );
         let _ = child.kill();
         Ok(true)
     } else {
@@ -605,7 +912,14 @@ pub fn kill_minecraft_process() -> Result<bool, String> {
 
 pub fn is_game_running() -> bool {
     let process_lock = get_game_process_handle();
-    let mut lock = process_lock.lock().unwrap_or_else(|e| { crate::logger::log("WARN", "ProcessManager", &format!("Mutex envenenado, recuperando lock... {}", e)); e.into_inner() });
+    let mut lock = process_lock.lock().unwrap_or_else(|e| {
+        crate::logger::log(
+            "WARN",
+            "ProcessManager",
+            &format!("Mutex envenenado, recuperando lock... {}", e),
+        );
+        e.into_inner()
+    });
     lock.as_mut()
         .is_some_and(|child| matches!(child.try_wait(), Ok(None)))
 }
@@ -613,34 +927,46 @@ pub fn is_game_running() -> bool {
 #[cfg(target_os = "windows")]
 #[allow(unsafe_code)]
 pub fn apply_os_optimizations(pid: u32) {
+    use crate::hardware::detect_hardware_profile_sync;
     use windows::Win32::Foundation::CloseHandle;
     use windows::Win32::System::Threading::{
-        OpenProcess, SetPriorityClass, SetProcessAffinityMask, GetProcessAffinityMask,
-        HIGH_PRIORITY_CLASS, PROCESS_SET_INFORMATION, PROCESS_QUERY_LIMITED_INFORMATION,
+        GetProcessAffinityMask, OpenProcess, SetPriorityClass, SetProcessAffinityMask,
+        HIGH_PRIORITY_CLASS, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SET_INFORMATION,
         PROCESS_SET_QUOTA,
     };
-    use crate::hardware::detect_hardware_profile;
 
     unsafe {
-        let desired_access = PROCESS_SET_INFORMATION | PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SET_QUOTA;
+        let desired_access =
+            PROCESS_SET_INFORMATION | PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SET_QUOTA;
         if let Ok(handle) = OpenProcess(desired_access, false, pid) {
             // 1. Assign High Priority Class to javaw.exe
             let prio_res = SetPriorityClass(handle, HIGH_PRIORITY_CLASS);
             crate::logger::log(
                 "INFO",
                 "ProcessManager",
-                &format!("Applied HIGH_PRIORITY_CLASS to PID {}: {:?}", pid, prio_res.is_ok()),
+                &format!(
+                    "Applied HIGH_PRIORITY_CLASS to PID {}: {:?}",
+                    pid,
+                    prio_res.is_ok()
+                ),
             );
 
             // 2. CPU Affinity (P-cores for Intel Hybrid, CCD0 for AMD Ryzen Dual-CCD X3D)
-            let hw = detect_hardware_profile(None);
+            let hw = detect_hardware_profile_sync(None);
             if hw.recommended_affinity_mask > 0 {
                 let mask = hw.recommended_affinity_mask as usize;
                 let mut proc_mask: usize = 0;
                 let mut sys_mask: usize = 0;
-                let target_mask = if GetProcessAffinityMask(handle, &mut proc_mask, &mut sys_mask).is_ok() && sys_mask > 0 {
+                let target_mask = if GetProcessAffinityMask(handle, &mut proc_mask, &mut sys_mask)
+                    .is_ok()
+                    && sys_mask > 0
+                {
                     let valid = mask & sys_mask;
-                    if valid > 0 { valid } else { sys_mask }
+                    if valid > 0 {
+                        valid
+                    } else {
+                        sys_mask
+                    }
                 } else {
                     mask
                 };
@@ -648,7 +974,12 @@ pub fn apply_os_optimizations(pid: u32) {
                 crate::logger::log(
                     "INFO",
                     "ProcessManager",
-                    &format!("Applied CPU Affinity Mask 0x{:X} to PID {}: {:?}", target_mask, pid, aff_res.is_ok()),
+                    &format!(
+                        "Applied CPU Affinity Mask 0x{:X} to PID {}: {:?}",
+                        target_mask,
+                        pid,
+                        aff_res.is_ok()
+                    ),
                 );
             }
 
@@ -666,7 +997,10 @@ pub fn apply_os_optimizations(pid: u32) {
             crate::logger::log(
                 "WARN",
                 "ProcessManager",
-                &format!("Warning: Failed to OpenProcess for optimization on PID {}", pid),
+                &format!(
+                    "Warning: Failed to OpenProcess for optimization on PID {}",
+                    pid
+                ),
             );
         }
     }
@@ -694,9 +1028,9 @@ fn disable_windows_power_throttling(handle: windows::Win32::Foundation::HANDLE) 
     }
 
     let state = ProcessPowerThrottlingState {
-        version: 1, // PROCESS_POWER_THROTTLING_CURRENT_VERSION
+        version: 1,        // PROCESS_POWER_THROTTLING_CURRENT_VERSION
         control_mask: 0x1, // PROCESS_POWER_THROTTLING_EXECUTION_SPEED
-        state_mask: 0, // 0 = Turn off throttling / EcoQoS
+        state_mask: 0,     // 0 = Turn off throttling / EcoQoS
     };
 
     let ok = unsafe {
@@ -710,7 +1044,10 @@ fn disable_windows_power_throttling(handle: windows::Win32::Foundation::HANDLE) 
     crate::logger::log(
         "INFO",
         "ProcessManager",
-        &format!("Disabled Windows PowerThrottling (EcoQoS): {:?}", ok.as_bool()),
+        &format!(
+            "Disabled Windows PowerThrottling (EcoQoS): {:?}",
+            ok.as_bool()
+        ),
     );
 }
 
@@ -743,7 +1080,10 @@ fn set_process_high_io_priority(handle: windows::Win32::Foundation::HANDLE) {
     crate::logger::log(
         "INFO",
         "ProcessManager",
-        &format!("Set High Disk I/O Priority (NtSetInformationProcess 0x21): status 0x{:08X}", status),
+        &format!(
+            "Set High Disk I/O Priority (NtSetInformationProcess 0x21): status 0x{:08X}",
+            status
+        ),
     );
 }
 
@@ -779,7 +1119,10 @@ fn set_process_working_set_hard_min(handle: windows::Win32::Foundation::HANDLE) 
     crate::logger::log(
         "INFO",
         "ProcessManager",
-        &format!("Locked working set in physical RAM (Anti-pagefile): {:?}", ok.as_bool()),
+        &format!(
+            "Locked working set in physical RAM (Anti-pagefile): {:?}",
+            ok.as_bool()
+        ),
     );
 }
 
@@ -788,8 +1131,7 @@ fn set_process_working_set_hard_min(handle: windows::Win32::Foundation::HANDLE) 
 pub fn enforce_high_performance_gpu(java_path: &std::path::Path) {
     use windows::core::PCWSTR;
     use windows::Win32::System::Registry::{
-        RegCloseKey, RegCreateKeyW, RegSetValueExW, HKEY, HKEY_CURRENT_USER,
-        REG_SZ,
+        RegCloseKey, RegCreateKeyW, RegSetValueExW, HKEY, HKEY_CURRENT_USER, REG_SZ,
     };
 
     let canonical = match java_path.canonicalize() {
@@ -808,35 +1150,32 @@ pub fn enforce_high_performance_gpu(java_path: &std::path::Path) {
 
     unsafe {
         let mut hkey = HKEY::default();
-        let res = RegCreateKeyW(
-            HKEY_CURRENT_USER,
-            PCWSTR(subkey.as_ptr()),
-            &mut hkey,
-        );
+        let res = RegCreateKeyW(HKEY_CURRENT_USER, PCWSTR(subkey.as_ptr()), &mut hkey);
 
         if res.is_ok() && !hkey.is_invalid() {
             let data_bytes = std::slice::from_raw_parts(
                 val_data.as_ptr() as *const u8,
                 val_data.len() * std::mem::size_of::<u16>(),
             );
-            let set_res = RegSetValueExW(
-                hkey,
-                PCWSTR(val_name.as_ptr()),
-                0,
-                REG_SZ,
-                Some(data_bytes),
-            );
+            let set_res =
+                RegSetValueExW(hkey, PCWSTR(val_name.as_ptr()), 0, REG_SZ, Some(data_bytes));
             if set_res.is_ok() {
                 crate::logger::log(
                     "INFO",
                     "ProcessManager",
-                    &format!("Forced High Performance GPU (GpuPreference=2) for: {}", clean_path),
+                    &format!(
+                        "Forced High Performance GPU (GpuPreference=2) for: {}",
+                        clean_path
+                    ),
                 );
             } else {
                 crate::logger::log(
                     "WARN",
                     "ProcessManager",
-                    &format!("Failed to set GpuPreference for {}: {:?}", clean_path, set_res),
+                    &format!(
+                        "Failed to set GpuPreference for {}: {:?}",
+                        clean_path, set_res
+                    ),
                 );
             }
             let _ = RegCloseKey(hkey);
@@ -852,6 +1191,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[ignore = "Escribe claves reales en HKCU (UserGpuPreferences). Requiere aislamiento."]
     fn test_enforce_high_performance_gpu_smoke() {
         let dummy = std::path::PathBuf::from(r"C:\CrystalTides\fake_javaw.exe");
         enforce_high_performance_gpu(&dummy);
@@ -859,6 +1199,7 @@ mod tests {
 
     #[test]
     #[cfg(target_os = "windows")]
+    #[ignore = "Modifica la prioridad de proceso y afinidad del runner de tests. Requiere aislamiento."]
     fn test_apply_os_optimizations_smoke() {
         apply_os_optimizations(std::process::id());
     }
@@ -895,5 +1236,58 @@ mod tests {
         assert!(!is_blocked_env_key("PATH"));
         assert!(!is_blocked_env_key("__GL_THREADED_OPTIMIZATIONS"));
     }
-}
 
+    #[test]
+    fn test_split_command_line_robustness() {
+        assert_eq!(split_command_line(""), Vec::<String>::new());
+        assert_eq!(split_command_line("   "), Vec::<String>::new());
+        assert_eq!(
+            split_command_line("java -jar server.jar --port 25565"),
+            vec!["java", "-jar", "server.jar", "--port", "25565"]
+        );
+        assert_eq!(
+            split_command_line(
+                "program \"C:\\Program Files\\Java\\bin\\java.exe\" 'arg with spaces'"
+            ),
+            vec![
+                "program",
+                "C:\\Program Files\\Java\\bin\\java.exe",
+                "arg with spaces"
+            ]
+        );
+        assert_eq!(
+            split_command_line("wrapper --title \"Hello \\\"World\\\"\" --path \"C:\\\\escape\""),
+            vec![
+                "wrapper",
+                "--title",
+                "Hello \"World\"",
+                "--path",
+                "C:\\escape"
+            ]
+        );
+        assert_eq!(
+            split_command_line("multi \t\t spaced   tokens"),
+            vec!["multi", "spaced", "tokens"]
+        );
+    }
+
+    #[test]
+    fn test_is_dangerous_jvm_arg() {
+        assert!(is_dangerous_jvm_arg("-agentpath:/path/to/evil.dll"));
+        assert!(is_dangerous_jvm_arg("-agentlib:jdwp"));
+        assert!(is_dangerous_jvm_arg("-Xrunjdwp:transport=dt_socket"));
+        assert!(is_dangerous_jvm_arg("-XX:OnError=\"cmd.exe /c calc\""));
+        assert!(is_dangerous_jvm_arg("-XX:OnOutOfMemoryError=\"cmd.exe\""));
+        assert!(is_dangerous_jvm_arg("-Djava.security.policy=some.policy"));
+        assert!(is_dangerous_jvm_arg("-Djava.security.manager=allow"));
+        assert!(is_dangerous_jvm_arg("/agentpath:evil.dll"));
+
+        assert!(!is_dangerous_jvm_arg("-Xmx4G"));
+        assert!(!is_dangerous_jvm_arg("-Xms2G"));
+        assert!(!is_dangerous_jvm_arg("-XX:+UseG1GC"));
+        assert!(!is_dangerous_jvm_arg(
+            "-Dminecraft.launcher.brand=crystaltides"
+        ));
+        assert!(!is_dangerous_jvm_arg("-javaagent:fabric-loader.jar"));
+    }
+}

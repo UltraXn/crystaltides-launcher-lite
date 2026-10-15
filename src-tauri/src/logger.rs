@@ -49,7 +49,9 @@ fn compute_month_and_day(year: i32, mut days: i64) -> (i32, i64) {
 
 pub fn format_timestamp() -> String {
     let now = SystemTime::now();
-    let duration = now.duration_since(SystemTime::UNIX_EPOCH).unwrap_or_default();
+    let duration = now
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default();
     let total_secs = duration.as_secs();
     let millis = duration.subsec_millis();
 
@@ -117,11 +119,12 @@ fn get_logger_state() -> &'static Arc<Mutex<LoggerState>> {
              CrystalTides Launcher - Log Session Started\r\n\
              Date/Time: {}\r\n\
              Platform: {} ({})\r\n\
-             Launcher Version: 1.0.0-beta\r\n\
+             Launcher Version: {}\r\n\
              ================================================================================\r\n",
             format_timestamp(),
             std::env::consts::OS,
-            std::env::consts::ARCH
+            std::env::consts::ARCH,
+            env!("CARGO_PKG_VERSION")
         );
 
         if let Some(ref mut f) = state.launcher_file {
@@ -153,7 +156,6 @@ pub fn log(level: &str, module: &str, message: &str) {
 pub fn log_minecraft(line: &str, level: &str) {
     let timestamp = format_timestamp();
     let formatted_mc = format!("[{}] [{}] {}\r\n", timestamp, level, line);
-    let formatted_launcher = format!("[{}] [{}] [Minecraft] {}\r\n", timestamp, level, line);
 
     let state_arc = get_logger_state();
     if let Ok(mut state) = state_arc.lock() {
@@ -163,9 +165,12 @@ pub fn log_minecraft(line: &str, level: &str) {
                 let _ = file.flush();
             }
         }
-        if let Some(ref mut file) = state.launcher_file {
-            let _ = file.write_all(formatted_launcher.as_bytes());
-            if level == "ERROR" {
+        // Only write critical errors or warnings from Minecraft to the main launcher log to avoid log bloat
+        if level == "ERROR" || level == "WARN" {
+            let formatted_launcher =
+                format!("[{}] [{}] [Minecraft] {}\r\n", timestamp, level, line);
+            if let Some(ref mut file) = state.launcher_file {
+                let _ = file.write_all(formatted_launcher.as_bytes());
                 let _ = file.flush();
             }
         }

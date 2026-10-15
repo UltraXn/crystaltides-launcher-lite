@@ -1,5 +1,4 @@
 use std::fs;
-use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 // Data structures for Adoptium API response
@@ -11,6 +10,7 @@ struct AdoptiumBinary {
 #[derive(serde::Deserialize, Debug)]
 struct AdoptiumPackage {
     link: String,
+    checksum: Option<String>,
 }
 
 #[derive(serde::Deserialize, Debug)]
@@ -39,28 +39,26 @@ pub fn get_os_arch() -> (String, String) {
     (api_os.to_string(), api_arch.to_string())
 }
 
-pub fn fetch_java_download_url(version: u8) -> Result<String, String> {
+pub async fn fetch_java_download_url(version: u8) -> Result<(String, Option<String>), String> {
     let (os, arch) = get_os_arch();
-    let client = reqwest::blocking::Client::builder()
-        .user_agent("CrystalTides-Launcher-Lite")
-        .build()
-        .map_err(|e| format!("Error al crear cliente HTTP: {}", e))?;
+    let client = crate::get_shared_http_client();
 
     let url = format!(
         "https://api.adoptium.net/v3/assets/latest/{}/hotspot?vendor=eclipse&os={}&architecture={}&image_type=jre",
         version, os, arch
     );
 
-    crate::logger::log("INFO", "JavaManager", &format!("Consultando Adoptium API para Java {}: {}", version, url));
+    crate::logger::log(
+        "INFO",
+        "JavaManager",
+        &format!("Consultando Adoptium API para Java {}: {}", version, url),
+    );
 
-    let resp = client
-        .get(&url)
-        .send()
-        .map_err(|e| {
-            let msg = format!("Error al consultar Adoptium API: {}", e);
-            crate::logger::log("ERROR", "JavaManager", &msg);
-            msg
-        })?;
+    let resp = client.get(&url).send().await.map_err(|e| {
+        let msg = format!("Error al consultar Adoptium API: {}", e);
+        crate::logger::log("ERROR", "JavaManager", &msg);
+        msg
+    })?;
 
     if !resp.status().is_success() {
         let msg = format!("Adoptium API Error: {}", resp.status());
@@ -68,18 +66,24 @@ pub fn fetch_java_download_url(version: u8) -> Result<String, String> {
         return Err(msg);
     }
 
-    let releases: Vec<AdoptiumRelease> = resp
-        .json()
-        .map_err(|e| {
-            let msg = format!("Error al deserializar respuesta de Adoptium: {}", e);
-            crate::logger::log("ERROR", "JavaManager", &msg);
-            msg
-        })?;
+    let releases: Vec<AdoptiumRelease> = resp.json().await.map_err(|e| {
+        let msg = format!("Error al deserializar respuesta de Adoptium: {}", e);
+        crate::logger::log("ERROR", "JavaManager", &msg);
+        msg
+    })?;
 
     if let Some(release) = releases.first() {
         let link = release.binary.package.link.clone();
-        crate::logger::log("INFO", "JavaManager", &format!("Enlace de descarga resuelto para Java {}: {}", version, link));
-        return Ok(link);
+        let checksum = release.binary.package.checksum.clone();
+        crate::logger::log(
+            "INFO",
+            "JavaManager",
+            &format!(
+                "Enlace de descarga resuelto para Java {}: {} (checksum: {:?})",
+                version, link, checksum
+            ),
+        );
+        return Ok((link, checksum));
     }
 
     let not_found_msg = "No se encontraron binarios de Java para esta plataforma".to_string();
@@ -87,55 +91,32 @@ pub fn fetch_java_download_url(version: u8) -> Result<String, String> {
     Err(not_found_msg)
 }
 
-fn download_file_to_path<F>(
+async fn download_file_to_path<F>(
     download_url: &str,
     zip_path: &Path,
+    expected_hash: &crate::downloader::ExpectedHash,
     version: u8,
-    mut on_progress: F,
+    on_progress: F,
 ) -> Result<(), String>
 where
-    F: FnMut(f32),
+    F: FnMut(f32) + Send,
 {
-    let client = reqwest::blocking::Client::builder()
-        .connect_timeout(std::time::Duration::from_secs(15))
-        .timeout(std::time::Duration::from_secs(300))
-        .user_agent("CrystalTides-Launcher-Lite")
-        .build()
-        .map_err(|e| format!("Error inicializando cliente HTTP para Java: {}", e))?;
+    let client = crate::get_shared_http_client();
 
-    let mut response = client
-        .get(download_url)
-        .send()
-        .and_then(|r| r.error_for_status())
-        .map_err(|e| {
-            let msg = format!("Error al descargar Java {}: {}", version, e);
-            crate::logger::log("ERROR", "JavaManager", &msg);
-            msg
-        })?;
-    let total_size = response.content_length().unwrap_or(0);
-    let mut file = fs::File::create(zip_path)
-        .map_err(|e| format!("Error al crear archivo temporal de Java: {}", e))?;
-
-    let mut downloaded: u64 = 0;
-    let mut buffer = [0; 8192];
-
-    loop {
-        let count = response
-            .read(&mut buffer)
-            .map_err(|e| format!("Error de lectura al descargar Java: {}", e))?;
-        if count == 0 {
-            break;
-        }
-
-        file.write_all(&buffer[..count])
-            .map_err(|e| format!("Error al escribir archivo de Java: {}", e))?;
-        downloaded += count as u64;
-
-        if total_size > 0 {
-            on_progress(downloaded as f32 / total_size as f32);
-        }
-    }
-    Ok(())
+    crate::downloader::download_verified_with_progress(
+        client,
+        download_url,
+        zip_path,
+        expected_hash,
+        false,
+        Some(on_progress),
+    )
+    .await
+    .map_err(|e| {
+        let msg = format!("Error al descargar Java {}: {}", version, e);
+        crate::logger::log("ERROR", "JavaManager", &msg);
+        msg
+    })
 }
 
 fn extract_zip_entry<R: std::io::Read>(
@@ -155,8 +136,7 @@ fn extract_zip_entry<R: std::io::Read>(
 
     if let Some(p) = outpath.parent() {
         if !p.exists() {
-            fs::create_dir_all(p)
-                .map_err(|e| format!("Error al crear parent dir: {}", e))?;
+            fs::create_dir_all(p).map_err(|e| format!("Error al crear parent dir: {}", e))?;
         }
     }
     let mut outfile = fs::File::create(&outpath)
@@ -212,14 +192,23 @@ pub fn fetch_graalvm_download_url(version: u8) -> Result<String, String> {
             "https://download.oracle.com/graalvm/25/latest/graalvm-jdk-25_{}-{}_bin.{}",
             oracle_os, arch, ext
         );
-        crate::logger::log("INFO", "JavaManager", &format!("Enlace de descarga resuelto para GraalVM 25: {}", url));
+        crate::logger::log(
+            "INFO",
+            "JavaManager",
+            &format!("Enlace de descarga resuelto para GraalVM 25: {}", url),
+        );
         return Ok(url);
     }
 
     let (tag, ver_str) = match version {
         21 => ("jdk-21.0.2", "21.0.2"),
         17 => ("jdk-17.0.9", "17.0.9"),
-        _ => return Err(format!("Versión {} de GraalVM no soportada directamente; use Adoptium o Java 17/21/25.", version)),
+        _ => {
+            return Err(format!(
+                "Versión {} de GraalVM no soportada directamente; use Adoptium o Java 17/21/25.",
+                version
+            ))
+        }
     };
 
     let url = format!(
@@ -227,18 +216,25 @@ pub fn fetch_graalvm_download_url(version: u8) -> Result<String, String> {
         tag, ver_str, os, arch, ext
     );
 
-    crate::logger::log("INFO", "JavaManager", &format!("Enlace de descarga resuelto para GraalVM {}: {}", version, url));
+    crate::logger::log(
+        "INFO",
+        "JavaManager",
+        &format!(
+            "Enlace de descarga resuelto para GraalVM {}: {}",
+            version, url
+        ),
+    );
     Ok(url)
 }
 
-pub fn download_and_install_java<F>(
+pub async fn download_and_install_java<F>(
     version: u8,
     install_dir: &Path,
     distribution: Option<&str>,
     on_progress: F,
 ) -> Result<PathBuf, String>
 where
-    F: FnMut(f32),
+    F: FnMut(f32) + Send,
 {
     let dist = distribution.unwrap_or("adoptium").to_lowercase();
     let is_graalvm = dist.contains("graal");
@@ -248,30 +244,73 @@ where
         install_dir.join(format!("java-{}", version))
     };
 
-    let download_url = if is_graalvm {
+    let (download_url, expected_sha256) = if is_graalvm {
         match fetch_graalvm_download_url(version) {
-            Ok(url) => url,
+            Ok(url) => {
+                let client = crate::get_shared_http_client();
+                let sha256_url = format!("{}.sha256", url);
+                let sha = if let Ok(resp) = client.get(&sha256_url).send().await {
+                    if resp.status().is_success() {
+                        resp.text().await.ok().and_then(|t| {
+                            let clean =
+                                t.split_whitespace().next().unwrap_or("").trim().to_string();
+                            if clean.len() == 64 {
+                                Some(clean)
+                            } else {
+                                None
+                            }
+                        })
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+                (url, sha)
+            }
             Err(e) => {
                 crate::logger::log(
                     "WARN",
                     "JavaManager",
-                    &format!("Fallo al resolver GraalVM ({}), recurriendo a Adoptium...", e),
+                    &format!(
+                        "Fallo al resolver GraalVM ({}), recurriendo a Adoptium...",
+                        e
+                    ),
                 );
-                fetch_java_download_url(version)?
+                fetch_java_download_url(version).await?
             }
         }
     } else {
-        fetch_java_download_url(version)?
+        fetch_java_download_url(version).await?
     };
 
     let temp_dir = install_dir.join(".temp");
-    fs::create_dir_all(&temp_dir).map_err(|e| format!("Error al crear directorio temporal: {}", e))?;
+    fs::create_dir_all(&temp_dir)
+        .map_err(|e| format!("Error al crear directorio temporal: {}", e))?;
 
     let file_name = download_url.split('/').next_back().unwrap_or("java.zip");
     let zip_path = temp_dir.join(file_name);
 
-    crate::logger::log("INFO", "JavaManager", &format!("Descargando paquete de Java {} ({})", version, file_name));
-    download_file_to_path(&download_url, &zip_path, version, on_progress)?;
+    let expected_hash = match expected_sha256 {
+        Some(h) if !h.trim().is_empty() => {
+            crate::downloader::ExpectedHash::Sha256(h.trim().to_string())
+        }
+        _ => crate::downloader::ExpectedHash::None,
+    };
+
+    crate::logger::log(
+        "INFO",
+        "JavaManager",
+        &format!("Descargando paquete de Java {} ({})", version, file_name),
+    );
+    download_file_to_path(
+        &download_url,
+        &zip_path,
+        &expected_hash,
+        version,
+        on_progress,
+    )
+    .await?;
 
     if version_dir.exists() {
         let _ = remove_dir_all_with_retry(&version_dir);
@@ -279,33 +318,117 @@ where
     fs::create_dir_all(&version_dir)
         .map_err(|e| format!("Error al crear carpeta de Java {}: {}", version, e))?;
 
-    crate::logger::log("INFO", "JavaManager", &format!("Descomprimiendo Java {} en {:?}", version, version_dir));
-    extract_archive(&zip_path, &version_dir)?;
+    crate::logger::log(
+        "INFO",
+        "JavaManager",
+        &format!("Descomprimiendo Java {} en {:?}", version, version_dir),
+    );
+    let zip_extract_path = zip_path.clone();
+    let ver_dir_extract = version_dir.clone();
+    tokio::task::spawn_blocking(move || extract_archive(&zip_extract_path, &ver_dir_extract))
+        .await
+        .map_err(|e| format!("Fallo en hilo de descompresión: {}", e))??;
 
     let java_exe = find_java_binary(&version_dir).ok_or_else(|| {
-        let msg = format!("No se encontró el ejecutable java/javaw tras la extracción de Java {}", version);
+        let msg = format!(
+            "No se encontró el ejecutable java/javaw tras la extracción de Java {}",
+            version
+        );
         crate::logger::log("ERROR", "JavaManager", &msg);
         msg
     })?;
 
     let _ = fs::remove_dir_all(temp_dir);
-    crate::logger::log("INFO", "JavaManager", &format!("Java {} ({}) configurado con éxito. Ejecutable: {:?}", version, dist, java_exe));
+    crate::logger::log(
+        "INFO",
+        "JavaManager",
+        &format!(
+            "Java {} ({}) configurado con éxito. Ejecutable: {:?}",
+            version, dist, java_exe
+        ),
+    );
     Ok(java_exe)
 }
 
+pub fn parse_java_major(version_str: &str) -> Option<u32> {
+    let clean_str = version_str.trim().trim_matches('"');
+    let parts: Vec<&str> = clean_str.split('.').collect();
+    if parts.is_empty() {
+        return None;
+    }
+    let extract_num = |s: &str| -> Option<u32> {
+        let digits: String = s.chars().take_while(|c| c.is_ascii_digit()).collect();
+        digits.parse::<u32>().ok()
+    };
+
+    if parts[0] == "1" && parts.len() > 1 {
+        extract_num(parts[1])
+    } else {
+        extract_num(parts[0])
+    }
+}
+
+pub fn read_java_major_from_home(java_home: &Path) -> Option<u32> {
+    let release_path = java_home.join("release");
+    if let Ok(content) = fs::read_to_string(&release_path) {
+        for line in content.lines() {
+            if let Some(val) = line.strip_prefix("JAVA_VERSION=") {
+                return parse_java_major(val);
+            }
+        }
+    }
+    None
+}
+
+pub fn get_java_home_from_binary(binary_path: &Path) -> Option<PathBuf> {
+    let parent = binary_path.parent()?;
+    if parent
+        .file_name()?
+        .to_string_lossy()
+        .eq_ignore_ascii_case("bin")
+    {
+        parent.parent().map(|p| p.to_path_buf())
+    } else {
+        Some(parent.to_path_buf())
+    }
+}
+
 pub fn find_java_binary(root: &Path) -> Option<PathBuf> {
+    find_java_binary_with_major(root, None)
+}
+
+pub fn find_java_binary_with_major(root: &Path, required_major: Option<u32>) -> Option<PathBuf> {
     let binary_name = if cfg!(windows) { "javaw.exe" } else { "java" };
+    let alt_binary_name = if cfg!(windows) { "java.exe" } else { "javaw" };
+
     let mut matches = Vec::new();
 
     for entry in walkdir::WalkDir::new(root)
+        .max_depth(4)
         .follow_links(true)
         .into_iter()
         .filter_map(|e| e.ok())
     {
-        if entry.file_name() == binary_name {
+        let fname = entry.file_name().to_string_lossy();
+        if fname.eq_ignore_ascii_case(binary_name) || fname.eq_ignore_ascii_case(alt_binary_name) {
             if let Some(parent) = entry.path().parent() {
-                if parent.file_name().unwrap_or_default() == "bin" {
-                    matches.push(entry.path().to_path_buf());
+                if parent
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .eq_ignore_ascii_case("bin")
+                {
+                    let bin_path = entry.path().to_path_buf();
+                    let major = get_java_home_from_binary(&bin_path)
+                        .and_then(|home| read_java_major_from_home(&home));
+
+                    if let Some(req) = required_major {
+                        if major == Some(req) {
+                            matches.push((bin_path, major));
+                        }
+                    } else {
+                        matches.push((bin_path, major));
+                    }
                 }
             }
         }
@@ -315,22 +438,139 @@ pub fn find_java_binary(root: &Path) -> Option<PathBuf> {
         return None;
     }
 
-    if matches.len() > 1 {
-        matches.sort_by_key(|p| {
-            let s = p.to_string_lossy();
-            if s.contains("25") {
-                0
-            } else if s.contains("21") {
-                1
-            } else if s.contains("17") {
-                2
-            } else {
-                3
+    matches.sort_by(|(p1, m1), (p2, m2)| {
+        let is_javaw1 = p1
+            .file_name()
+            .map(|f| f.to_string_lossy().eq_ignore_ascii_case(binary_name))
+            .unwrap_or(false);
+        let is_javaw2 = p2
+            .file_name()
+            .map(|f| f.to_string_lossy().eq_ignore_ascii_case(binary_name))
+            .unwrap_or(false);
+        is_javaw2.cmp(&is_javaw1).then_with(|| m2.cmp(m1))
+    });
+
+    matches.into_iter().map(|(p, _)| p).next()
+}
+
+pub fn resolve(requested: Option<&str>, required_major: Option<u32>) -> Result<PathBuf, String> {
+    if let Some(req_path_str) = requested {
+        let trimmed = req_path_str.trim();
+        if !trimmed.is_empty() {
+            let candidate = PathBuf::from(trimmed);
+            if candidate.exists() {
+                if candidate.is_file() {
+                    if let Some(req) = required_major {
+                        if let Some(home) = get_java_home_from_binary(&candidate) {
+                            if let Some(actual_major) = read_java_major_from_home(&home) {
+                                if actual_major != req {
+                                    return Err(format!(
+                                        "El ejecutable Java solicitado en '{:?}' tiene versión {}, pero se requiere Java {}.",
+                                        candidate, actual_major, req
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                    return Ok(candidate);
+                } else if candidate.is_dir() {
+                    if let Some(found) = find_java_binary_with_major(&candidate, required_major) {
+                        return Ok(found);
+                    }
+                }
             }
-        });
+        }
     }
 
-    matches.into_iter().next()
+    if let Some(home) = dirs::home_dir() {
+        let ct_runtimes = home.join(".crystaltides").join("runtimes");
+        if ct_runtimes.exists() {
+            if let Some(found) = find_java_binary_with_major(&ct_runtimes, required_major) {
+                return Ok(found);
+            }
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        for vendor in &[
+            r"C:\Program Files\Eclipse Adoptium",
+            r"C:\Program Files\Java",
+            r"C:\Program Files\Microsoft",
+        ] {
+            let p = Path::new(vendor);
+            if p.is_dir() {
+                if let Some(found) = find_java_binary_with_major(p, required_major) {
+                    return Ok(found);
+                }
+            }
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        for p in &[Path::new("/usr/lib/jvm"), Path::new("/usr/java")] {
+            if p.is_dir() {
+                if let Some(found) = find_java_binary_with_major(p, required_major) {
+                    return Ok(found);
+                }
+            }
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let p = Path::new("/Library/Java/JavaVirtualMachines");
+        if p.is_dir() {
+            if let Some(found) = find_java_binary_with_major(p, required_major) {
+                return Ok(found);
+            }
+        }
+    }
+
+    let binary_name = if cfg!(windows) { "javaw.exe" } else { "java" };
+    if let Some(paths) = std::env::var_os("PATH") {
+        for p in std::env::split_paths(&paths) {
+            let full = p.join(binary_name);
+            if full.exists() {
+                if let Some(req) = required_major {
+                    if let Some(home) = get_java_home_from_binary(&full) {
+                        if let Some(actual_major) = read_java_major_from_home(&home) {
+                            if actual_major == req {
+                                return Ok(full);
+                            }
+                        }
+                    }
+                } else {
+                    return Ok(full);
+                }
+            }
+            #[cfg(windows)]
+            {
+                let full_java = p.join("java.exe");
+                if full_java.exists() {
+                    if let Some(req) = required_major {
+                        if let Some(home) = get_java_home_from_binary(&full_java) {
+                            if let Some(actual_major) = read_java_major_from_home(&home) {
+                                if actual_major == req {
+                                    return Ok(full_java);
+                                }
+                            }
+                        }
+                    } else {
+                        return Ok(full_java);
+                    }
+                }
+            }
+        }
+    }
+
+    Err(format!(
+        "No se encontró ninguna instalación de Java{} válida en el sistema ni en los directorios de CrystalTides.",
+        required_major
+            .map(|m| format!(" {}", m))
+            .unwrap_or_default()
+    ))
 }
 
 fn remove_dir_all_with_retry(path: &Path) -> std::io::Result<()> {
@@ -347,5 +587,33 @@ fn remove_dir_all_with_retry(path: &Path) -> std::io::Result<()> {
             }
         }
     }
-    Err(last_err.unwrap_or_else(|| std::io::Error::other("Failed to remove directory after retries")))
+    Err(last_err
+        .unwrap_or_else(|| std::io::Error::other("Failed to remove directory after retries")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_java_major_versions() {
+        assert_eq!(parse_java_major("21.0.2"), Some(21));
+        assert_eq!(parse_java_major("17.0.9"), Some(17));
+        assert_eq!(parse_java_major("1.8.0_312"), Some(8));
+        assert_eq!(parse_java_major("25-ea"), Some(25));
+        assert_eq!(parse_java_major("\"21.0.2\""), Some(21));
+    }
+
+    #[test]
+    fn test_read_java_major_from_release_file() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let release_file = temp_dir.path().join("release");
+        std::fs::write(
+            &release_file,
+            "JAVA_VERSION=\"21.0.2\"\nOS_NAME=\"Windows\"\n",
+        )
+        .unwrap();
+
+        assert_eq!(read_java_major_from_home(temp_dir.path()), Some(21));
+    }
 }

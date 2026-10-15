@@ -1,15 +1,41 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum GpuTier {
+    Ultra,
+    High,
+    Medium,
+    Low,
+    Integrated,
+}
+
+impl std::fmt::Display for GpuTier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            GpuTier::Ultra => write!(f, "ULTRA"),
+            GpuTier::High => write!(f, "HIGH"),
+            GpuTier::Medium => write!(f, "MEDIUM"),
+            GpuTier::Low => write!(f, "LOW"),
+            GpuTier::Integrated => write!(f, "INTEGRATED"),
+        }
+    }
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct GpuProfile {
     pub vendor: String,
     pub model: String,
-    pub tier: String, // "ULTRA", "HIGH", "MEDIUM", "LOW", "INTEGRATED"
+    pub tier: GpuTier,
     pub vram_mb: Option<u64>,
 }
 
 fn detect_vendor(model: &str) -> &'static str {
-    if model.contains("nvidia") || model.contains("rtx") || model.contains("geforce") || model.contains("gtx") {
+    if model.contains("nvidia")
+        || model.contains("rtx")
+        || model.contains("geforce")
+        || model.contains("gtx")
+    {
         "NVIDIA GeForce"
     } else if model.contains("amd") || model.contains("radeon") || model.contains("rx ") {
         "AMD Radeon"
@@ -75,15 +101,15 @@ pub fn evaluate_gpu_tier(model: &str, vram_mb: Option<u64>) -> GpuProfile {
     let vram = vram_mb.unwrap_or(0);
 
     let tier = if is_ultra_tier(&lower_model, vram) {
-        "ULTRA"
+        GpuTier::Ultra
     } else if is_high_tier(&lower_model, vram) {
-        "HIGH"
+        GpuTier::High
     } else if is_medium_tier(&lower_model, vram) {
-        "MEDIUM"
+        GpuTier::Medium
     } else if is_low_tier(&lower_model, vram) {
-        "LOW"
+        GpuTier::Low
     } else {
-        "INTEGRATED"
+        GpuTier::Integrated
     };
 
     let vendor = detect_vendor(&lower_model);
@@ -91,7 +117,7 @@ pub fn evaluate_gpu_tier(model: &str, vram_mb: Option<u64>) -> GpuProfile {
     GpuProfile {
         vendor: vendor.to_string(),
         model: model.to_string(),
-        tier: tier.to_string(),
+        tier,
         vram_mb: if vram > 0 { Some(vram) } else { None },
     }
 }
@@ -122,7 +148,11 @@ unsafe fn read_driver_desc(sub_key: windows::Win32::System::Registry::HKEY) -> S
     {
         let u16_slice = &data_buf[..(data_len as usize / 2)];
         let os_str = OsString::from_wide(u16_slice);
-        os_str.to_string_lossy().trim_matches('\0').trim().to_string()
+        os_str
+            .to_string_lossy()
+            .trim_matches('\0')
+            .trim()
+            .to_string()
     } else {
         String::new()
     }
@@ -132,9 +162,13 @@ unsafe fn read_driver_desc(sub_key: windows::Win32::System::Registry::HKEY) -> S
 #[allow(unsafe_code)]
 unsafe fn read_vram_bytes(sub_key: windows::Win32::System::Registry::HKEY) -> u64 {
     use windows::core::PCWSTR;
-    use windows::Win32::System::Registry::{RegQueryValueExW, REG_DWORD, REG_QWORD, REG_VALUE_TYPE};
+    use windows::Win32::System::Registry::{
+        RegQueryValueExW, REG_DWORD, REG_QWORD, REG_VALUE_TYPE,
+    };
 
-    let qw_key: Vec<u16> = "HardwareInformation.qwMemorySize\0".encode_utf16().collect();
+    let qw_key: Vec<u16> = "HardwareInformation.qwMemorySize\0"
+        .encode_utf16()
+        .collect();
     let mut qw_val: u64 = 0;
     let mut qw_len = std::mem::size_of::<u64>() as u32;
     let mut data_type = REG_VALUE_TYPE::default();
@@ -215,14 +249,14 @@ unsafe fn query_gpu_entry(
 fn scan_windows_gpus() -> Vec<(String, u64)> {
     use windows::core::PCWSTR;
     use windows::Win32::System::Registry::{
-        RegCloseKey, RegEnumKeyExW, RegOpenKeyExW, HKEY,
-        HKEY_LOCAL_MACHINE, KEY_READ,
+        RegCloseKey, RegEnumKeyExW, RegOpenKeyExW, HKEY, HKEY_LOCAL_MACHINE, KEY_READ,
     };
 
     let mut gpus = Vec::new();
-    let class_path: Vec<u16> = "SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e968-e325-11ce-bfc1-08002be10318}\0"
-        .encode_utf16()
-        .collect();
+    let class_path: Vec<u16> =
+        "SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e968-e325-11ce-bfc1-08002be10318}\0"
+            .encode_utf16()
+            .collect();
 
     unsafe {
         let mut class_key = HKEY::default();
@@ -296,7 +330,7 @@ mod tests {
     #[test]
     fn test_nvidia_rtx_4080_profile() {
         let profile = evaluate_gpu_tier("NVIDIA GeForce RTX 4080", Some(16384));
-        assert_eq!(profile.tier, "ULTRA");
+        assert_eq!(profile.tier, GpuTier::Ultra);
         assert_eq!(profile.vendor, "NVIDIA GeForce");
         assert_eq!(profile.vram_mb, Some(16384));
     }
@@ -304,7 +338,7 @@ mod tests {
     #[test]
     fn test_amd_rx_6700_profile() {
         let profile = evaluate_gpu_tier("AMD Radeon RX 6700 XT", Some(12288));
-        assert_eq!(profile.tier, "ULTRA");
+        assert_eq!(profile.tier, GpuTier::Ultra);
         assert_eq!(profile.vendor, "AMD Radeon");
         assert_eq!(profile.vram_mb, Some(12288));
     }
@@ -312,14 +346,14 @@ mod tests {
     #[test]
     fn test_intel_integrated_profile() {
         let profile = evaluate_gpu_tier("Intel(R) UHD Graphics 770", Some(128));
-        assert_eq!(profile.tier, "INTEGRATED");
+        assert_eq!(profile.tier, GpuTier::Integrated);
         assert_eq!(profile.vram_mb, Some(128));
     }
 
     #[test]
     fn test_midrange_gtx_1660_profile() {
         let profile = evaluate_gpu_tier("NVIDIA GeForce GTX 1660 SUPER", Some(6144));
-        assert_eq!(profile.tier, "HIGH");
+        assert_eq!(profile.tier, GpuTier::High);
         assert_eq!(profile.vendor, "NVIDIA GeForce");
         assert_eq!(profile.vram_mb, Some(6144));
     }
@@ -327,7 +361,7 @@ mod tests {
     #[test]
     fn test_legacy_low_tier_profile() {
         let profile = evaluate_gpu_tier("NVIDIA GeForce GT 730", Some(2048));
-        assert_eq!(profile.tier, "LOW");
+        assert_eq!(profile.tier, GpuTier::Low);
         assert_eq!(profile.vendor, "NVIDIA GeForce");
         assert_eq!(profile.vram_mb, Some(2048));
     }
@@ -335,7 +369,7 @@ mod tests {
     #[test]
     fn test_amd_rx_dedicated_zero_vram_profile() {
         let profile = evaluate_gpu_tier("AMD Radeon RX 6500 XT", None);
-        assert_eq!(profile.tier, "MEDIUM");
+        assert_eq!(profile.tier, GpuTier::Medium);
         assert_eq!(profile.vendor, "AMD Radeon");
         assert_eq!(profile.vram_mb, None);
     }
@@ -343,7 +377,7 @@ mod tests {
     #[test]
     fn test_amd_integrated_radeon_graphics_profile() {
         let profile = evaluate_gpu_tier("AMD Radeon(TM) Graphics", Some(512));
-        assert_eq!(profile.tier, "INTEGRATED");
+        assert_eq!(profile.tier, GpuTier::Integrated);
         assert_eq!(profile.vendor, "AMD Radeon");
         assert_eq!(profile.vram_mb, Some(512));
     }

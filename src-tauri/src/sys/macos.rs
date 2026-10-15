@@ -2,13 +2,21 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-pub fn register_system_app(target_exe: &Path, install_dir: &Path, _create_desktop_shortcut: bool) -> Result<(), String> {
+pub fn register_system_app(
+    target_exe: &Path,
+    install_dir: &Path,
+    _create_desktop_shortcut: bool,
+) -> Result<(), String> {
     let _ = Command::new("chmod")
         .args(["+x", &target_exe.to_string_lossy()])
         .output();
 
     let _ = Command::new("xattr")
-        .args(["-dr", "com.apple.quarantine", &install_dir.to_string_lossy()])
+        .args([
+            "-dr",
+            "com.apple.quarantine",
+            &install_dir.to_string_lossy(),
+        ])
         .output();
 
     Ok(())

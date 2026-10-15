@@ -56,7 +56,9 @@ pub(crate) enum IncomingIpcMessage {
     },
     #[serde(rename = "telemetry")]
     Telemetry {
+        #[serde(default)]
         fps: f64,
+        #[serde(default)]
         frametime_p99_ms: f64,
         gc_pause_time_ms: f64,
         memory_used_mb: Option<u64>,
@@ -426,8 +428,7 @@ const EMBEDDED_AGENT_JAR: &[u8] = include_bytes!("../assets/game-bridge.jar");
 const EMBEDDED_AGENT_DLL: &[u8] = include_bytes!("../assets/game_bridge_core.dll");
 #[cfg(target_os = "windows")]
 const EMBEDDED_CT_AGENT_DLL: &[u8] = include_bytes!("../assets/ct-agent.dll");
-const EMBEDDED_BOOST_FABRIC_JAR: &[u8] =
-    include_bytes!("../assets/crystaltides-boost-fabric.jar");
+const EMBEDDED_BOOST_FABRIC_JAR: &[u8] = include_bytes!("../assets/crystaltides-boost-fabric.jar");
 const EMBEDDED_BOOST_NEOFORGE_JAR: &[u8] =
     include_bytes!("../assets/crystaltides-boost-neoforge.jar");
 const LEGACY_BOOST_JAR_SHA256: &str =
@@ -514,71 +515,79 @@ pub fn deploy_boost_mod(base_path: &Path, loader_type: &str) {
 }
 
 #[tauri::command]
-pub fn deploy_crystaltides_boost(
+pub async fn deploy_crystaltides_boost(
     game_dir: String,
     loader_type: Option<String>,
 ) -> Result<bool, String> {
-    let base_path = validate_game_dir(&game_dir)?;
-    let loader = loader_type.unwrap_or_else(|| "fabric".to_string());
-    deploy_boost_mod(&base_path, &loader);
-    Ok(true)
+    tokio::task::spawn_blocking(move || {
+        let base_path = validate_game_dir(&game_dir)?;
+        let loader = loader_type.unwrap_or_else(|| "fabric".to_string());
+        deploy_boost_mod(&base_path, &loader);
+        Ok(true)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-pub fn remove_crystaltides_boost(game_dir: String) -> Result<bool, String> {
-    use sha2::Digest;
+pub async fn remove_crystaltides_boost(game_dir: String) -> Result<bool, String> {
+    tokio::task::spawn_blocking(move || {
+        use sha2::Digest;
 
-    let base_path = validate_game_dir(&game_dir)?;
-    let mods_dir = base_path.join("mods");
-    let target_jar = mods_dir.join("crystaltides-boost.jar");
+        let base_path = validate_game_dir(&game_dir)?;
+        let mods_dir = base_path.join("mods");
+        let target_jar = mods_dir.join("crystaltides-boost.jar");
 
-    if !target_jar.exists() {
-        return Ok(false);
-    }
+        if !target_jar.exists() {
+            return Ok(false);
+        }
 
-    let existing_bytes = match fs::read(&target_jar) {
-        Ok(b) => b,
-        Err(e) => {
+        let existing_bytes = match fs::read(&target_jar) {
+            Ok(b) => b,
+            Err(e) => {
+                crate::logger::log(
+                    "WARN",
+                    "CrystalBoost",
+                    &format!(
+                        "No se pudo leer crystaltides-boost.jar para verificar antes de borrar: {}",
+                        e
+                    ),
+                );
+                return Err(format!("No se pudo leer crystaltides-boost.jar: {}", e));
+            }
+        };
+
+        let existing_sha256 = hex::encode(sha2::Sha256::digest(&existing_bytes));
+        let is_known_boost_jar = existing_bytes == EMBEDDED_BOOST_FABRIC_JAR
+            || existing_bytes == EMBEDDED_BOOST_NEOFORGE_JAR
+            || existing_sha256 == LEGACY_BOOST_JAR_SHA256;
+
+        if is_known_boost_jar {
+            if let Err(e) = fs::remove_file(&target_jar) {
+                crate::logger::log(
+                    "WARN",
+                    "CrystalBoost",
+                    &format!("No se pudo eliminar crystaltides-boost.jar: {}", e),
+                );
+                return Err(format!("No se pudo eliminar crystaltides-boost.jar: {}", e));
+            }
+            crate::logger::log(
+                "INFO",
+                "CrystalBoost",
+                "crystaltides-boost.jar obsoleto/no aplicable eliminado de mods/.",
+            );
+            Ok(true)
+        } else {
             crate::logger::log(
                 "WARN",
                 "CrystalBoost",
-                &format!(
-                    "No se pudo leer crystaltides-boost.jar para verificar antes de borrar: {}",
-                    e
-                ),
+                "crystaltides-boost.jar detectado en mods/, pero no coincide byte a byte con los binarios embebidos del launcher. No se eliminará.",
             );
-            return Err(format!("No se pudo leer crystaltides-boost.jar: {}", e));
+            Ok(false)
         }
-    };
-
-    let existing_sha256 = hex::encode(sha2::Sha256::digest(&existing_bytes));
-    let is_known_boost_jar = existing_bytes == EMBEDDED_BOOST_FABRIC_JAR
-        || existing_bytes == EMBEDDED_BOOST_NEOFORGE_JAR
-        || existing_sha256 == LEGACY_BOOST_JAR_SHA256;
-
-    if is_known_boost_jar {
-        if let Err(e) = fs::remove_file(&target_jar) {
-            crate::logger::log(
-                "WARN",
-                "CrystalBoost",
-                &format!("No se pudo eliminar crystaltides-boost.jar: {}", e),
-            );
-            return Err(format!("No se pudo eliminar crystaltides-boost.jar: {}", e));
-        }
-        crate::logger::log(
-            "INFO",
-            "CrystalBoost",
-            "crystaltides-boost.jar obsoleto/no aplicable eliminado de mods/.",
-        );
-        Ok(true)
-    } else {
-        crate::logger::log(
-            "WARN",
-            "CrystalBoost",
-            "crystaltides-boost.jar detectado en mods/, pero no coincide byte a byte con los binarios embebidos del launcher. No se eliminará.",
-        );
-        Ok(false)
-    }
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 fn deploy_native_agent(natives_dir: &Path) -> PathBuf {
@@ -666,37 +675,93 @@ fn generate_agent_token(agent_path: &Path) -> String {
 
 /// Prepara y verifica la presencia e integridad del binario nativo Crystal Agent (`game_bridge_core.dll` / `.so`)
 #[tauri::command]
-pub fn prepare_crystal_agent(game_dir: String) -> Result<AgentConfig, String> {
-    let base_path = validate_game_dir(&game_dir)?;
-    let natives_dir = base_path.join("natives");
+pub async fn prepare_crystal_agent(game_dir: String) -> Result<AgentConfig, String> {
+    tokio::task::spawn_blocking(move || {
+        let base_path = validate_game_dir(&game_dir)?;
+        let natives_dir = base_path.join("natives");
 
-    if !natives_dir.exists() {
-        fs::create_dir_all(&natives_dir)
-            .map_err(|e| format!("Failed to create natives directory: {}", e))?;
-    }
+        if !natives_dir.exists() {
+            fs::create_dir_all(&natives_dir)
+                .map_err(|e| format!("Failed to create natives directory: {}", e))?;
+        }
 
-    deploy_agent_jar(&base_path);
-    let agent_path = deploy_native_agent(&natives_dir);
-    let session_tok = generate_agent_token(&agent_path);
+        deploy_agent_jar(&base_path);
+        let agent_path = deploy_native_agent(&natives_dir);
+        let session_tok = generate_agent_token(&agent_path);
 
-    Ok(AgentConfig {
-        agent_enabled: true,
-        native_library_path: agent_path.to_string_lossy().to_string(),
-        agent_version: "2.0.0-native-fsr3.1".to_string(),
-        injected_pid: None,
-        handshake_token: session_tok,
-        ipc_port: get_actual_game_ipc_port(),
+        Ok(AgentConfig {
+            agent_enabled: true,
+            native_library_path: agent_path.to_string_lossy().to_string(),
+            agent_version: "2.0.0-native-fsr3.1".to_string(),
+            injected_pid: None,
+            handshake_token: session_tok,
+            ipc_port: get_actual_game_ipc_port(),
+        })
     })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+fn resolve_instance_mc_version(base_path: &Path) -> String {
+    let cf_path = base_path.join("minecraftinstance.json");
+    if let Ok(content) = fs::read_to_string(&cf_path) {
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+            if let Some(v) = val
+                .get("minecraftVersion")
+                .and_then(|v| v.as_str())
+                .or_else(|| {
+                    val.get("manifest")
+                        .and_then(|m| m.get("minecraft"))
+                        .and_then(|mc| mc.get("version"))
+                        .and_then(|v| v.as_str())
+                })
+            {
+                return v.to_string();
+            }
+        }
+    }
+    let mr_path = base_path.join("profile.json");
+    if let Ok(content) = fs::read_to_string(&mr_path) {
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+            if let Some(v) = val.get("game_version").and_then(|v| v.as_str()) {
+                return v.to_string();
+            }
+        }
+    }
+    let cfg_path = base_path.join("instance.cfg");
+    if let Ok(content) = fs::read_to_string(&cfg_path) {
+        for line in content.lines() {
+            if let Some(rest) = line.strip_prefix("IntendedVersion=") {
+                let v = rest.trim();
+                if !v.is_empty() {
+                    return v.to_string();
+                }
+            }
+        }
+    }
+    let versions_dir = base_path.join("versions");
+    if let Ok(entries) = fs::read_dir(&versions_dir) {
+        for entry in entries.flatten() {
+            if entry.path().is_dir() {
+                if let Some(name) = entry.file_name().to_str() {
+                    if !name.is_empty() {
+                        return name.to_string();
+                    }
+                }
+            }
+        }
+    }
+    "1.21.1".to_string()
 }
 
 pub fn build_agent_jvm_args(base_path: &Path) -> Result<Vec<String>, String> {
     let natives_dir = base_path.join("natives");
+    let mc_version = resolve_instance_mc_version(base_path);
 
     let mut args = vec![
         format!("-Djava.library.path={}", natives_dir.to_string_lossy()),
         "-Dcrystaltides.agent.enabled=true".to_string(),
-        "-Dcrystaltides.agent.fsr3_frame_gen=true".to_string(),
-        "-Dcrystaltides.agent.zero_gc_hud=true".to_string(),
+        format!("-Dcrystaltides.minecraft.version={}", mc_version),
         format!("-Dcrystaltides.ipc.port={}", get_actual_game_ipc_port()),
     ];
 
@@ -813,7 +878,7 @@ mod tests {
         let args = build_agent_jvm_args(&temp_dir).expect("Should build JVM args");
         assert!(args
             .iter()
-            .any(|arg| arg == "-Dcrystaltides.agent.fsr3_frame_gen=true"));
+            .any(|arg| arg.starts_with("-Dcrystaltides.minecraft.version=")));
         assert!(args
             .iter()
             .any(|arg| arg == &format!("-Dcrystaltides.ipc.port={}", get_actual_game_ipc_port())));
@@ -898,11 +963,12 @@ mod tests {
 
     #[test]
     fn test_validate_game_dir_valid_path() {
-        #[cfg(target_os = "windows")]
-        let valid = validate_game_dir("C:/Users/gamer/.minecraft");
-        #[cfg(not(target_os = "windows"))]
-        let valid = validate_game_dir("/home/gamer/.minecraft");
-        assert!(valid.is_ok());
+        if let Some(home) = dirs::home_dir() {
+            let valid_ct = home.join(".crystaltides");
+            assert!(validate_game_dir(&valid_ct.to_string_lossy()).is_ok());
+        }
+        let temp = tempfile::tempdir().unwrap();
+        assert!(validate_game_dir(&temp.path().to_string_lossy()).is_ok());
     }
 
     #[test]
@@ -954,13 +1020,13 @@ mod tests {
         let fabric_boost_hash = hex::encode(sha2::Sha256::digest(EMBEDDED_BOOST_FABRIC_JAR));
         assert_eq!(
             fabric_boost_hash,
-            "b2336f4a20c725fd178627fd170eb1024dbda36250aa82e7e777ac7244059ed4"
+            "55fbe3a673d0efdc614464c996d5a57d1c36b8a6afcb4f5b09bfd52a1f68917a"
         );
 
         let neoforge_boost_hash = hex::encode(sha2::Sha256::digest(EMBEDDED_BOOST_NEOFORGE_JAR));
         assert_eq!(
             neoforge_boost_hash,
-            "1aa3f89f813c7389a3140a8fc59d2b3fde0c869134325726a2ed3ad72bc8e988"
+            "d667f0b8fa70d1dec49fc546fd3a5a2ce6589ac0ad86d206c1516bdc59568461"
         );
 
         let bridge_jar_hash = hex::encode(sha2::Sha256::digest(EMBEDDED_AGENT_JAR));
