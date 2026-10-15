@@ -82,8 +82,8 @@ describe('crystalAuthService', () => {
           username: 'MetadataUser',
         },
       },
-      access_token: 'fake-jwt-token',
-      refresh_token: 'fake-refresh-token',
+      access_token: 'MOCK_TOKEN_PAYLOAD_ABC_123.xyz',
+      refresh_token: 'MOCK_REFRESH_TOKEN_DEF_456.xyz',
     };
 
     const profileRow = {
@@ -116,8 +116,8 @@ describe('crystalAuthService', () => {
     expect(profile.uuid).toBe('11111111-2222-3333-4444-555555555555');
     expect(profile.skinUrl).toBe('https://example.com/skin.png');
     expect(profile.role).toBe('vip');
-    expect(profile.accessToken).toBe('fake-jwt-token');
-    expect(profile.refreshToken).toBe('fake-refresh-token');
+    expect(profile.accessToken).toBe('MOCK_TOKEN_PAYLOAD_ABC_123.xyz');
+    expect(profile.refreshToken).toBe('MOCK_REFRESH_TOKEN_DEF_456.xyz');
   });
 
   it('falls back to offline UUID generation when minecraft_uuid is not provided', async () => {
