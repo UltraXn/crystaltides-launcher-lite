@@ -4,6 +4,7 @@ mod db;
 mod delta_patch;
 mod discord_rpc;
 pub mod downloader;
+pub mod error;
 mod gpu_preset;
 mod hardware;
 mod importer;
@@ -560,26 +561,26 @@ fn validate_safe_file_path(path_str: &str) -> Result<PathBuf, String> {
 }
 
 #[tauri::command]
-async fn read_text_file(path: String) -> Result<String, String> {
+async fn read_text_file(path: String) -> Result<String, error::AppError> {
     tokio::task::spawn_blocking(move || {
-        let safe_path = validate_safe_file_path(&path)?;
-        std::fs::read_to_string(safe_path).map_err(|e| e.to_string())
+        let safe_path = validate_safe_file_path(&path).map_err(error::AppError::security)?;
+        std::fs::read_to_string(safe_path).map_err(error::AppError::io)
     })
     .await
-    .map_err(|e| e.to_string())?
+    .map_err(|e| error::AppError::io(e.to_string()))?
 }
 
 #[tauri::command]
-async fn write_text_file(path: String, content: String) -> Result<(), String> {
+async fn write_text_file(path: String, content: String) -> Result<(), error::AppError> {
     tokio::task::spawn_blocking(move || {
-        let safe_path = validate_safe_file_path(&path)?;
+        let safe_path = validate_safe_file_path(&path).map_err(error::AppError::security)?;
         if let Some(parent) = safe_path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
-        std::fs::write(safe_path, content).map_err(|e| e.to_string())
+        std::fs::write(safe_path, content).map_err(error::AppError::io)
     })
     .await
-    .map_err(|e| e.to_string())?
+    .map_err(|e| error::AppError::io(e.to_string()))?
 }
 
 #[tauri::command]
@@ -596,16 +597,16 @@ async fn file_exists(path: String) -> bool {
 }
 
 #[tauri::command]
-async fn delete_file(path: String) -> Result<(), String> {
+async fn delete_file(path: String) -> Result<(), error::AppError> {
     tokio::task::spawn_blocking(move || {
-        let safe_path = validate_safe_file_path(&path)?;
+        let safe_path = validate_safe_file_path(&path).map_err(error::AppError::security)?;
         if safe_path.exists() {
-            std::fs::remove_file(safe_path).map_err(|e| e.to_string())?;
+            std::fs::remove_file(safe_path).map_err(error::AppError::io)?;
         }
         Ok(())
     })
     .await
-    .map_err(|e| e.to_string())?
+    .map_err(|e| error::AppError::io(e.to_string()))?
 }
 
 #[tauri::command]
@@ -615,9 +616,9 @@ async fn download_single_file(
     output_path: String,
     expected_sha1: Option<String>,
     expected_sha256: Option<String>,
-) -> Result<(), String> {
-    let safe_path = validate_safe_file_path(&output_path)?;
-    let safe_url = network::validate_allowed_https_url(&url)?;
+) -> Result<(), error::AppError> {
+    let safe_path = validate_safe_file_path(&output_path).map_err(error::AppError::security)?;
+    let safe_url = network::validate_allowed_https_url(&url).map_err(error::AppError::security)?;
     let expected = if let Some(h) = expected_sha256 {
         downloader::ExpectedHash::Sha256(h)
     } else if let Some(h) = expected_sha1 {
@@ -628,7 +629,7 @@ async fn download_single_file(
 
     downloader::download_verified(&client, safe_url.as_str(), &safe_path, &expected, false)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(error::AppError::network)
 }
 
 pub fn resolve_classpath_sync(
@@ -879,17 +880,27 @@ async fn http_post(
     url: String,
     headers: HashMap<String, String>,
     body: String,
-) -> Result<String, String> {
-    let safe_url = network::validate_allowed_https_url(&url)?;
+) -> Result<String, error::AppError> {
+    let safe_url = network::validate_allowed_https_url(&url).map_err(error::AppError::security)?;
     let mut req = client.post(safe_url.as_str());
     for (key, val) in headers {
         req = req.header(key, val);
     }
-    let res = req.body(body).send().await.map_err(|e| e.to_string())?;
+    let res = req
+        .body(body)
+        .send()
+        .await
+        .map_err(|e| error::AppError::network(e.to_string()))?;
     let status = res.status();
-    let text = res.text().await.map_err(|e| e.to_string())?;
+    let text = res
+        .text()
+        .await
+        .map_err(|e| error::AppError::network(e.to_string()))?;
     if !status.is_success() {
-        return Err(format!("HTTP {}: {}", status, text));
+        return Err(error::AppError::network(format!(
+            "HTTP {}: {}",
+            status, text
+        )));
     }
     Ok(text)
 }
@@ -899,17 +910,26 @@ async fn http_get(
     client: tauri::State<'_, reqwest::Client>,
     url: String,
     headers: HashMap<String, String>,
-) -> Result<String, String> {
-    let safe_url = network::validate_allowed_https_url(&url)?;
+) -> Result<String, error::AppError> {
+    let safe_url = network::validate_allowed_https_url(&url).map_err(error::AppError::security)?;
     let mut req = client.get(safe_url.as_str());
     for (key, val) in headers {
         req = req.header(key, val);
     }
-    let res = req.send().await.map_err(|e| e.to_string())?;
+    let res = req
+        .send()
+        .await
+        .map_err(|e| error::AppError::network(e.to_string()))?;
     let status = res.status();
-    let text = res.text().await.map_err(|e| e.to_string())?;
+    let text = res
+        .text()
+        .await
+        .map_err(|e| error::AppError::network(e.to_string()))?;
     if !status.is_success() {
-        return Err(format!("HTTP {}: {}", status, text));
+        return Err(error::AppError::network(format!(
+            "HTTP {}: {}",
+            status, text
+        )));
     }
     Ok(text)
 }
@@ -920,17 +940,27 @@ async fn http_put(
     url: String,
     headers: HashMap<String, String>,
     body: String,
-) -> Result<String, String> {
-    let safe_url = network::validate_allowed_https_url(&url)?;
+) -> Result<String, error::AppError> {
+    let safe_url = network::validate_allowed_https_url(&url).map_err(error::AppError::security)?;
     let mut req = client.put(safe_url.as_str());
     for (key, val) in headers {
         req = req.header(key, val);
     }
-    let res = req.body(body).send().await.map_err(|e| e.to_string())?;
+    let res = req
+        .body(body)
+        .send()
+        .await
+        .map_err(|e| error::AppError::network(e.to_string()))?;
     let status = res.status();
-    let text = res.text().await.map_err(|e| e.to_string())?;
+    let text = res
+        .text()
+        .await
+        .map_err(|e| error::AppError::network(e.to_string()))?;
     if !status.is_success() {
-        return Err(format!("HTTP {}: {}", status, text));
+        return Err(error::AppError::network(format!(
+            "HTTP {}: {}",
+            status, text
+        )));
     }
     Ok(text)
 }
@@ -940,17 +970,26 @@ async fn http_delete(
     client: tauri::State<'_, reqwest::Client>,
     url: String,
     headers: HashMap<String, String>,
-) -> Result<String, String> {
-    let safe_url = network::validate_allowed_https_url(&url)?;
+) -> Result<String, error::AppError> {
+    let safe_url = network::validate_allowed_https_url(&url).map_err(error::AppError::security)?;
     let mut req = client.delete(safe_url.as_str());
     for (key, val) in headers {
         req = req.header(key, val);
     }
-    let res = req.send().await.map_err(|e| e.to_string())?;
+    let res = req
+        .send()
+        .await
+        .map_err(|e| error::AppError::network(e.to_string()))?;
     let status = res.status();
-    let text = res.text().await.map_err(|e| e.to_string())?;
+    let text = res
+        .text()
+        .await
+        .map_err(|e| error::AppError::network(e.to_string()))?;
     if !status.is_success() {
-        return Err(format!("HTTP {}: {}", status, text));
+        return Err(error::AppError::network(format!(
+            "HTTP {}: {}",
+            status, text
+        )));
     }
     Ok(text)
 }
