@@ -73,7 +73,7 @@ interface FreeButtonElementProps {
   dockConfig: LauncherState['dockConfig'];
   t: ReturnType<typeof useT>;
   buttonRef: (el: HTMLButtonElement | null) => void;
-  onClick: () => void;
+  onClick: (e: React.MouseEvent) => void;
   onMouseDown: (e: React.MouseEvent) => void;
   buttonContent: React.ReactNode;
   resizeHandles: React.ReactNode;
@@ -156,7 +156,12 @@ export const FreeButtonInspectorPopup: React.FC<FreeButtonInspectorPopupProps> =
       zIndex: 1000,
     }}
   >
-    <DockButtonInspector buttonId={btnId} initialTab={inspectorTab} onClose={onClose} />
+    <DockButtonInspector
+      key={`${btnId}-${inspectorTab}`}
+      buttonId={btnId}
+      initialTab={inspectorTab}
+      onClose={onClose}
+    />
   </div>
 );
 
@@ -333,7 +338,7 @@ interface FreeButtonsLayoutProps {
   isColliding: boolean;
   t: ReturnType<typeof useT>;
   buttonRefs: React.RefObject<Record<string, HTMLButtonElement | null>>;
-  onButtonClick: (btnId: DockButtonId) => void;
+  onButtonClick: (btnId: DockButtonId, e?: React.MouseEvent) => void;
   onButtonMouseDown: (e: React.MouseEvent, btnId: DockButtonId) => void;
   renderButtonContent: (btnId: DockButtonId) => React.ReactNode;
   renderResizeHandles: (btnId: DockButtonId) => React.ReactNode;
@@ -448,7 +453,7 @@ const FreeButtonsLayout: React.FC<FreeButtonsLayoutProps> = ({
             buttonRef={(el) => {
               buttonRefs.current[btnId] = el;
             }}
-            onClick={() => onButtonClick(btnId)}
+            onClick={(e) => onButtonClick(btnId, e)}
             onMouseDown={(e) => onButtonMouseDown(e, btnId)}
             buttonContent={renderButtonContent(btnId)}
             resizeHandles={renderResizeHandles(btnId)}
@@ -483,7 +488,7 @@ interface GroupedDockLayoutProps {
     slot: NonNullable<LauncherModule['slots']['dockButton']>;
   }>;
   buttonRefs: React.RefObject<Record<string, HTMLButtonElement | null>>;
-  onButtonClick: (btnId: DockButtonId) => void;
+  onButtonClick: (btnId: DockButtonId, e?: React.MouseEvent) => void;
   renderButtonContent: (btnId: DockButtonId) => React.ReactNode;
   renderResizeHandles: (btnId: DockButtonId) => React.ReactNode;
   isRunning: boolean;
@@ -643,6 +648,7 @@ const GroupedDockLayout: React.FC<GroupedDockLayoutProps> = ({
           }}
         >
           <DockButtonInspector
+            key={`${selectedDockButtonId}-${inspectorTab}`}
             buttonId={selectedDockButtonId}
             initialTab={inspectorTab}
             onClose={onCloseInspector}
@@ -735,7 +741,7 @@ const GroupedDockLayout: React.FC<GroupedDockLayoutProps> = ({
                   buttonRefs.current[btnId] = el;
                 }}
                 type="button"
-                onClick={() => onButtonClick(btnId)}
+                onClick={(e) => onButtonClick(btnId, e)}
                 className={`dock-segment ${isLaunch ? 'start-game' : ''} ${resolveStatusClass(
                   isRunning,
                   isLaunching,
@@ -1249,6 +1255,7 @@ export const HomeDock: React.FC = () => {
     return (
       <div
         className="dock-icon-wrapper dock-custom-svg"
+        data-dock-icon="true"
         style={{
           width: `${effectiveSize}px`,
           height: `${effectiveSize}px`,
@@ -1259,7 +1266,6 @@ export const HomeDock: React.FC = () => {
           background: 'transparent',
           border: 'none',
           padding: 0,
-          pointerEvents: 'none',
         }}
         dangerouslySetInnerHTML={{ __html: sanitized }}
       />
@@ -1273,6 +1279,7 @@ export const HomeDock: React.FC = () => {
     return (
       <div
         className="dock-icon-wrapper"
+        data-dock-icon="true"
         style={{
           background: 'transparent',
           border: 'none',
@@ -1280,7 +1287,6 @@ export const HomeDock: React.FC = () => {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          pointerEvents: 'none',
         }}
       >
         <img
@@ -1299,6 +1305,7 @@ export const HomeDock: React.FC = () => {
     return (
       <div
         className="dock-icon-wrapper"
+        data-dock-icon="true"
         style={{
           transform: scale !== 1 ? `scale(${scale})` : undefined,
           display: 'flex',
@@ -1307,7 +1314,6 @@ export const HomeDock: React.FC = () => {
           background: 'transparent',
           border: 'none',
           padding: 0,
-          pointerEvents: 'none',
         }}
       >
         {icon}
@@ -1693,7 +1699,11 @@ export const HomeDock: React.FC = () => {
         const shouldShowLabel = isButtonLabelVisible(btnId);
         return (
           <>
-            <div className="dock-icon-wrapper" style={{ color: modCustomColor }}>
+            <div
+              className="dock-icon-wrapper"
+              data-dock-icon="true"
+              style={{ color: modCustomColor }}
+            >
               {slot.icon}
             </div>
             {shouldShowLabel && (
@@ -1714,10 +1724,12 @@ export const HomeDock: React.FC = () => {
     return null;
   };
 
-  const handleButtonClick = (btnId: DockButtonId) => {
+  const handleButtonClick = (btnId: DockButtonId, e?: React.MouseEvent) => {
     if (isEditingHud) {
       launcherActions.setSelectedDockButtonId(btnId);
-      setInspectorTab('bg');
+      const targetEl = e?.target as HTMLElement | null;
+      const isIconClick = Boolean(targetEl?.closest?.('[data-dock-icon="true"], .dock-icon-wrapper'));
+      setInspectorTab(isIconClick ? 'icon' : 'bg');
       return;
     }
     if (btnId === 'instances') launcherActions.openModal('instances');

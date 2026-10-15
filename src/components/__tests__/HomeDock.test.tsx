@@ -462,6 +462,48 @@ describe('HomeDock Component & Helpers Suite', () => {
       rerender(<HomeDock />);
       expect(screen.getByLabelText('Fabric Logo')).toBeDefined();
     });
+
+    it('abre la pestaña icon al hacer clic en el icono y bg al hacer clic en el botón en modo edición sin botones anidados', () => {
+      useLauncherStore.setState({
+        isEditingHud: true,
+        selectedDockButtonId: null,
+        dockConfig: {
+          ...useLauncherStore.getState().dockConfig,
+          layoutMode: 'dock',
+          showLabels: true,
+        },
+      });
+
+      const { container } = render(<HomeDock />);
+
+      // Verificar que no existen botones anidados (HTML estricto y válido)
+      expect(container.querySelectorAll('button button').length).toBe(0);
+
+      // 1. Clic en el icono del botón de Ajustes -> debe abrir inspector en pestaña "icon"
+      const settingsIcon = container.querySelector('[data-dock-icon="true"]');
+      expect(settingsIcon).not.toBeNull();
+      if (settingsIcon) {
+        fireEvent.click(settingsIcon);
+      }
+
+      expect(useLauncherStore.getState().selectedDockButtonId).not.toBeNull();
+      expect(screen.getByRole('dialog', { name: /Inspector de Botón/i })).toBeDefined();
+      expect(screen.getByText(/Escala del Icono/i)).toBeDefined();
+
+      // Cerrar inspector
+      useLauncherStore.setState({ selectedDockButtonId: null });
+
+      // 2. Clic en el resto del botón (la etiqueta de texto) -> debe abrir inspector en pestaña "bg"
+      const settingsLabel = screen.getByText(/Ajustes/i);
+      fireEvent.click(settingsLabel);
+
+      expect(useLauncherStore.getState().selectedDockButtonId).toBe('settings');
+      expect(screen.getByRole('dialog', { name: /Inspector de Botón/i })).toBeDefined();
+      expect(screen.getByText(/Color o tinte del fondo/i)).toBeDefined();
+
+      // Verificar nuevamente que no existen botones anidados
+      expect(container.querySelectorAll('button button').length).toBe(0);
+    });
   });
 });
 
