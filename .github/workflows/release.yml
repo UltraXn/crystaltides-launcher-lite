@@ -124,7 +124,7 @@ jobs:
           Get-ChildItem -Path release-artifacts | Format-Table Name, Length
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: release-artifacts/*
           tag_name: ${{ github.ref_name != '' && github.ref_name || inputs.tag_name }}
