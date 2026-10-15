@@ -22,10 +22,16 @@ export interface SyncModEntry {
   filename: string;
 }
 
+export type OfficialModsResult = { ok: true; mods: ModItem[] } | { ok: false; error: string };
+
+export type SyncOfficialModsResult =
+  | { ok: true; entries: SyncModEntry[] }
+  | { ok: false; error: string };
+
 /**
  * Consulta la lista de mods oficiales del servidor desde Supabase REST API
  */
-export const fetchOfficialServerMods = async (): Promise<ModItem[]> => {
+export const fetchOfficialServerMods = async (): Promise<OfficialModsResult> => {
   const url = `${SUPABASE_URL}/rest/v1/official_mods?select=name,download_url,sha1,patch_url,base_sha1`;
 
   try {
@@ -40,15 +46,20 @@ export const fetchOfficialServerMods = async (): Promise<ModItem[]> => {
     });
 
     if (!res.ok) {
-      console.warn(`[ModSync] Supabase returned HTTP ${res.status}`);
-      return [];
+      const errMsg = `HTTP ${res.status}: ${res.statusText || 'Error en el servidor de mods'}`;
+      console.warn(`[ModSync] Supabase returned ${errMsg}`);
+      return { ok: false, error: errMsg };
     }
 
-    const data: ModItem[] = await res.json();
-    return Array.isArray(data) ? data : [];
+    const data: unknown = await res.json();
+    if (!Array.isArray(data)) {
+      return { ok: false, error: 'Respuesta inválida del servidor de mods' };
+    }
+    return { ok: true, mods: data as ModItem[] };
   } catch (err) {
-    console.warn('[ModSync] Error fetching official mods:', err);
-    return [];
+    const errMsg = err instanceof Error ? err.message : String(err);
+    console.warn('[ModSync] Error fetching official mods:', errMsg);
+    return { ok: false, error: errMsg };
   }
 };
 
@@ -61,102 +72,113 @@ export const fetchOfficialServerMods = async (): Promise<ModItem[]> => {
 export const syncOfficialModsForInstance = async (
   gameDir: string,
   onProgress?: (msg: string, pct: number) => void,
-): Promise<SyncModEntry[]> => {
+): Promise<SyncOfficialModsResult> => {
   onProgress?.('Verificando mods oficiales del servidor...', 10);
-  const remoteMods = await fetchOfficialServerMods();
+  const remoteResult = await fetchOfficialServerMods();
 
+  if (!remoteResult.ok) {
+    return { ok: false, error: remoteResult.error };
+  }
+
+  const remoteMods = remoteResult.mods;
   if (remoteMods.length === 0) {
     onProgress?.('Mods verificados (sin actualizaciones pendientes).', 100);
-    return [];
+    return { ok: true, entries: [] };
   }
 
-  const homeDir: string = (await invoke('get_home_dir')) || '';
-  const normalizedHome = homeDir.replace(/\\/g, '/');
-  const virtualLib = `${normalizedHome}/.crystaltides/virtual_library`;
-  const targetModsDir = `${gameDir.replace(/\\/g, '/')}/mods`;
+  try {
+    const homeDir: string = (await invoke('get_home_dir')) || '';
+    const normalizedHome = homeDir.replace(/\\/g, '/');
+    const virtualLib = `${normalizedHome}/.crystaltides/virtual_library`;
+    const targetModsDir = `${gameDir.replace(/\\/g, '/')}/mods`;
 
-  onProgress?.('Analizando caché de mods (Virtual Library)...', 25);
+    onProgress?.('Analizando caché de mods (Virtual Library)...', 25);
 
-  const downloadItems: Array<{ name: string; url: string; sha1: string }> = [];
-  const syncEntries: Array<{ source: string; filename: string }> = [];
+    const downloadItems: Array<{ name: string; url: string; sha1: string }> = [];
+    const syncEntries: Array<{ source: string; filename: string }> = [];
 
-  const processedResults = await Promise.all(
-    remoteMods.map(async (m) => {
-      if (!m.name || !m.download_url || !m.sha1) return null;
-      const sha1Lower = m.sha1.toLowerCase().trim();
-      const virtualFileName = `${sha1Lower}.jar`;
-      const sourceVirtualPath = `${virtualLib}/${virtualFileName}`;
+    const processedResults = await Promise.all(
+      remoteMods.map(async (m) => {
+        if (!m.name || !m.download_url || !m.sha1) return null;
+        const sha1Lower = m.sha1.toLowerCase().trim();
+        const virtualFileName = `${sha1Lower}.jar`;
+        const sourceVirtualPath = `${virtualLib}/${virtualFileName}`;
 
-      // Smart Delta Patching: si el servidor provee delta patch y tenemos el JAR base, intentamos parchear
-      if (m.patch_url && m.base_sha1) {
-        const baseVirtualPath = `${virtualLib}/${m.base_sha1.toLowerCase().trim()}.jar`;
-        const patchTempPath = `${virtualLib}/temp_${sha1Lower}.patch`;
-        try {
-          const baseExists = await invoke<boolean>('file_exists', { path: baseVirtualPath }).catch(
-            () => false,
-          );
-          if (baseExists) {
-            onProgress?.(`Descargando parche delta para ${m.name}...`, 35);
-            await invoke('download_single_file', {
-              url: m.patch_url,
-              outputPath: patchTempPath,
-            });
-            onProgress?.(`Aplicando parche binario delta (bsdiff) en ${m.name}...`, 38);
-            await applyBinaryPatch(baseVirtualPath, patchTempPath, sourceVirtualPath, sha1Lower);
-            return {
-              downloadItem: null,
-              syncEntry: { source: sourceVirtualPath, filename: m.name },
-            };
+        // Smart Delta Patching: si el servidor provee delta patch y tenemos el JAR base, intentamos parchear
+        if (m.patch_url && m.base_sha1) {
+          const baseVirtualPath = `${virtualLib}/${m.base_sha1.toLowerCase().trim()}.jar`;
+          const patchTempPath = `${virtualLib}/temp_${sha1Lower}.patch`;
+          try {
+            const baseExists = await invoke<boolean>('file_exists', {
+              path: baseVirtualPath,
+            }).catch(() => false);
+            if (baseExists) {
+              onProgress?.(`Descargando parche delta para ${m.name}...`, 35);
+              await invoke('download_single_file', {
+                url: m.patch_url,
+                outputPath: patchTempPath,
+              });
+              onProgress?.(`Aplicando parche binario delta (bsdiff) en ${m.name}...`, 38);
+              await applyBinaryPatch(baseVirtualPath, patchTempPath, sourceVirtualPath, sha1Lower);
+              return {
+                downloadItem: null,
+                syncEntry: { source: sourceVirtualPath, filename: m.name },
+              };
+            }
+          } catch (patchErr) {
+            console.warn(
+              `[DeltaPatch] Fallo al aplicar delta patch a ${m.name}, usando descarga completa:`,
+              patchErr,
+            );
+          } finally {
+            await invoke('delete_file', { path: patchTempPath }).catch(() => {});
           }
-        } catch (patchErr) {
-          console.warn(
-            `[DeltaPatch] Fallo al aplicar delta patch a ${m.name}, usando descarga completa:`,
-            patchErr,
-          );
-        } finally {
-          await invoke('delete_file', { path: patchTempPath }).catch(() => {});
         }
+
+        return {
+          downloadItem: {
+            name: virtualFileName,
+            url: m.download_url,
+            sha1: sha1Lower,
+          },
+          syncEntry: {
+            source: sourceVirtualPath,
+            filename: m.name,
+          },
+        };
+      }),
+    );
+
+    for (const item of processedResults) {
+      if (!item) continue;
+      if (item.downloadItem) {
+        downloadItems.push(item.downloadItem);
       }
-
-      return {
-        downloadItem: {
-          name: virtualFileName,
-          url: m.download_url,
-          sha1: sha1Lower,
-        },
-        syncEntry: {
-          source: sourceVirtualPath,
-          filename: m.name,
-        },
-      };
-    }),
-  );
-
-  for (const item of processedResults) {
-    if (!item) continue;
-    if (item.downloadItem) {
-      downloadItems.push(item.downloadItem);
+      syncEntries.push(item.syncEntry);
     }
-    syncEntries.push(item.syncEntry);
-  }
 
-  if (downloadItems.length > 0) {
-    onProgress?.(`Descargando ${downloadItems.length} mods optimizados...`, 40);
-    await invoke('download_mods_parallel', {
-      mods: downloadItems,
-      outputDir: virtualLib,
-      maxConcurrent: 4,
+    if (downloadItems.length > 0) {
+      onProgress?.(`Descargando ${downloadItems.length} mods optimizados...`, 40);
+      await invoke('download_mods_parallel', {
+        mods: downloadItems,
+        outputDir: virtualLib,
+        maxConcurrent: 4,
+      });
+    }
+
+    onProgress?.('Enlazando mods en la instancia...', 85);
+    await invoke('sync_mods', {
+      targetDir: targetModsDir,
+      modListJson: JSON.stringify(syncEntries),
     });
+
+    onProgress?.('Mods sincronizados exitosamente.', 100);
+    return { ok: true, entries: syncEntries };
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    console.warn('[ModSync] Error en sincronización de mods oficiales:', errorMsg);
+    return { ok: false, error: errorMsg };
   }
-
-  onProgress?.('Enlazando mods en la instancia...', 85);
-  await invoke('sync_mods', {
-    targetDir: targetModsDir,
-    modListJson: JSON.stringify(syncEntries),
-  });
-
-  onProgress?.('Mods sincronizados exitosamente.', 100);
-  return syncEntries;
 };
 
 export const listMods = async (gameDir: string): Promise<LocalModInfo[]> => {
@@ -249,13 +271,23 @@ const resolveModDownloadInfo = async (
     });
 
     if (!res.ok) return null;
-    const versions = await res.json();
+    const versions = (await res.json()) as Array<{
+      version_type?: string;
+      files?: Array<{
+        primary?: boolean;
+        url?: string;
+        filename?: string;
+        hashes?: { sha1?: string };
+      }>;
+    }>;
     if (!Array.isArray(versions) || versions.length === 0) return null;
 
-    const latestVersion = versions[0];
-    const primaryFile =
-      latestVersion.files?.find((f: { primary?: boolean }) => f.primary) ??
-      latestVersion.files?.[0];
+    // Filtrar versiones estables (release) preferentemente sobre betas o alphas
+    const releaseVersions = versions.filter((v) => v.version_type === 'release');
+    const targetVersion = releaseVersions[0] ?? versions[0];
+    if (!targetVersion) return null;
+
+    const primaryFile = targetVersion.files?.find((f) => f.primary) ?? targetVersion.files?.[0];
     if (!primaryFile?.url || !primaryFile?.hashes?.sha1) return null;
 
     const sha1Lower = primaryFile.hashes.sha1.toLowerCase();
@@ -284,7 +316,12 @@ export const syncPerformanceStackForInstance = async (
   loaderType: string,
   onProgress?: (msg: string, pct: number) => void,
   existingSyncEntries?: SyncModEntry[],
+  disabled?: boolean,
 ): Promise<SyncModEntry[]> => {
+  if (disabled) {
+    return existingSyncEntries ?? [];
+  }
+
   const normalizedLoader = loaderType.toLowerCase().trim();
   const applicableMods = PERFORMANCE_STACK_PROJECTS.filter((p) =>
     p.requiredLoaders.includes(normalizedLoader),
@@ -295,21 +332,43 @@ export const syncPerformanceStackForInstance = async (
   // Comprobar mods locales instalados para evitar descargar mods duplicados
   let localMods: LocalModInfo[] = [];
   try {
-    localMods = await listMods(gameDir) || [];
+    localMods = (await listMods(gameDir)) || [];
   } catch (err) {
     console.warn('[ModSync] Error listando mods locales en syncPerformanceStack:', err);
   }
 
   const installedJarNames = localMods
     .map((m) => m.filename.toLowerCase())
-    .filter((name) => name.endsWith('.jar'));
+    .filter((name) => name.endsWith('.jar') || name.endsWith('.jar.disabled'));
 
+  // Manifiesto de mods de rendimiento registrados previamente para esta instancia
+  const manifestStorageKey = `ct_perf_stack_${gameDir.replace(/\\/g, '/')}`;
+  let manifestInstalledSlugs = new Set<string>();
+  try {
+    const raw = localStorage.getItem(manifestStorageKey);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        manifestInstalledSlugs = new Set(parsed);
+      }
+    }
+  } catch {
+    // Ignore storage parse errors
+  }
+
+  // Detectar mods instalados por manifiesto o coincidencia exacta de nombre de archivo.
+  // Evita que 'sodium-extra' o 'sodium-options' cuente falsamente como 'sodium' instalado.
   const isAlreadyInstalled = (slug: string) => {
+    if (manifestInstalledSlugs.has(slug)) return true;
     const s = slug.toLowerCase();
-    const sClean = s.replace(/[-_]/g, '');
-    return installedJarNames.some(
-      (name) => name.includes(s) || name.includes(sClean),
+    // Coincidir slug exacto seguido de versión, separador de loader o extensión.
+    // Ejemplos permitidos: sodium-fabric-0.6.jar, sodium-0.6.jar, sodium_mc1.21.jar
+    // Ejemplos excluidos: sodium-extra-fabric.jar, sodiumoptions.jar
+    const exactPattern = new RegExp(
+      `^${s}(?:[-_](?:v?\\d|mc|fabric|forge|neoforge|quilt)|\\.jar)`,
+      'i',
     );
+    return installedJarNames.some((name) => exactPattern.test(name));
   };
 
   const modsToDownload = applicableMods.filter((mod) => !isAlreadyInstalled(mod.slug));
@@ -365,6 +424,18 @@ export const syncPerformanceStackForInstance = async (
       targetDir: targetModsDir,
       modListJson: JSON.stringify(mergedEntries),
     });
+  }
+
+  try {
+    const updated = Array.from(
+      new Set([
+        ...Array.from(manifestInstalledSlugs),
+        ...modsToDownload.map((m) => m.slug),
+      ]),
+    );
+    localStorage.setItem(manifestStorageKey, JSON.stringify(updated));
+  } catch {
+    // Ignore storage quota errors
   }
 
   onProgress?.('Stack de rendimiento listo.', 100);
