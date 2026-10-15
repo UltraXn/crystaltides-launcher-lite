@@ -66,8 +66,8 @@ jobs:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || vars.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || vars.VITE_SUPABASE_ANON_KEY }}
 
-      - name: Build Standalone Launcher (Tauri CLI)
-        run: pnpm tauri build --no-bundle
+      - name: Build Standalone Launcher (Tauri CLI with NSIS Bundle)
+        run: pnpm tauri build
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || vars.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || vars.VITE_SUPABASE_ANON_KEY }}
@@ -83,31 +83,35 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path release-artifacts | Out-Null
           
-          # 1. Localizar binario generado
-          $exeSource = Get-ChildItem -Path "src-tauri/target/release", "target/release" -Filter "*.exe" -Recurse -ErrorAction SilentlyContinue |
-            Where-Object { $_.Name -like "*launcher*" -and $_.Name -notlike "*.build*" -and $_.Name -notlike "*deps*" } |
+          # 1. Localizar binario standalone y el instalador NSIS generado
+          $exeSource = Get-ChildItem -Path "src-tauri/target", "target" -Filter "launcher-lite-tauri.exe" -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -notlike "*deps*" -and $_.FullName -notlike "*.build*" } |
             Select-Object -First 1
 
-          if (-not $exeSource) {
-            Write-Error "No se encontró el ejecutable en target/release!"
+          $nsisSource = Get-ChildItem -Path "src-tauri/target", "target" -Filter "*-setup.exe" -Recurse -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+
+          if (-not $nsisSource) {
+            Write-Error "No se encontró el instalador NSIS (*-setup.exe) en target!"
             exit 1
           }
 
-          Write-Host "✓ Binario localizado: $($exeSource.FullName) ($($exeSource.Length) bytes)"
-          Copy-Item -Path $exeSource.FullName -Destination "release-artifacts/CrystalTidesLauncher.exe" -Force
-          Copy-Item -Path $exeSource.FullName -Destination "release-artifacts/CrystalTides-Setup.exe" -Force
+          Write-Host "✓ Instalador NSIS localizado: $($nsisSource.FullName) ($($nsisSource.Length) bytes)"
+          Copy-Item -Path $nsisSource.FullName -Destination "release-artifacts/CrystalTides-Setup.exe" -Force
 
-          # 2. Generar archivo .zip para el AutoUpdater
-          $zipPath = "release-artifacts/CrystalTidesLauncher-windows-x86_64.zip"
-          Write-Host "📦 Creando paquete de actualización: $zipPath"
-          Compress-Archive -Path $exeSource.FullName -DestinationPath $zipPath -Force
+          if ($exeSource) {
+            Write-Host "✓ Binario ejecutable localizado: $($exeSource.FullName)"
+            Copy-Item -Path $exeSource.FullName -Destination "release-artifacts/CrystalTides-Portable.exe" -Force
+            Copy-Item -Path $exeSource.FullName -Destination "release-artifacts/CrystalTidesLauncher.exe" -Force
+          }
 
-          # 3. Firmar paquete de actualización y generar latest.json
+          # 2. Firmar instalador NSIS para el AutoUpdater y generar latest.json
+          $updaterTarget = "release-artifacts/CrystalTides-Setup.exe"
           if ($env:TAURI_SIGNING_PRIVATE_KEY) {
-            Write-Host "🔐 Firmando archivo para AutoUpdater con Tauri Signer..."
-            pnpm tauri signer sign -k "$env:TAURI_SIGNING_PRIVATE_KEY" -p "$($env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD)" $zipPath
+            Write-Host "🔐 Firmando instalador NSIS para AutoUpdater con Tauri Signer..."
+            pnpm tauri signer sign -k "$env:TAURI_SIGNING_PRIVATE_KEY" -p "$($env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD)" $updaterTarget
 
-            $sigFile = "$zipPath.sig"
+            $sigFile = "$updaterTarget.sig"
             if (Test-Path $sigFile) {
               $sigContent = (Get-Content -Path $sigFile -Raw).Trim()
               $tag = if ($env:RELEASE_TAG) { $env:RELEASE_TAG } else { "v0.1.0" }
@@ -121,7 +125,7 @@ jobs:
                 platforms = @{
                   "windows-x86_64" = @{
                     signature = $sigContent
-                    url = "https://github.com/UltraXn/crystaltides-launcher-lite/releases/download/$tag/CrystalTidesLauncher-windows-x86_64.zip"
+                    url = "https://github.com/UltraXn/crystaltides-launcher-lite/releases/download/$tag/CrystalTides-Setup.exe"
                   }
                 }
               }
