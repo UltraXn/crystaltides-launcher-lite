@@ -318,6 +318,40 @@ pub fn schedule_self_deletion(target_dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// Contenido de una cadena PowerShell entre comillas simples. PowerShell acepta como comilla
+/// simple la ASCII y las tipográficas `‘ ’ ‚ ‛` (U+2018–U+201B); se duplican todas, como hace
+/// `CodeGeneration.EscapeSingleQuotedStringContent`. Escapar solo `'` dejaba inyectar código en el
+/// proceso elevado con una carpeta que contuviera `’`.
+fn escape_ps_single_quoted(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for c in value.chars() {
+        if matches!(c, '\'' | '\u{2018}' | '\u{2019}' | '\u{201A}' | '\u{201B}') {
+            out.push(c);
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// Comando `<cmdlet> -ExclusionPath '<ruta>'` para el PowerShell elevado. Va como un único
+/// argumento entre comillas dobles (`ELEVATED_ARG_LINE`), así que no puede contener `"`; una ruta
+/// de Windows nunca lo tiene, pero se comprueba igualmente.
+fn defender_exclusion_command(cmdlet: &str, path: &str) -> Result<String, String> {
+    if path.contains('"') {
+        return Err("Ruta inválida para la exclusión de Defender.".to_string());
+    }
+    Ok(format!(
+        "{cmdlet} -ExclusionPath '{}'",
+        escape_ps_single_quoted(path)
+    ))
+}
+
+/// Línea de argumentos del PowerShell elevado, con `$env:CT_EXCLUSION_CMD` como un solo argumento
+/// `-Command` entre comillas: `Start-Process` une `-ArgumentList` sin comillas y partía o colapsaba
+/// los espacios de la ruta. Sin `-EncodedCommand`: Base64 + `Add-MpPreference` es un patrón que
+/// AMSI/Defender trata como manipulación de defensas. `[char]34` evita comillas dobles en el script.
+const ELEVATED_ARG_LINE: &str = "$argLine = '-NoProfile -NonInteractive -WindowStyle Hidden -Command ' + [char]34 + $env:CT_EXCLUSION_CMD + [char]34;";
+
 pub fn add_defender_exclusion(folder_path: &Path) -> Result<(), String> {
     if !folder_path.exists() {
         return Err("El directorio a excluir de Windows Defender no existe.".to_string());
@@ -332,15 +366,15 @@ pub fn add_defender_exclusion(folder_path: &Path) -> Result<(), String> {
         .unwrap_or(&path_str)
         .replace('/', "\\");
 
-    let script = "\
-        try { \
-            $esc = $env:CT_EXCLUSION_PATH.Replace('''', ''''''); \
-            $cmd = \"Add-MpPreference -ExclusionPath '$esc'\"; \
-            $p = Start-Process powershell -Verb RunAs -ArgumentList @('-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', $cmd) -Wait -PassThru -ErrorAction Stop; \
-            if ($p.ExitCode -ne 0) { exit $p.ExitCode } \
-        } catch { \
+    let exclusion_cmd = defender_exclusion_command("Add-MpPreference", &clean_path)?;
+    let script = format!(
+        "try {{ {ELEVATED_ARG_LINE} \
+            $p = Start-Process powershell -Verb RunAs -ArgumentList $argLine -Wait -PassThru -ErrorAction Stop; \
+            if ($p.ExitCode -ne 0) {{ exit $p.ExitCode }} \
+        }} catch {{ \
             exit 1 \
-        }";
+        }}"
+    );
 
     let status = Command::new("powershell")
         .args([
@@ -348,9 +382,9 @@ pub fn add_defender_exclusion(folder_path: &Path) -> Result<(), String> {
             "-ExecutionPolicy",
             "Bypass",
             "-Command",
-            script,
+            &script,
         ])
-        .env("CT_EXCLUSION_PATH", &clean_path)
+        .env("CT_EXCLUSION_CMD", &exclusion_cmd)
         .creation_flags(CREATE_NO_WINDOW)
         .status()
         .map_err(|e| format!("Error ejecutando PowerShell para Windows Defender: {}", e))?;
@@ -414,4 +448,77 @@ pub fn get_registered_install_location() -> Option<std::path::PathBuf> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn escape_duplica_todas_las_comillas_simples_de_powershell() {
+        assert_eq!(escape_ps_single_quoted("C:\\Juegos"), "C:\\Juegos");
+        assert_eq!(escape_ps_single_quoted("a'b"), "a''b");
+        assert_eq!(
+            escape_ps_single_quoted("\u{2018}\u{2019}\u{201A}\u{201B}"),
+            "\u{2018}\u{2018}\u{2019}\u{2019}\u{201A}\u{201A}\u{201B}\u{201B}"
+        );
+    }
+
+    #[test]
+    fn comando_de_exclusion_rechaza_comillas_dobles() {
+        assert_eq!(
+            defender_exclusion_command("Add-MpPreference", "C:\\a'b").unwrap(),
+            "Add-MpPreference -ExclusionPath 'C:\\a''b'"
+        );
+        assert!(defender_exclusion_command("Add-MpPreference", "C:\\a\"b").is_err());
+    }
+
+    /// Lanza el comando por la misma vía que la exclusión real (`ELEVATED_ARG_LINE` y
+    /// `Start-Process`), pero sin elevar y con un cmdlet ficticio que comprueba la ruta recibida:
+    /// así no se toca Defender ni se dispara AMSI. Devuelve la salida del proceso hijo, que solo es
+    /// "OK" si la ruta llegó intacta y no se ejecutó nada más.
+    fn run_like_elevated(path: &str) -> String {
+        let probe = "function Test-CtPreference { param([string]$ExclusionPath) if ($ExclusionPath -ceq $env:CT_EXPECTED) { 'OK' } else { 'MISMATCH' } };";
+        let cmd = format!(
+            "{probe} {}",
+            defender_exclusion_command("Test-CtPreference", path).unwrap()
+        );
+        let out_file = tempfile::NamedTempFile::new().expect("tempfile");
+        let script = format!(
+            "{ELEVATED_ARG_LINE} \
+             Start-Process powershell -ArgumentList $argLine -NoNewWindow -Wait -RedirectStandardOutput $env:CT_OUT"
+        );
+        let out = Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+            .env("CT_EXCLUSION_CMD", &cmd)
+            .env("CT_EXPECTED", path)
+            .env("CT_OUT", out_file.path())
+            .output()
+            .expect("powershell");
+        let child = std::fs::read_to_string(out_file.path()).unwrap_or_default();
+        if child.trim().is_empty() {
+            return format!(
+                "sin salida; stderr: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+        }
+        child.trim().to_string()
+    }
+
+    #[test]
+    fn comando_elevado_resiste_comillas_tipograficas() {
+        // ’ (U+2019) también cierra cadenas en PowerShell: con el escape anterior esto inyectaba
+        let path = "C:\\Juegos\\x\u{2019}; Write-Output INYECTADO; \u{2019}";
+        assert_eq!(run_like_elevated(path), "OK");
+        assert_eq!(
+            run_like_elevated("C:\\a'b\u{2018}c\u{201A}d\u{201B}e"),
+            "OK"
+        );
+    }
+
+    #[test]
+    fn comando_elevado_conserva_espacios_consecutivos() {
+        assert_eq!(run_like_elevated("C:\\Mis  Juegos\\Crystal   Tides"), "OK");
+        assert_eq!(run_like_elevated("C:\\Program Files\\CT\\"), "OK");
+    }
 }
