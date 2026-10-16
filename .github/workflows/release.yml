@@ -60,19 +60,39 @@ jobs:
           }
           Write-Host "✓ Supabase environment variables verified."
 
+      - name: Verify release tag matches app version
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.ref_name != '' && github.ref_name || inputs.tag_name }}
+        run: |
+          # El updater compara la versión compilada (tauri.conf.json) con latest.json (tag).
+          # Si difieren, la app instalada vería siempre una actualización (o nunca ninguna).
+          $tag = $env:RELEASE_TAG
+          if (-not $tag -or $tag -notmatch '^v\d+\.\d+\.\d+') {
+            Write-Error "Tag de release inválido o ausente: '$tag' (se espera vX.Y.Z)"
+            exit 1
+          }
+          $tagVersion = $tag -replace '^v', ''
+          $confVersion = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          $cargoVersion = (Select-String -Path src-tauri/Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"' | Select-Object -First 1).Matches.Groups[1].Value
+          if ($tagVersion -ne $confVersion -or $tagVersion -ne $cargoVersion) {
+            Write-Error "Versión desalineada: tag=$tagVersion tauri.conf.json=$confVersion Cargo.toml=$cargoVersion"
+            exit 1
+          }
+          Write-Host "✓ Versión $tagVersion alineada (tag, tauri.conf.json, Cargo.toml)"
+
       - name: Build Frontend Assets (Vite)
         run: pnpm run build
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || vars.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || vars.VITE_SUPABASE_ANON_KEY }}
 
-      - name: Build Standalone Launcher (Tauri CLI with NSIS Bundle)
-        run: pnpm tauri build
+      - name: Build Self-Installing Launcher (Tauri CLI, no bundle)
+        # bundle.active=false: el propio ejecutable es el instalador (BootMode::Install)
+        run: pnpm tauri build --no-bundle
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || vars.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || vars.VITE_SUPABASE_ANON_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - name: Prepare Release Artifacts & Sign Updater
         shell: pwsh
@@ -83,32 +103,27 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path release-artifacts | Out-Null
           
-          # 1. Localizar binario standalone y el instalador NSIS generado
-          $exeSource = Get-ChildItem -Path "src-tauri/target", "target" -Filter "launcher-lite-tauri.exe" -Recurse -ErrorAction SilentlyContinue |
-            Where-Object { $_.FullName -notlike "*deps*" -and $_.FullName -notlike "*.build*" } |
+          # 1. Localizar el binario release. El mismo ejecutable es instalador y launcher:
+          #    - CrystalTides-Setup.exe   ("setup" en el nombre -> asistente propio de instalación)
+          #    - CrystalTides-Portable.exe ("portable" en el nombre -> sin instalar)
+          $exeSource = @("src-tauri/target/release/launcher-lite-tauri.exe", "target/release/launcher-lite-tauri.exe") |
+            Where-Object { Test-Path $_ } |
             Select-Object -First 1
 
-          $nsisSource = Get-ChildItem -Path "src-tauri/target", "target" -Filter "*-setup.exe" -Recurse -ErrorAction SilentlyContinue |
-            Select-Object -First 1
-
-          if (-not $nsisSource) {
-            Write-Error "No se encontró el instalador NSIS (*-setup.exe) en target!"
+          if (-not $exeSource) {
+            Write-Error "No se encontró launcher-lite-tauri.exe en target/release!"
             exit 1
           }
 
-          Write-Host "✓ Instalador NSIS localizado: $($nsisSource.FullName) ($($nsisSource.Length) bytes)"
-          Copy-Item -Path $nsisSource.FullName -Destination "release-artifacts/CrystalTides-Setup.exe" -Force
+          Write-Host "✓ Binario localizado: $exeSource ($((Get-Item $exeSource).Length) bytes)"
+          Copy-Item -Path $exeSource -Destination "release-artifacts/CrystalTides-Setup.exe" -Force
+          Copy-Item -Path $exeSource -Destination "release-artifacts/CrystalTides-Portable.exe" -Force
 
-          if ($exeSource) {
-            Write-Host "✓ Binario ejecutable localizado: $($exeSource.FullName)"
-            Copy-Item -Path $exeSource.FullName -Destination "release-artifacts/CrystalTides-Portable.exe" -Force
-            Copy-Item -Path $exeSource.FullName -Destination "release-artifacts/CrystalTidesLauncher.exe" -Force
-          }
-
-          # 2. Firmar instalador NSIS para el AutoUpdater y generar latest.json
+          # 2. Firmar el instalador para el AutoUpdater y generar latest.json.
+          #    tauri-plugin-updater lo ejecuta con /P /UPDATE; self_update.rs reemplaza bin/ y relanza.
           $updaterTarget = "release-artifacts/CrystalTides-Setup.exe"
           if ($env:TAURI_SIGNING_PRIVATE_KEY) {
-            Write-Host "🔐 Firmando instalador NSIS para AutoUpdater con Tauri Signer..."
+            Write-Host "🔐 Firmando instalador para AutoUpdater con Tauri Signer..."
             pnpm tauri signer sign -k "$env:TAURI_SIGNING_PRIVATE_KEY" -p "$($env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD)" $updaterTarget
 
             $sigFile = "$updaterTarget.sig"

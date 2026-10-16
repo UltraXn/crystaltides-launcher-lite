@@ -31,14 +31,8 @@
     }
   },
   "bundle": {
-    "active": true,
-    "createUpdaterArtifacts": true,
-    "targets": ["nsis"],
-    "windows": {
-      "nsis": {
-        "installMode": "currentUser"
-      }
-    },
+    "active": false,
+    "createUpdaterArtifacts": false,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -52,7 +46,10 @@
       "endpoints": [
         "https://github.com/UltraXn/crystaltides-launcher-lite/releases/latest/download/latest.json"
       ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEM5M0I3OEI1QkE3MTg5MjkKUldRcGlYRzZ0WGc3eVRSY0tHNkdVMEhjYTZhVmw5R0RXNG9FTG00OGw5R2RpdmlVZ29kNlUwTEkK"
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEM5M0I3OEI1QkE3MTg5MjkKUldRcGlYRzZ0WGc3eVRSY0tHNkdVMEhjYTZhVmw5R0RXNG9FTG00OGw5R2RpdmlVZ29kNlUwTEkK",
+      "windows": {
+        "installMode": "passive"
+      }
     }
   }
 }

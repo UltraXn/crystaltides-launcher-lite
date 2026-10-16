@@ -16,6 +16,7 @@ mod nbt_manager;
 pub mod network;
 pub mod paths;
 mod process_manager;
+mod self_update;
 mod sys;
 mod version_manager;
 
@@ -100,64 +101,59 @@ pub fn validate_install_dir(target_dir: &str) -> Result<PathBuf, String> {
     Ok(path)
 }
 
-#[tauri::command]
-fn get_boot_context() -> BootContext {
-    let args: Vec<String> = std::env::args().collect();
-    let current_exe = std::env::current_exe().unwrap_or_default();
+/// Resuelve el directorio de instalación activo: predeterminado, registrado en el sistema
+/// o el contenedor del ejecutable (`<dir>/bin/<exe>`).
+pub(crate) fn resolve_install_dir(current_exe: &Path) -> PathBuf {
     let default_dir =
         sys::get_default_install_dir().unwrap_or_else(|| PathBuf::from(".crystaltides"));
+    let explicit_home = std::env::var_os("CRYSTALTIDES_HOME")
+        .is_some_and(|home| !home.to_string_lossy().trim().is_empty());
 
-    // Resolver directorio de instalación activo: predeterminado, registrado en sistema o contenedor del ejecutable
-    let resolved_install_dir = if sys::is_app_installed(&default_dir) {
-        default_dir.clone()
-    } else if let Some(reg_dir) = sys::get_registered_install_location() {
+    pick_install_dir(
+        default_dir,
+        explicit_home,
+        sys::get_registered_install_location,
+        current_exe,
+    )
+}
+
+/// Con `CRYSTALTIDES_HOME` definido ese directorio es la única instalación válida, aunque
+/// aún no esté instalado: nunca se recurre al registro ni a la ruta del ejecutable, para que
+/// una sesión aislada (desarrollo, tests) no pueda actualizar ni leer la instalación del usuario.
+fn pick_install_dir(
+    default_dir: PathBuf,
+    explicit_home: bool,
+    registered_install_location: impl FnOnce() -> Option<PathBuf>,
+    current_exe: &Path,
+) -> PathBuf {
+    if explicit_home || sys::is_app_installed(&default_dir) {
+        default_dir
+    } else if let Some(reg_dir) = registered_install_location() {
         if sys::is_app_installed(&reg_dir) {
             reg_dir
         } else {
-            default_dir.clone()
+            default_dir
         }
     } else if let Some(parent_root) = current_exe.parent().and_then(|p| p.parent()) {
         if sys::is_app_installed(parent_root) {
             parent_root.to_path_buf()
         } else {
-            default_dir.clone()
+            default_dir
         }
     } else {
-        default_dir.clone()
-    };
+        default_dir
+    }
+}
 
+#[tauri::command]
+fn get_boot_context() -> BootContext {
+    let args: Vec<String> = std::env::args().collect();
+    let current_exe = std::env::current_exe().unwrap_or_default();
+    let resolved_install_dir = resolve_install_dir(&current_exe);
     let is_installed = sys::is_app_installed(&resolved_install_dir);
 
-    // Manejo de actualización autónoma (Tauri updater /UPDATE o --update)
-    if args
-        .iter()
-        .any(|arg| arg.eq_ignore_ascii_case("--update") || arg.eq_ignore_ascii_case("/update"))
-    {
-        let is_win = cfg!(target_os = "windows");
-        let exe_name = if is_win {
-            "CrystalTidesLauncher.exe"
-        } else {
-            "CrystalTidesLauncher"
-        };
-        let target_launcher = resolved_install_dir.join("bin").join(exe_name);
-        if current_exe != target_launcher {
-            if let Some(parent) = target_launcher.parent() {
-                let _ = fs::create_dir_all(parent);
-            }
-            let mut copied = false;
-            for _ in 0..10 {
-                std::thread::sleep(std::time::Duration::from_millis(300));
-                if fs::copy(&current_exe, &target_launcher).is_ok() {
-                    copied = true;
-                    break;
-                }
-            }
-            if copied {
-                let _ = Command::new(&target_launcher).spawn();
-                std::process::exit(0);
-            }
-        }
-    }
+    // Las actualizaciones (`/UPDATE` del updater) se resuelven antes de crear la ventana,
+    // en `self_update::perform_update_handoff` desde `run()`.
 
     // 1. Argumentos CLI explícitos
     if args.iter().any(|arg| arg == "--uninstall" || arg == "-u") {
@@ -1389,6 +1385,13 @@ pub fn get_shared_http_client() -> &'static reqwest::Client {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let args: Vec<String> = std::env::args().collect();
+    if self_update::is_update_handoff(&args) {
+        // Termina el proceso si el traspaso tuvo éxito; si no, se sigue con el arranque normal
+        // (el nombre temporal contiene "installer", así que se ofrece reinstalar).
+        self_update::perform_update_handoff();
+    }
+
     let http_client = get_shared_http_client().clone();
 
     if let Err(e) = tauri::Builder::default()
@@ -1523,6 +1526,54 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn fake_installed_dir() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join(".installed.json"), r#"{"installed":true}"#).unwrap();
+        dir
+    }
+
+    #[test]
+    fn test_pick_install_dir_explicit_home_never_falls_back_to_registry() {
+        let isolated_home = tempfile::tempdir().unwrap(); // aún no instalado
+        let registered = fake_installed_dir();
+        let exe = registered
+            .path()
+            .join("bin")
+            .join("CrystalTidesLauncher.exe");
+
+        let picked = pick_install_dir(
+            isolated_home.path().to_path_buf(),
+            true,
+            || Some(registered.path().to_path_buf()),
+            &exe,
+        );
+        assert_eq!(picked, isolated_home.path());
+    }
+
+    #[test]
+    fn test_pick_install_dir_without_explicit_home_uses_registered_install() {
+        let default_dir = tempfile::tempdir().unwrap(); // ~/.crystaltides sin instalar
+        let registered = fake_installed_dir();
+        let exe = std::env::temp_dir().join("CrystalTides-Setup.exe");
+
+        let picked = pick_install_dir(
+            default_dir.path().to_path_buf(),
+            false,
+            || Some(registered.path().to_path_buf()),
+            &exe,
+        );
+        assert_eq!(picked, registered.path());
+
+        let installed_default = fake_installed_dir();
+        let picked = pick_install_dir(
+            installed_default.path().to_path_buf(),
+            false,
+            || Some(registered.path().to_path_buf()),
+            &exe,
+        );
+        assert_eq!(picked, installed_default.path());
+    }
 
     #[test]
     fn test_chrono_now_dynamic_timestamp() {

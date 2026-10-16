@@ -73,27 +73,20 @@ console.log('\n📁 [4/4] Empaquetando artefactos finales de distribución...');
 safeCopy(sourceBinary, setupDest);
 safeCopy(sourceBinary, portableDest);
 
-// Generar .zip para el AutoUpdater
-const zipDest = path.join(distPackageDir, 'CrystalTidesLauncher-windows-x86_64.zip');
-console.log(`📦 Creando archivo de AutoUpdater: ${path.basename(zipDest)}...`);
-try {
-  execSync(`powershell -NoProfile -Command "Compress-Archive -Path '${setupDest}' -DestinationPath '${zipDest}' -Force"`, { stdio: 'inherit' });
-} catch (zipErr) {
-  console.warn('⚠️ No se pudo crear el archivo .zip de actualización:', zipErr.message);
-}
-
-// Firmar con Tauri Signer si existe la clave privada
+// Firmar el instalador para el AutoUpdater (mismo artefacto que publica release.yml):
+// tauri-plugin-updater descarga CrystalTides-Setup.exe y lo ejecuta con /P /UPDATE.
 const localKeyPath = path.join(projectRoot, 'crystaltides.key');
 const privateKey = process.env.TAURI_SIGNING_PRIVATE_KEY || (fs.existsSync(localKeyPath) ? fs.readFileSync(localKeyPath, 'utf-8').trim() : null);
+const tauriConf = JSON.parse(fs.readFileSync(path.join(projectRoot, 'src-tauri', 'tauri.conf.json'), 'utf-8'));
 
-if (privateKey && fs.existsSync(zipDest)) {
-  console.log('🔐 Firmando paquete de actualización para AutoUpdater...');
+if (privateKey) {
+  console.log('🔐 Firmando instalador para AutoUpdater...');
   try {
-    execSync(`npx tauri signer sign -k "${privateKey}" -p "${process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || ''}" "${zipDest}"`, { cwd: projectRoot, stdio: 'inherit' });
-    const sigPath = `${zipDest}.sig`;
+    execSync(`npx tauri signer sign -k "${privateKey}" -p "${process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || ''}" "${setupDest}"`, { cwd: projectRoot, stdio: 'inherit' });
+    const sigPath = `${setupDest}.sig`;
     if (fs.existsSync(sigPath)) {
       const sigContent = fs.readFileSync(sigPath, 'utf-8').trim();
-      const version = '0.1.0';
+      const version = tauriConf.version;
       const latestManifest = {
         version,
         notes: `Lanzamiento CrystalTides Launcher Lite v${version}`,
@@ -101,7 +94,7 @@ if (privateKey && fs.existsSync(zipDest)) {
         platforms: {
           'windows-x86_64': {
             signature: sigContent,
-            url: `https://github.com/UltraXn/crystaltides-launcher-lite/releases/download/v${version}/CrystalTidesLauncher-windows-x86_64.zip`,
+            url: `https://github.com/UltraXn/crystaltides-launcher-lite/releases/download/v${version}/CrystalTides-Setup.exe`,
           },
         },
       };
@@ -129,10 +122,6 @@ const checksumLines = [
   `${portableHash} *CrystalTides-Portable.exe`,
 ];
 
-if (fs.existsSync(zipDest)) {
-  checksumLines.push(`${getSha256(zipDest)} *CrystalTidesLauncher-windows-x86_64.zip`);
-}
-
 fs.writeFileSync(path.join(distPackageDir, 'SHA256SUMS.txt'), checksumLines.join('\n') + '\n', 'utf-8');
 
 console.log('\n✅ ========================================================');
@@ -141,8 +130,8 @@ console.log('========================================================\n');
 console.log(`📂 Carpeta de distribución: ${distPackageDir}`);
 console.log(`   1. 📦 CrystalTides-Setup.exe                  (${setupSizeMb} MB) -> Instalador Windows`);
 console.log(`   2. 🚀 CrystalTides-Portable.exe               (${setupSizeMb} MB) -> Ejecutable Portátil`);
-if (fs.existsSync(zipDest)) {
-  console.log(`   3. 🔄 CrystalTidesLauncher-windows-x86_64.zip       -> Paquete AutoUpdater`);
+if (fs.existsSync(`${setupDest}.sig`)) {
+  console.log(`   3. 🔏 CrystalTides-Setup.exe.sig                    -> Firma del AutoUpdater`);
 }
 if (fs.existsSync(path.join(distPackageDir, 'latest.json'))) {
   console.log(`   4. 📋 latest.json                                   -> Manifiesto firmado de Update`);
