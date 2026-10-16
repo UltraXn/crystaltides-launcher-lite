@@ -103,6 +103,8 @@ pub struct MojangVersionDetail {
     #[serde(rename = "assetIndex")]
     pub asset_index: Option<MojangAssetIndexRef>,
     pub assets: Option<String>,
+    #[serde(rename = "inheritsFrom")]
+    pub inherits_from: Option<String>,
 }
 
 fn get_appdata_minecraft_dir() -> Option<PathBuf> {
@@ -227,10 +229,21 @@ fn try_copy_from_local_minecraft(version_id: &str, target_jar: &Path, target_jso
         let mc_jar = mc_ver_dir.join(format!("{}.jar", version_id));
         let mc_json = mc_ver_dir.join(format!("{}.json", version_id));
 
-        if mc_json.exists() && !target_json.exists() {
+        let target_json_invalid = !target_json.exists()
+            || target_json
+                .metadata()
+                .map(|m| m.len() == 0)
+                .unwrap_or(false);
+        if mc_json.exists() && target_json_invalid {
             let _ = fs::copy(&mc_json, target_json);
         }
-        if mc_jar.exists() && !target_jar.exists() {
+
+        let target_jar_invalid =
+            !target_jar.exists() || target_jar.metadata().map(|m| m.len() < 22).unwrap_or(false);
+        if mc_jar.exists()
+            && mc_jar.metadata().map(|m| m.len() >= 22).unwrap_or(false)
+            && target_jar_invalid
+        {
             let _ = fs::copy(&mc_jar, target_jar);
             println!(
                 "[VersionManager] Copied {} jar and json from .minecraft",
@@ -714,6 +727,14 @@ pub async fn prepare_version(version_id: &str, game_dir_str: &str) -> Result<Str
     fs::create_dir_all(&target_ver_dir)
         .map_err(|e| format!("No se pudo crear carpeta de versión {}: {}", version_id, e))?;
 
+    if target_jar.exists() {
+        if let Ok(meta) = target_jar.metadata() {
+            if meta.len() < 22 {
+                let _ = fs::remove_file(&target_jar);
+            }
+        }
+    }
+
     // 1. Try copying from local .minecraft (no retornar prematuramente para asegurar librerías y assets)
     let _ = try_copy_from_local_minecraft(version_id, &target_jar, &target_json);
 
@@ -767,6 +788,18 @@ pub async fn prepare_version(version_id: &str, game_dir_str: &str) -> Result<Str
 
     if need_download_jar {
         download_client_jar(client, version_id, &detail, &target_jar).await?;
+    }
+
+    if !target_jar.exists() {
+        if let Some(ref base_mc) = detail.inherits_from {
+            let base_jar = game_dir
+                .join("versions")
+                .join(base_mc)
+                .join(format!("{}.jar", base_mc));
+            if base_jar.exists() && base_jar.metadata().map(|m| m.len() >= 22).unwrap_or(false) {
+                let _ = fs::copy(&base_jar, &target_jar);
+            }
+        }
     }
 
     download_missing_libraries(client, game_dir, &detail).await?;

@@ -33,6 +33,7 @@ import {
   getEffectiveActiveButtons,
 } from '../utils/collisionSystem';
 import { isVideoSource, clearDockPanorama, clearButtonMedia } from '../utils/wallpaperStorage';
+import { extractLoaderVersionFromCompound } from '../utils/settingsUtils';
 import { Language, getTranslation, TranslationDictionary } from '../i18n';
 
 export type { Language };
@@ -824,6 +825,13 @@ export const resolveEffectiveLoaderVersion = (
     return undefined;
   }
   const trimmed = rawVersion ? rawVersion.trim() : '';
+
+  // Si mcVersion es un identificador compuesto (ej: quilt-loader-0.31.0-beta.4-26.2), extraer la versión real del loader
+  const compoundLoaderVer = extractLoaderVersionFromCompound(mcVersion, loaderType);
+  if (compoundLoaderVer) {
+    return compoundLoaderVer;
+  }
+
   if (loaderType === 'neoforge') {
     if (!trimmed || trimmed === '21.1.65') {
       return '21.1.252';
@@ -834,7 +842,7 @@ export const resolveEffectiveLoaderVersion = (
     return trimmed || '0.16.10';
   }
   if (loaderType === 'quilt') {
-    return trimmed || '0.30.2';
+    return trimmed || '0.31.0-beta.4';
   }
   if (loaderType === 'forge') {
     if (trimmed) return trimmed;

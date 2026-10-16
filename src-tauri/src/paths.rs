@@ -288,6 +288,16 @@ pub fn validate_safe_file_path(path_str: &str) -> Result<PathBuf, String> {
         return Err("Acceso denegado: La ruta se encuentra fuera de los directorios autorizados de CrystalTides (.crystaltides, .minecraft o perfiles registrados).".to_string());
     }
 
+    #[cfg(target_os = "windows")]
+    let target_canonical = {
+        let s = target_canonical.to_string_lossy();
+        if let Some(stripped) = s.strip_prefix(r"\\?\") {
+            PathBuf::from(stripped)
+        } else {
+            target_canonical
+        }
+    };
+
     Ok(target_canonical)
 }
 

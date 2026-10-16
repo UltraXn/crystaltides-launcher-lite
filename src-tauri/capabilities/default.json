@@ -16,6 +16,9 @@
     "core:window:allow-set-focus",
     "core:window:allow-unminimize",
     "core:window:allow-start-dragging",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-internal-toggle-maximize",
+    "core:window:allow-is-maximized",
     "core:webview:allow-create-webview-window",
     "updater:default",
     "dialog:default"

@@ -438,8 +438,23 @@ pub fn is_dangerous_jvm_arg(arg: &str) -> bool {
         .trim()
         .trim_start_matches(['-', '/'])
         .to_ascii_lowercase();
-    clean.starts_with("agentpath")
-        || clean.starts_with("agentlib")
+
+    if clean.starts_with("agentpath") {
+        let path_part = clean
+            .strip_prefix("agentpath:")
+            .or_else(|| clean.strip_prefix("agentpath="))
+            .unwrap_or("");
+        let path_without_opts = path_part.split('=').next().unwrap_or(path_part);
+
+        let is_official_ct_agent = (path_without_opts.ends_with("ct-agent.dll")
+            || path_without_opts.ends_with("ct-agent.so")
+            || path_without_opts.ends_with("libct-agent.so"))
+            && (path_without_opts.contains("natives")
+                || path_without_opts.contains(".crystaltides"));
+        return !is_official_ct_agent;
+    }
+
+    clean.starts_with("agentlib")
         || clean.starts_with("xrun")
         || clean.starts_with("xx:onerror")
         || clean.starts_with("xx:onoutofmemoryerror")
@@ -1303,5 +1318,11 @@ mod tests {
             "-Dminecraft.launcher.brand=crystaltides"
         ));
         assert!(!is_dangerous_jvm_arg("-javaagent:fabric-loader.jar"));
+        assert!(!is_dangerous_jvm_arg(
+            "-agentpath:C:\\Users\\nacho\\.crystaltides\\instances\\inst-1\\natives\\ct-agent.dll"
+        ));
+        assert!(!is_dangerous_jvm_arg(
+            "-agentpath:\\\\?\\C:\\Users\\nacho\\.crystaltides\\instances\\inst-1\\natives\\ct-agent.dll"
+        ));
     }
 }
