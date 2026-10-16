@@ -178,9 +178,11 @@ fn check_java_file_name(canonical: &std::path::Path) -> Result<(), String> {
         file_name == "java" || file_name == "javaw"
     };
 
+    // Evita lanzar por error otro programa como "Java". No es una barrera de seguridad: cualquier
+    // archivo con este nombre pasa, y los argumentos de la JVM ya permiten ejecutar código.
     if !is_valid {
         return Err(format!(
-            "Violación de Seguridad RCE: El binario especificado ('{}') no es un ejecutable Java válido (java.exe / javaw.exe).",
+            "Ejecutable Java no válido: '{}' no es java/javaw (java.exe / javaw.exe en Windows).",
             file_name
         ));
     }
@@ -271,6 +273,12 @@ fn check_running_instance(process_lock: &Arc<Mutex<Option<Child>>>) -> Result<()
     Ok(())
 }
 
+/// Shells, intérpretes de scripts y descargadores que no se aceptan como hook ni wrapper.
+///
+/// Evita el uso más obvio (pegar un one-liner de shell o `curl | sh`), pero NO es una barrera de
+/// seguridad: los hooks ejecutan el programa que configure el usuario, y cualquier otro intérprete
+/// o una copia renombrada pasa. La frontera real es que solo el bundle local controla el webview
+/// (CSP y capabilities, ver `src/config/__tests__/tauriSecurity.test.ts`).
 fn is_blocked_shell_binary(name: &str) -> bool {
     let lower = name.to_lowercase();
     let path = Path::new(&lower);
@@ -305,7 +313,7 @@ fn execute_hook_command(cmd_str: &str, dir: &str, envs: &[(&str, &str)]) -> Resu
     let program = &parts[0];
     if is_blocked_shell_binary(program) {
         let msg = format!(
-            "Violación de Seguridad RCE: La invocación de shells o utilidades no autorizadas ('{}') en hooks está estrictamente prohibida.",
+            "Hook no permitido: '{}' es un shell o descargador; indica directamente el programa a ejecutar.",
             program
         );
         crate::logger::log("ERROR", "ProcessManager", &msg);
@@ -384,7 +392,7 @@ fn build_command_with_wrapper(
                         "WARN",
                         "ProcessManager",
                         &format!(
-                            "Violación de Seguridad RCE: Wrapper shell ignorado: {}",
+                            "Wrapper no permitido (shell o descargador), se lanza Java sin él: {}",
                             program
                         ),
                     );
@@ -410,17 +418,19 @@ fn build_command_with_wrapper(
     cmd
 }
 
+/// Variables de entorno de perfil que no se pasan al proceso de Java: las que inyectan opciones
+/// en la JVM o cambian qué librerías carga el cargador dinámico (todas las `LD_*` de glibc y
+/// `DYLD_*` de macOS, incluidas `LD_AUDIT` y `DYLD_LIBRARY_PATH`).
+///
+/// Como `is_blocked_shell_binary`, evita configuraciones peligrosas obvias, pero no es una
+/// barrera de seguridad: los argumentos de la JVM los controla igualmente el frontend.
 fn is_blocked_env_key(key: &str) -> bool {
     let lower = key.to_ascii_lowercase();
     matches!(
         lower.as_str(),
-        "java_tool_options"
-            | "_java_options"
-            | "jdk_java_options"
-            | "ld_preload"
-            | "ld_library_path"
-            | "dyld_insert_libraries"
-    )
+        "java_tool_options" | "_java_options" | "jdk_java_options"
+    ) || lower.starts_with("ld_")
+        || lower.starts_with("dyld_")
 }
 
 pub fn is_dangerous_jvm_arg(arg: &str) -> bool {
@@ -1231,8 +1241,12 @@ mod tests {
         assert!(is_blocked_env_key("LD_PRELOAD"));
         assert!(is_blocked_env_key("ld_library_path"));
         assert!(is_blocked_env_key("DYLD_INSERT_LIBRARIES"));
+        assert!(is_blocked_env_key("LD_AUDIT"));
+        assert!(is_blocked_env_key("dyld_library_path"));
+        assert!(is_blocked_env_key("DYLD_FRAMEWORK_PATH"));
 
         assert!(!is_blocked_env_key("MY_CUSTOM_VAR"));
+        assert!(!is_blocked_env_key("OLD_VALUE"));
         assert!(!is_blocked_env_key("PATH"));
         assert!(!is_blocked_env_key("__GL_THREADED_OPTIMIZATIONS"));
     }
