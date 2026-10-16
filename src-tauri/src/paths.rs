@@ -494,23 +494,42 @@ mod tests {
             assert!(validate_game_dir("C:\\Windows\\System32").is_err());
             assert!(validate_game_dir("C:/Windows/System32").is_err());
             assert!(validate_game_dir("C:/Windows/System32/drivers").is_err());
+
+            unsafe {
+                std::env::set_var("CRYSTALTIDES_HOME", "D:\\Juegos\\CrystalTides");
+            }
+            let custom_instance = "D:\\Juegos\\CrystalTides\\instances\\MiInstanciaCustom";
+            let result = validate_game_dir(custom_instance);
+            unsafe {
+                std::env::remove_var("CRYSTALTIDES_HOME");
+            }
+
+            assert!(
+                result.is_ok(),
+                "Debe aceptar la ruta de instancia en un disco distinto registrada en el launcher: {:?}",
+                result
+            );
+            assert!(validate_game_dir("C:\\Windows\\System32").is_err());
         }
 
-        unsafe {
-            std::env::set_var("CRYSTALTIDES_HOME", "D:\\Juegos\\CrystalTides");
-        }
-        let custom_instance = "D:\\Juegos\\CrystalTides\\instances\\MiInstanciaCustom";
-        let result = validate_game_dir(custom_instance);
-        unsafe {
-            std::env::remove_var("CRYSTALTIDES_HOME");
-        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            let temp = tempfile::tempdir().unwrap();
+            let ct_home = temp.path().join("Juegos/CrystalTides");
+            unsafe {
+                std::env::set_var("CRYSTALTIDES_HOME", &ct_home);
+            }
+            let custom_instance = ct_home.join("instances/MiInstanciaCustom");
+            let result = validate_game_dir(&custom_instance.to_string_lossy());
+            unsafe {
+                std::env::remove_var("CRYSTALTIDES_HOME");
+            }
 
-        assert!(
-            result.is_ok(),
-            "Debe aceptar la ruta de instancia en un disco distinto registrada en el launcher: {:?}",
-            result
-        );
-        #[cfg(target_os = "windows")]
-        assert!(validate_game_dir("C:\\Windows\\System32").is_err());
+            assert!(
+                result.is_ok(),
+                "Debe aceptar la ruta de instancia registrada en el launcher: {:?}",
+                result
+            );
+        }
     }
 }
