@@ -1,0 +1,39 @@
+{
+  "$comment": "Orquestador de Jules: limites y reglas. Lo leen scripts/jules/*.mjs.",
+  "julesSource": "sources/github/UltraXn/crystaltides-launcher-lite",
+  "startingBranch": "dev",
+  "ciWorkflowName": "CI (Quality, Vitest & Rust Safety)",
+  "maxActive": 3,
+  "maxStrikes": 2,
+  "maxChangedLines": 400,
+  "trustedAuthorAssociations": ["OWNER", "MEMBER", "COLLABORATOR"],
+  "trustedBots": ["github-actions[bot]"],
+  "labels": {
+    "queued": "jules",
+    "inProgress": "jules:in-progress",
+    "failed": "jules:failed",
+    "done": "jules:done",
+    "pr": "jules:pr",
+    "strike": "jules:strike",
+    "readyForReview": "jules:ready-for-review"
+  },
+  "forbiddenPaths": [
+    "src-tauri/assets/**",
+    ".github/**",
+    ".cargo/**",
+    "Cargo.lock",
+    "src-tauri/tauri.conf.json",
+    "src-tauri/capabilities/**",
+    "scripts/jules/**",
+    "*.key",
+    ".env*"
+  ],
+  "lockfilesRequireDependencyTask": ["pnpm-lock.yaml", "src-tauri/Cargo.lock", "package.json", "src-tauri/Cargo.toml"],
+  "verification": [
+    "pnpm install --frozen-lockfile",
+    "pnpm run lint",
+    "pnpm run typecheck:tests",
+    "pnpm run test",
+    "cargo test --manifest-path src-tauri/Cargo.toml"
+  ]
+}

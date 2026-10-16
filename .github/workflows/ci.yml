@@ -49,6 +49,9 @@ jobs:
       - name: Run Vitest Suite
         run: pnpm run test
 
+      - name: Jules Orchestrator Tests
+        run: pnpm run jules:test
+
       - name: Build Frontend Bundle
         run: pnpm run build
 

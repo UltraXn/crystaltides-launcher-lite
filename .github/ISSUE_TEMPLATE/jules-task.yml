@@ -1,0 +1,46 @@
+name: Tarea para Jules
+description: Una tarea concreta y acotada para el agente Jules (la despacha el orquestador).
+title: 'fix: '
+labels: ['jules']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        El orquestador solo despacha tareas de dueños/colaboradores del repo, con máximo 3 activas y
+        nunca dos sobre los mismos archivos. Cuanto más concreta la tarea, mejor el resultado.
+        Reglas que recibe Jules: `.github/jules/RULES.md`.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problema
+      description: Qué está mal, dónde y cómo reproducirlo. Un solo problema por tarea.
+    validations:
+      required: true
+  - type: textarea
+    id: files
+    attributes:
+      label: Archivos permitidos
+      description: |
+        Una ruta por línea (se admiten globs como `src/components/**`). Jules solo puede tocar estos
+        archivos y sus tests; cualquier otro cambio hace fallar el guardián.
+      placeholder: |
+        src/components/LoginView.tsx
+        src/services/authService.ts
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Criterio de aceptación
+      description: Cómo sabremos que está resuelto (comportamiento esperado, test que debe existir).
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Tipo
+      description: Solo las tareas de dependencias pueden cambiar package.json, Cargo.toml y lockfiles.
+      options:
+        - código
+        - dependencias
+      default: 0

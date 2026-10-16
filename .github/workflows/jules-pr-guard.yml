@@ -1,0 +1,67 @@
+name: Jules PR Guard
+
+# pull_request_target ejecuta la versión de este workflow y de scripts/jules/ que hay en la rama
+# base, no la del PR: un PR de Jules no puede modificar el guardián que lo valida. El guardián solo
+# usa la API de GitHub; nunca ejecuta código del PR.
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, closed]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  scope:
+    name: Jules Scope Guard
+    if: github.event.action != 'closed' && contains(github.event.pull_request.body, 'jules.google.com/task/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: jules-guard-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    steps:
+      - name: Checkout (rama base)
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Validar alcance
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JULES_API_KEY: ${{ secrets.JULES_API_KEY }}
+        run: node scripts/jules/guard.mjs pr
+
+  closed:
+    name: Cerrar ciclo y rellenar cupo
+    if: github.event.action == 'closed' && contains(github.event.pull_request.body, 'jules.google.com/task/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Comparte grupo con el orquestador: el hueco liberado se rellena sin carreras
+    concurrency:
+      group: jules-orchestrator
+      cancel-in-progress: false
+    steps:
+      - name: Checkout (rama base)
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Actualizar issue
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/jules/guard.mjs closed
+
+      # Los eventos creados con GITHUB_TOKEN no disparan otros workflows: se despacha aquí
+      - name: Despachar siguiente tarea
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JULES_API_KEY: ${{ secrets.JULES_API_KEY }}
+        run: node scripts/jules/dispatch.mjs
