@@ -1034,6 +1034,7 @@ export const launcherActions = {
         customCoordinates: { x: 50, y: 50 },
         buttonPositions: calculatedPositions,
         widgetPositions: { ...DEFAULT_DOCK_CONFIG.widgetPositions },
+        buttonOrder: ['instances', 'about', 'accounts', 'settings', 'launch'],
       };
 
       const sanitized = sanitizeAllPositions(nextConfig);
@@ -1058,8 +1059,29 @@ export const launcherActions = {
   },
 
   resetDockConfig: () => {
+    const freshDefault: DockConfig = {
+      ...DEFAULT_DOCK_CONFIG,
+      positionPreset: 'center',
+      customCoordinates: { x: 50, y: 50 },
+      buttonOrder: ['instances', 'about', 'accounts', 'settings', 'launch'],
+      visibleButtons: ['instances', 'about', 'accounts', 'settings', 'launch'],
+      buttonPositions: {
+        instances: { x: 26, y: 50 },
+        about: { x: 38, y: 50 },
+        accounts: { x: 50, y: 50 },
+        settings: { x: 62, y: 50 },
+        launch: { x: 74, y: 50 },
+      },
+      widgetPositions: {
+        userPill: { x: 8, y: 93 },
+        socials: { x: 50, y: 93 },
+        serverStatus: { x: 92, y: 93 },
+      },
+      customButtonColors: {},
+      buttonCustomizations: {},
+    };
     try {
-      localStorage.removeItem(DOCK_CONFIG_STORAGE_KEY);
+      localStorage.setItem(DOCK_CONFIG_STORAGE_KEY, JSON.stringify(freshDefault));
     } catch {}
     const currentConfig = state.dockConfig;
     clearDockPanorama().catch(() => {});
@@ -1077,7 +1099,7 @@ export const launcherActions = {
       clearButtonMedia(btnId, false).catch(() => {});
       clearButtonMedia(btnId, true).catch(() => {});
     }
-    setStoreState(() => ({ dockConfig: DEFAULT_DOCK_CONFIG }));
+    setStoreState(() => ({ dockConfig: freshDefault, hudManualSide: 'auto' }));
   },
 
   toggleDockButton: (id: DockButtonId) => {
