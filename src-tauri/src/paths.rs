@@ -592,11 +592,19 @@ mod tests {
             assert!(validate_game_dir("C:/Windows/System32/drivers").is_err());
         }
 
+        // `D:\...` solo es absoluta en Windows; en el resto se usa un directorio fuera de $HOME
+        #[cfg(target_os = "windows")]
+        let custom_home = PathBuf::from("D:\\Juegos\\CrystalTides");
+        #[cfg(not(target_os = "windows"))]
+        let temp = tempfile::tempdir().expect("tempdir");
+        #[cfg(not(target_os = "windows"))]
+        let custom_home = temp.path().join("CrystalTides");
+
         unsafe {
-            std::env::set_var("CRYSTALTIDES_HOME", "D:\\Juegos\\CrystalTides");
+            std::env::set_var("CRYSTALTIDES_HOME", &custom_home);
         }
-        let custom_instance = "D:\\Juegos\\CrystalTides\\instances\\MiInstanciaCustom";
-        let result = validate_game_dir(custom_instance);
+        let custom_instance = custom_home.join("instances").join("MiInstanciaCustom");
+        let result = validate_game_dir(&custom_instance.to_string_lossy());
         unsafe {
             std::env::remove_var("CRYSTALTIDES_HOME");
         }
