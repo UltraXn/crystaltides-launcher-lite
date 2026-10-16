@@ -4,8 +4,8 @@ Este manifiesto documenta la integridad criptográfica (SHA-256) de todos los bi
 
 | Archivo | Plataforma | Propósito | SHA-256 Checksum |
 | :--- | :--- | :--- | :--- |
-| `crystaltides-boost-fabric.jar` | Multiplataforma (Fabric/Quilt 1.21.1) | Mod de rendimiento: QoS de hilos, culling de texturas animadas y bridge de frametime/`game_ready` hacia `game-bridge.jar` | `4512f6021b5af028fec4ceb8e484632b985259d63677eaa5b3ae9481afdeac81` |
-| `crystaltides-boost-neoforge.jar` | Multiplataforma (NeoForge 1.21.1) | Mod de rendimiento: QoS de hilos, culling de texturas animadas y bridge de frametime/`game_ready` hacia `game-bridge.jar` | `f194c8c377502029a8d58e3f1f66e38c5bf8b2bb374ee20c50d6c54a04d26f2c` |
+| `crystaltides-boost-fabric.jar` | Multiplataforma (Fabric/Quilt 1.21.1) | Mod de rendimiento 1.1.0: QoS de hilos (render, audio y red), modo eco en segundo plano, límite de workers, culling de texturas animadas y bridge de frametime/`game_ready` hacia `game-bridge.jar` | `155ee7d83e79eab6e1414e428f9dbd71ea15463f600a91447e22506f1303df23` |
+| `crystaltides-boost-neoforge.jar` | Multiplataforma (NeoForge 1.21.1) | Mod de rendimiento 1.1.0: QoS de hilos (render, audio y red), modo eco en segundo plano, límite de workers, culling de texturas animadas y bridge de frametime/`game_ready` hacia `game-bridge.jar` | `7f4999068fbe0a01c1b3a06aadbcc0501e3d460fb65a21878f028027d16f9130` |
 | `ct-agent.dll` | Windows x64 | Agente nativo de priorización de hilos y optimizaciones seguras de proceso | `ba1aa3c7b9eb074a6be5480087216fbe32d73654eab695f2a676d5a84f94d6e8` |
 | `game-bridge.jar` | Multiplataforma | Bridge IPC de telemetría y métricas en tiempo real de Minecraft | `24055194ace5737417eb716cdc9f8a6c0dfa010049dffe90a282588408a93684` |
 
