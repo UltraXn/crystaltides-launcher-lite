@@ -22,7 +22,8 @@ jobs:
   build-release:
     name: Build & Publish Standalone Windows Launcher
     runs-on: windows-latest
-    timeout-minutes: 30
+    # Release con LTO fat + codegen-units=1: ~9 min en local desde cero, más en runners de CI
+    timeout-minutes: 45
 
     steps:
       - name: Checkout repository
@@ -81,14 +82,10 @@ jobs:
           }
           Write-Host "✓ Versión $tagVersion alineada (tag, tauri.conf.json, Cargo.toml)"
 
-      - name: Build Frontend Assets (Vite)
-        run: pnpm run build
-        env:
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || vars.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || vars.VITE_SUPABASE_ANON_KEY }}
-
       - name: Build Self-Installing Launcher (Tauri CLI, no bundle)
-        # bundle.active=false: el propio ejecutable es el instalador (BootMode::Install)
+        # bundle.active=false: el propio ejecutable es el instalador (BootMode::Install).
+        # El frontend (tsc + vite) lo compila beforeBuildCommand con estas mismas variables.
+        # Perfil release (LTO, strip, panic=abort) en .cargo/config.toml.
         run: pnpm tauri build --no-bundle
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || vars.VITE_SUPABASE_URL }}
