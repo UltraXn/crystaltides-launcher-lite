@@ -429,6 +429,8 @@ const LEGACY_BOOST_JAR_SHA256: &[&str] = &[
     "8b87d7242e7e37b57dde2997914bb69884fd253378c8856bddbcfbff27bfcfd8",
     "55fbe3a673d0efdc614464c996d5a57d1c36b8a6afcb4f5b09bfd52a1f68917a", // fabric 1.0.0 (sin agent bridge)
     "d667f0b8fa70d1dec49fc546fd3a5a2ce6589ac0ad86d206c1516bdc59568461", // neoforge 1.0.0 (sin agent bridge)
+    "9c39a75d0ad8c87c84b1f56522a47575f8ecb5d280aea0e562a1443b6f4740a7", // crystaltides-boost-fabric.jar previo (sync 2026-10-16)
+    "e53774d3b5aa9227920d421515a6eae5a4b5ca2ee8e3233203948f6387d739e2", // crystaltides-boost-neoforge.jar previo (sync 2026-10-16)
 ];
 
 fn is_known_boost_jar(bytes: &[u8]) -> bool {
@@ -1085,7 +1087,7 @@ mod tests {
         let fabric_boost_hash = hex::encode(sha2::Sha256::digest(EMBEDDED_BOOST_FABRIC_JAR));
         assert_eq!(
             fabric_boost_hash,
-            "9c39a75d0ad8c87c84b1f56522a47575f8ecb5d280aea0e562a1443b6f4740a7"
+            "4512f6021b5af028fec4ceb8e484632b985259d63677eaa5b3ae9481afdeac81"
         );
         assert_eq!(
             manifest_sha256_for("crystaltides-boost-fabric.jar").as_deref(),
@@ -1095,7 +1097,7 @@ mod tests {
         let neoforge_boost_hash = hex::encode(sha2::Sha256::digest(EMBEDDED_BOOST_NEOFORGE_JAR));
         assert_eq!(
             neoforge_boost_hash,
-            "e53774d3b5aa9227920d421515a6eae5a4b5ca2ee8e3233203948f6387d739e2"
+            "f194c8c377502029a8d58e3f1f66e38c5bf8b2bb374ee20c50d6c54a04d26f2c"
         );
         assert_eq!(
             manifest_sha256_for("crystaltides-boost-neoforge.jar").as_deref(),
@@ -1105,7 +1107,7 @@ mod tests {
         let bridge_jar_hash = hex::encode(sha2::Sha256::digest(EMBEDDED_AGENT_JAR));
         assert_eq!(
             bridge_jar_hash,
-            "191194c9ed3ab8c798efffa4f9369a3d2e83e875ba4cd4c3abc3a0af208f147b"
+            "24055194ace5737417eb716cdc9f8a6c0dfa010049dffe90a282588408a93684"
         );
         assert_eq!(
             manifest_sha256_for("game-bridge.jar").as_deref(),
