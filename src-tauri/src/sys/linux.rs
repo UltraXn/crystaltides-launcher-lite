@@ -11,20 +11,7 @@ pub fn register_system_app(
         let desktop_dir = home.join(".local/share/applications");
         let _ = fs::create_dir_all(&desktop_dir);
         let desktop_file = desktop_dir.join("crystaltides-launcher.desktop");
-        let content = format!(
-            "[Desktop Entry]\n\
-             Type=Application\n\
-             Name=CrystalTides Launcher\n\
-             GenericName=Minecraft Launcher\n\
-             Comment=CrystalTides Launcher - Papyrus Edition\n\
-             Exec=\"{}\"\n\
-             Path=\"{}\"\n\
-             Terminal=false\n\
-             Categories=Game;ActionGame;\n\
-             StartupWMClass=net.crystaltides.launcher\n",
-            target_exe.to_string_lossy(),
-            install_dir.to_string_lossy()
-        );
+        let content = super::desktop_entry::render(target_exe, install_dir);
         let _ = fs::write(&desktop_file, content);
 
         let _ = Command::new("chmod")

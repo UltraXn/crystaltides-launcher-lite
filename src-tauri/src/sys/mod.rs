@@ -5,6 +5,8 @@ mod windows;
 #[cfg(target_os = "windows")]
 pub use windows::*;
 
+#[cfg(any(target_os = "linux", test))]
+mod desktop_entry;
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "linux")]
