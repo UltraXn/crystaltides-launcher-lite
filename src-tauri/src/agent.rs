@@ -22,8 +22,10 @@ pub struct AgentConfig {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AgentBenchmarkMetrics {
-    pub average_fps: f64,
-    pub frametime_p99_ms: f64,
+    /// `None` cuando no hay fuente de frames (instancia sin crystaltides-boost); `Some(0.0)`
+    /// es un dato real (p. ej. ventana minimizada).
+    pub average_fps: Option<f64>,
+    pub frametime_p99_ms: Option<f64>,
     pub gc_pause_time_ms: f64,
     pub swapchain_backend: String,
     pub integrity_status: String,
@@ -56,10 +58,8 @@ pub(crate) enum IncomingIpcMessage {
     },
     #[serde(rename = "telemetry")]
     Telemetry {
-        #[serde(default)]
-        fps: f64,
-        #[serde(default)]
-        frametime_p99_ms: f64,
+        fps: Option<f64>,
+        frametime_p99_ms: Option<f64>,
         gc_pause_time_ms: f64,
         memory_used_mb: Option<u64>,
         memory_total_mb: Option<u64>,
@@ -109,26 +109,20 @@ pub fn verify_session_token(token: Option<&str>) -> bool {
     }
 }
 
+/// Descarta valores no finitos o negativos y acota a `max`.
+fn sanitize_metric(value: f64, max: f64) -> Option<f64> {
+    (value.is_finite() && value >= 0.0).then(|| value.min(max))
+}
+
 pub(crate) fn sanitize_telemetry(
-    fps: f64,
-    frametime_p99_ms: f64,
+    fps: Option<f64>,
+    frametime_p99_ms: Option<f64>,
     gc_pause_time_ms: f64,
-) -> (f64, f64, f64) {
-    let clean_fps = if fps.is_finite() && fps >= 0.0 {
-        fps.min(1000.0)
-    } else {
-        0.0
-    };
-    let clean_p99 = if frametime_p99_ms.is_finite() && frametime_p99_ms >= 0.0 {
-        frametime_p99_ms.min(10000.0)
-    } else {
-        0.0
-    };
-    let clean_gc = if gc_pause_time_ms.is_finite() && gc_pause_time_ms >= 0.0 {
-        gc_pause_time_ms.min(60000.0)
-    } else {
-        0.0
-    };
+) -> (Option<f64>, Option<f64>, f64) {
+    // Un menú sin límite de FPS puede superar los 1000 FPS reales: el tope solo filtra basura
+    let clean_fps = fps.and_then(|v| sanitize_metric(v, 100_000.0));
+    let clean_p99 = frametime_p99_ms.and_then(|v| sanitize_metric(v, 10_000.0));
+    let clean_gc = sanitize_metric(gc_pause_time_ms, 60_000.0).unwrap_or(0.0);
     (clean_fps, clean_p99, clean_gc)
 }
 
@@ -203,26 +197,32 @@ fn handle_handshake(
 
 fn handle_telemetry(
     app: &AppHandle,
-    fps: f64,
-    frametime_p99_ms: f64,
+    fps: Option<f64>,
+    frametime_p99_ms: Option<f64>,
     gc_pause_time_ms: f64,
     memory_used_mb: Option<u64>,
     memory_total_mb: Option<u64>,
     swapchain_backend: Option<String>,
 ) {
-    if gc_pause_time_ms > 250.0 {
+    let (clean_fps, clean_p99, clean_gc) =
+        sanitize_telemetry(fps, frametime_p99_ms, gc_pause_time_ms);
+
+    if clean_gc > 250.0 {
+        let fmt_opt = |v: Option<f64>, decimals: usize| {
+            v.map_or_else(|| "n/d".to_string(), |v| format!("{:.*}", decimals, v))
+        };
         crate::logger::log(
             "WARN",
             "GameIPC",
             &format!(
-                "Pausa severa de GC detectada: {:.1} ms (FPS: {:.0}, p99: {:.2} ms). Evaluando presión de memoria.",
-                gc_pause_time_ms, fps, frametime_p99_ms
+                "Pausa severa de GC detectada: {:.1} ms (FPS: {}, p99: {} ms). Evaluando presión de memoria.",
+                clean_gc,
+                fmt_opt(clean_fps, 0),
+                fmt_opt(clean_p99, 2)
             ),
         );
     }
 
-    let (clean_fps, clean_p99, clean_gc) =
-        sanitize_telemetry(fps, frametime_p99_ms, gc_pause_time_ms);
     let metrics_lock = get_live_metrics_handle();
     if let Ok(mut lock) = metrics_lock.lock() {
         let current_sw = swapchain_backend.unwrap_or_else(|| {
@@ -829,8 +829,8 @@ mod tests {
                 memory_used_mb,
                 ..
             } => {
-                assert!((fps - 144.5).abs() < f64::EPSILON);
-                assert!((frametime_p99_ms - 6.8).abs() < f64::EPSILON);
+                assert_eq!(fps, Some(144.5));
+                assert_eq!(frametime_p99_ms, Some(6.8));
                 assert_eq!(gc_pause_time_ms, 0.0);
                 assert_eq!(memory_used_mb, Some(2500));
             }
@@ -866,8 +866,9 @@ mod tests {
                 swapchain_backend,
                 ..
             }) => {
-                assert_eq!(fps, 0.0);
-                assert_eq!(frametime_p99_ms, 0.0);
+                // Sin crystaltides-boost no hay fuente de frames: ausencia, no 0
+                assert_eq!(fps, None);
+                assert_eq!(frametime_p99_ms, None);
                 assert_eq!(gc_pause_time_ms, 12.0);
                 assert_eq!(memory_total_mb, Some(4096));
                 assert_eq!(swapchain_backend.as_deref(), Some("OpenGL/LWJGL"));
@@ -883,8 +884,8 @@ mod tests {
                 frametime_p99_ms,
                 ..
             }) => {
-                assert_eq!(fps, 114.8);
-                assert_eq!(frametime_p99_ms, 10.06);
+                assert_eq!(fps, Some(114.8));
+                assert_eq!(frametime_p99_ms, Some(10.06));
             }
             other => panic!("Expected Telemetry, got {:?}", other),
         }
@@ -969,15 +970,22 @@ mod tests {
 
     #[test]
     fn test_telemetry_metrics_sanitization() {
-        let (fps, p99, gc) = sanitize_telemetry(f64::NAN, -10.0, f64::INFINITY);
-        assert_eq!(fps, 0.0);
-        assert_eq!(p99, 0.0);
+        // Basura -> sin dato (la UI muestra "—"), nunca un número inventado
+        let (fps, p99, gc) = sanitize_telemetry(Some(f64::NAN), Some(-10.0), f64::INFINITY);
+        assert_eq!(fps, None);
+        assert_eq!(p99, None);
         assert_eq!(gc, 0.0);
 
-        let (fps_valid, p99_valid, gc_valid) = sanitize_telemetry(144.5, 6.9, 0.5);
-        assert_eq!(fps_valid, 144.5);
-        assert_eq!(p99_valid, 6.9);
+        let (fps_valid, p99_valid, gc_valid) = sanitize_telemetry(Some(144.5), Some(6.9), 0.5);
+        assert_eq!(fps_valid, Some(144.5));
+        assert_eq!(p99_valid, Some(6.9));
         assert_eq!(gc_valid, 0.5);
+
+        // Sin fuente de frames: se conserva la ausencia; 0 FPS (minimizado) es un dato real
+        assert_eq!(sanitize_telemetry(None, None, 1.0), (None, None, 1.0));
+        assert_eq!(sanitize_telemetry(Some(0.0), Some(0.0), 0.0).0, Some(0.0));
+        // Menús sin límite de FPS superan 1000 legítimamente
+        assert_eq!(sanitize_telemetry(Some(2400.0), None, 0.0).0, Some(2400.0));
     }
 
     #[test]

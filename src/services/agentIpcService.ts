@@ -11,13 +11,14 @@ export interface GameHandshakePayload {
 }
 
 export interface LiveBenchmarkMetrics {
-  average_fps: number;
-  frametime_p99_ms: number;
+  /** null sin fuente de frames (instancia sin crystaltides-boost); 0 es un dato real (minimizado). */
+  average_fps: number | null;
+  frametime_p99_ms: number | null;
   gc_pause_time_ms: number;
   swapchain_backend: string;
   integrity_status: string;
-  memory_used_mb?: number;
-  memory_total_mb?: number;
+  memory_used_mb?: number | null;
+  memory_total_mb?: number | null;
 }
 
 /**

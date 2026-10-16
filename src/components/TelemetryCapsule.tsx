@@ -88,9 +88,10 @@ export const TelemetryCapsule: React.FC = () => {
     );
   }
 
-  const fps = metrics.average_fps > 0 ? Math.round(metrics.average_fps) : 144;
-  const gcPause = metrics.gc_pause_time_ms !== undefined ? Math.round(metrics.gc_pause_time_ms) : 0;
-  const ramGb = metrics.memory_used_mb ? (metrics.memory_used_mb / 1024).toFixed(1) : '3.8';
+  // Sin dato se muestra "—": nunca valores inventados
+  const fps = metrics.average_fps != null ? String(Math.round(metrics.average_fps)) : '—';
+  const gcPause = metrics.gc_pause_time_ms != null ? Math.round(metrics.gc_pause_time_ms) : 0;
+  const ramGb = metrics.memory_used_mb != null ? (metrics.memory_used_mb / 1024).toFixed(1) : '—';
 
   return (
     <output
