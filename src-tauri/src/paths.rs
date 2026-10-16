@@ -142,16 +142,17 @@ pub fn get_authorized_file_roots() -> Vec<PathBuf> {
     }
 
     // 4. Agregar carpetas de juego autorizadas desde los perfiles guardados en BD
+    //    (se revalidan aquí por si hay perfiles guardados antes de validar al guardar)
     if let Ok(profiles) = crate::db::get_profiles_sync() {
         for p in profiles {
-            if let Some(gd) = p.game_dir {
-                let path = PathBuf::from(&gd);
-                if path.is_absolute() {
-                    if let Ok(c) = path.canonicalize() {
-                        roots.push(c);
-                    } else {
-                        roots.push(path);
-                    }
+            if let Some(path) = p
+                .game_dir
+                .and_then(|gd| validate_profile_game_dir(&gd).ok())
+            {
+                if let Ok(c) = path.canonicalize() {
+                    roots.push(c);
+                } else {
+                    roots.push(path);
                 }
             }
         }
@@ -168,6 +169,65 @@ pub fn get_authorized_file_roots() -> Vec<PathBuf> {
     }
 
     roots
+}
+
+/// Valida el `game_dir` de un perfil. Cada perfil se convierte en raíz autorizada, así que se
+/// rechazan las carpetas demasiado amplias: la raíz de un disco, el home del usuario o cualquier
+/// carpeta que lo contenga, y las carpetas del sistema. Se comprueban la ruta y su destino real,
+/// porque un symlink podría apuntar a una de ellas.
+pub fn validate_profile_game_dir(game_dir: &str) -> Result<PathBuf, String> {
+    let path = PathBuf::from(game_dir.trim());
+    if !path.is_absolute() || path.components().any(|c| c == Component::ParentDir) {
+        return Err(
+            "Directorio de perfil no autorizado: debe ser una ruta absoluta sin '..'.".to_string(),
+        );
+    }
+    let resolved = path.canonicalize().ok();
+    if std::iter::once(path.as_path())
+        .chain(resolved.as_deref())
+        .any(is_too_broad_game_dir)
+    {
+        return Err(format!(
+            "Directorio de perfil no autorizado: '{}' es demasiado amplio (raíz del disco, carpeta personal o del sistema).",
+            path.display()
+        ));
+    }
+    Ok(path)
+}
+
+fn is_too_broad_game_dir(path: &Path) -> bool {
+    // Comparable entre rutas canónicas (`\\?\C:\`) y normales; sin mayúsculas en Windows
+    let fold = |p: &Path| -> PathBuf {
+        let s = p.to_string_lossy();
+        let s = s.strip_prefix(r"\\?\").unwrap_or(&s);
+        if cfg!(target_os = "windows") {
+            PathBuf::from(s.to_lowercase())
+        } else {
+            PathBuf::from(s)
+        }
+    };
+    let path = fold(path);
+
+    if path.parent().is_none() {
+        return true;
+    }
+    if let Some(home) = dirs::home_dir() {
+        if fold(&home).starts_with(&path) {
+            return true;
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    let system_dirs = [PathBuf::from(
+        std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".to_string()),
+    )];
+    #[cfg(not(target_os = "windows"))]
+    let system_dirs = [
+        "/etc", "/usr", "/bin", "/sbin", "/lib", "/boot", "/dev", "/proc", "/sys",
+    ]
+    .map(PathBuf::from);
+
+    system_dirs.iter().any(|d| path.starts_with(fold(d)))
 }
 
 /// Valida y normaliza una ruta de archivo asegurando que esté dentro de una raíz autorizada.
@@ -431,6 +491,42 @@ impl std::ops::Deref for SafeId {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_validate_profile_game_dir_rechaza_carpetas_amplias() {
+        assert!(validate_profile_game_dir("").is_err());
+        assert!(validate_profile_game_dir("relativa/instancia").is_err());
+
+        let home = dirs::home_dir().expect("home");
+        assert!(validate_profile_game_dir(&home.to_string_lossy()).is_err());
+        assert!(validate_profile_game_dir(&home.parent().unwrap().to_string_lossy()).is_err());
+        let root = home.ancestors().last().unwrap();
+        assert!(validate_profile_game_dir(&root.to_string_lossy()).is_err());
+
+        #[cfg(target_os = "windows")]
+        {
+            assert!(validate_profile_game_dir(r"C:\Windows\System32").is_err());
+            let upper = home.to_string_lossy().to_uppercase();
+            assert!(validate_profile_game_dir(&upper).is_err());
+        }
+        #[cfg(not(target_os = "windows"))]
+        assert!(validate_profile_game_dir("/etc/minecraft").is_err());
+
+        // Carpetas concretas de instancias, dentro o fuera del home, se aceptan
+        let instancia = home.join(".crystaltides").join("instances").join("x");
+        assert!(validate_profile_game_dir(&instancia.to_string_lossy()).is_ok());
+        let temp = tempfile::tempdir().expect("tempdir");
+        assert!(validate_profile_game_dir(&temp.path().to_string_lossy()).is_ok());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_validate_profile_game_dir_rechaza_symlink_a_carpeta_amplia() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let link = temp.path().join("todo");
+        std::os::unix::fs::symlink("/", &link).expect("symlink");
+        assert!(validate_profile_game_dir(&link.to_string_lossy()).is_err());
+    }
 
     #[test]
     fn test_safe_id_validation() {
