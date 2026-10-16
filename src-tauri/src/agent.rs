@@ -422,8 +422,24 @@ const EMBEDDED_CT_AGENT_DLL: &[u8] = include_bytes!("../assets/ct-agent.dll");
 const EMBEDDED_BOOST_FABRIC_JAR: &[u8] = include_bytes!("../assets/crystaltides-boost-fabric.jar");
 const EMBEDDED_BOOST_NEOFORGE_JAR: &[u8] =
     include_bytes!("../assets/crystaltides-boost-neoforge.jar");
-const LEGACY_BOOST_JAR_SHA256: &str =
-    "8b87d7242e7e37b57dde2997914bb69884fd253378c8856bddbcfbff27bfcfd8";
+/// SHA-256 de builds de crystaltides-boost.jar desplegados por versiones anteriores del launcher.
+/// Al reemplazar los jars embebidos, añadir aquí los hashes previos para que
+/// `remove_crystaltides_boost` pueda seguir limpiándolos de instancias existentes.
+const LEGACY_BOOST_JAR_SHA256: &[&str] = &[
+    "8b87d7242e7e37b57dde2997914bb69884fd253378c8856bddbcfbff27bfcfd8",
+    "55fbe3a673d0efdc614464c996d5a57d1c36b8a6afcb4f5b09bfd52a1f68917a", // fabric 1.0.0 (sin agent bridge)
+    "d667f0b8fa70d1dec49fc546fd3a5a2ce6589ac0ad86d206c1516bdc59568461", // neoforge 1.0.0 (sin agent bridge)
+];
+
+fn is_known_boost_jar(bytes: &[u8]) -> bool {
+    use sha2::Digest;
+
+    if bytes == EMBEDDED_BOOST_FABRIC_JAR || bytes == EMBEDDED_BOOST_NEOFORGE_JAR {
+        return true;
+    }
+    let sha256 = hex::encode(sha2::Sha256::digest(bytes));
+    LEGACY_BOOST_JAR_SHA256.contains(&sha256.as_str())
+}
 
 fn file_sha256_matches(path: &Path, expected_bytes: &[u8]) -> bool {
     let Ok(existing_bytes) = fs::read(path) else {
@@ -523,8 +539,6 @@ pub async fn deploy_crystaltides_boost(
 #[tauri::command]
 pub async fn remove_crystaltides_boost(game_dir: String) -> Result<bool, String> {
     tokio::task::spawn_blocking(move || {
-        use sha2::Digest;
-
         let base_path = validate_game_dir(&game_dir)?;
         let mods_dir = base_path.join("mods");
         let target_jar = mods_dir.join("crystaltides-boost.jar");
@@ -548,12 +562,7 @@ pub async fn remove_crystaltides_boost(game_dir: String) -> Result<bool, String>
             }
         };
 
-        let existing_sha256 = hex::encode(sha2::Sha256::digest(&existing_bytes));
-        let is_known_boost_jar = existing_bytes == EMBEDDED_BOOST_FABRIC_JAR
-            || existing_bytes == EMBEDDED_BOOST_NEOFORGE_JAR
-            || existing_sha256 == LEGACY_BOOST_JAR_SHA256;
-
-        if is_known_boost_jar {
+        if is_known_boost_jar(&existing_bytes) {
             if let Err(e) = fs::remove_file(&target_jar) {
                 crate::logger::log(
                     "WARN",
@@ -830,6 +839,66 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_ipc_game_bridge_wire_format() {
+        // Líneas exactas que emite IpcClient.java (game-bridge): sin fps/p99 ni datos GL
+        let handshake = r#"{"type":"handshake","token":"tok-1","minecraft_version":"1.21.1","client_version":"CrystalAgent-v2.0 (Windows 10, Java 21)","mods_count":0}"#;
+        match parse_ipc_line(handshake) {
+            Some(IncomingIpcMessage::Handshake {
+                token,
+                mods_count,
+                gl_renderer,
+                ..
+            }) => {
+                assert_eq!(token.as_deref(), Some("tok-1"));
+                assert_eq!(mods_count, Some(0));
+                assert!(gl_renderer.is_none());
+            }
+            other => panic!("Expected Handshake, got {:?}", other),
+        }
+
+        let telemetry = r#"{"type":"telemetry","gc_pause_time_ms":12.0,"memory_used_mb":2048,"memory_total_mb":4096,"swapchain_backend":"OpenGL/LWJGL"}"#;
+        match parse_ipc_line(telemetry) {
+            Some(IncomingIpcMessage::Telemetry {
+                fps,
+                frametime_p99_ms,
+                gc_pause_time_ms,
+                memory_total_mb,
+                swapchain_backend,
+                ..
+            }) => {
+                assert_eq!(fps, 0.0);
+                assert_eq!(frametime_p99_ms, 0.0);
+                assert_eq!(gc_pause_time_ms, 12.0);
+                assert_eq!(memory_total_mb, Some(4096));
+                assert_eq!(swapchain_backend.as_deref(), Some("OpenGL/LWJGL"));
+            }
+            other => panic!("Expected Telemetry, got {:?}", other),
+        }
+
+        // Con crystaltides-boost presente el agente añade fps y p99 (FrameStats)
+        let telemetry_with_frames = r#"{"type":"telemetry","fps":114.8,"frametime_p99_ms":10.06,"gc_pause_time_ms":0.0,"memory_used_mb":4,"memory_total_mb":8172,"swapchain_backend":"OpenGL/LWJGL"}"#;
+        match parse_ipc_line(telemetry_with_frames) {
+            Some(IncomingIpcMessage::Telemetry {
+                fps,
+                frametime_p99_ms,
+                ..
+            }) => {
+                assert_eq!(fps, 114.8);
+                assert_eq!(frametime_p99_ms, 10.06);
+            }
+            other => panic!("Expected Telemetry, got {:?}", other),
+        }
+
+        // PrintWriter.println en Windows termina con \r\n
+        match parse_ipc_line("{\"type\":\"game_ready\",\"load_duration_ms\":8123}\r\n") {
+            Some(IncomingIpcMessage::GameReady { load_duration_ms }) => {
+                assert_eq!(load_duration_ms, Some(8123));
+            }
+            other => panic!("Expected GameReady, got {:?}", other),
+        }
+    }
+
+    #[test]
     fn test_parse_ipc_invalid() {
         assert!(parse_ipc_line("").is_none());
         assert!(parse_ipc_line("not json").is_none());
@@ -979,24 +1048,60 @@ mod tests {
     }
 
     #[test]
+    fn test_is_known_boost_jar_accepts_embedded_and_previous_builds() {
+        assert!(is_known_boost_jar(EMBEDDED_BOOST_FABRIC_JAR));
+        assert!(is_known_boost_jar(EMBEDDED_BOOST_NEOFORGE_JAR));
+        assert!(!is_known_boost_jar(
+            b"some-other-mod-named-crystaltides-boost"
+        ));
+        assert!(!is_known_boost_jar(&[]));
+        for legacy in LEGACY_BOOST_JAR_SHA256 {
+            assert_eq!(legacy.len(), 64, "SHA-256 legacy mal formado: {}", legacy);
+        }
+    }
+
+    /// Extrae el checksum (última columna) de la fila de `file_name` en assets/MANIFEST.md
+    fn manifest_sha256_for(file_name: &str) -> Option<String> {
+        let manifest = include_str!("../assets/MANIFEST.md");
+        let row_prefix = format!("| `{}` |", file_name);
+        manifest
+            .lines()
+            .find(|line| line.starts_with(&row_prefix))
+            .and_then(|line| line.trim_end().trim_end_matches('|').rsplit('|').next())
+            .map(|cell| cell.trim().trim_matches('`').to_string())
+    }
+
+    #[test]
     fn test_embedded_assets_sha256_manifest_integrity() {
         use sha2::Digest;
         let fabric_boost_hash = hex::encode(sha2::Sha256::digest(EMBEDDED_BOOST_FABRIC_JAR));
         assert_eq!(
             fabric_boost_hash,
-            "55fbe3a673d0efdc614464c996d5a57d1c36b8a6afcb4f5b09bfd52a1f68917a"
+            "9c39a75d0ad8c87c84b1f56522a47575f8ecb5d280aea0e562a1443b6f4740a7"
+        );
+        assert_eq!(
+            manifest_sha256_for("crystaltides-boost-fabric.jar").as_deref(),
+            Some(fabric_boost_hash.as_str())
         );
 
         let neoforge_boost_hash = hex::encode(sha2::Sha256::digest(EMBEDDED_BOOST_NEOFORGE_JAR));
         assert_eq!(
             neoforge_boost_hash,
-            "d667f0b8fa70d1dec49fc546fd3a5a2ce6589ac0ad86d206c1516bdc59568461"
+            "e53774d3b5aa9227920d421515a6eae5a4b5ca2ee8e3233203948f6387d739e2"
+        );
+        assert_eq!(
+            manifest_sha256_for("crystaltides-boost-neoforge.jar").as_deref(),
+            Some(neoforge_boost_hash.as_str())
         );
 
         let bridge_jar_hash = hex::encode(sha2::Sha256::digest(EMBEDDED_AGENT_JAR));
         assert_eq!(
             bridge_jar_hash,
-            "7da11c27e1550c67cde46bd383a247872c26d5012ac431565fab52d9d34d63d5"
+            "191194c9ed3ab8c798efffa4f9369a3d2e83e875ba4cd4c3abc3a0af208f147b"
+        );
+        assert_eq!(
+            manifest_sha256_for("game-bridge.jar").as_deref(),
+            Some(bridge_jar_hash.as_str())
         );
 
         #[cfg(target_os = "windows")]
@@ -1005,6 +1110,10 @@ mod tests {
             assert_eq!(
                 ct_agent_hash,
                 "ba1aa3c7b9eb074a6be5480087216fbe32d73654eab695f2a676d5a84f94d6e8"
+            );
+            assert_eq!(
+                manifest_sha256_for("ct-agent.dll").as_deref(),
+                Some(ct_agent_hash.as_str())
             );
         }
     }
