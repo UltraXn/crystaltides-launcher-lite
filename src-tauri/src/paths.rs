@@ -260,6 +260,52 @@ pub fn get_launcher_instances_dir() -> PathBuf {
     }
 }
 
+/// Canonicaliza una ruta que puede no existir todavía: resuelve el ancestro existente más
+/// cercano y le añade el resto. Si no existe ninguno (p. ej. un disco ausente), la deja igual.
+fn canonicalize_lenient(path: &Path) -> std::io::Result<PathBuf> {
+    let mut ancestor = path;
+    while !ancestor.exists() {
+        match ancestor.parent() {
+            Some(p) => ancestor = p,
+            None => return Ok(path.to_path_buf()),
+        }
+    }
+    let relative = path.strip_prefix(ancestor).unwrap_or(Path::new(""));
+    Ok(ancestor.canonicalize()?.join(relative))
+}
+
+/// Quita el prefijo verbatim que añade `canonicalize` en Windows (`\\?\C:\` y `\\?\UNC\`).
+fn strip_verbatim_prefix(path: &Path) -> PathBuf {
+    let s = path.to_string_lossy();
+    if let Some(unc) = s.strip_prefix(r"\\?\UNC\") {
+        PathBuf::from(format!(r"\\{}", unc))
+    } else if let Some(disk) = s.strip_prefix(r"\\?\") {
+        PathBuf::from(disk)
+    } else {
+        path.to_path_buf()
+    }
+}
+
+/// `path` está dentro de `root` (o es `root`), comparando componente a componente. En Windows y
+/// macOS el sistema de archivos no distingue mayúsculas, así que la comparación tampoco.
+fn is_within_root(path: &Path, root: &Path) -> bool {
+    let same = |a: Component, b: Component| {
+        if cfg!(any(target_os = "windows", target_os = "macos")) {
+            a.as_os_str().to_string_lossy().to_lowercase()
+                == b.as_os_str().to_string_lossy().to_lowercase()
+        } else {
+            a == b
+        }
+    };
+    // Una raíz vacía o relativa no tiene componentes que comparar y lo autorizaría todo
+    if !root.is_absolute() {
+        return false;
+    }
+    let mut parts = path.components();
+    root.components()
+        .all(|r| parts.next().is_some_and(|p| same(p, r)))
+}
+
 /// Valida un directorio de juego de Minecraft o instancia.
 /// Debe ser una ruta absoluta, sin componentes `..`, y no vacía.
 pub fn validate_game_dir(game_dir: &str) -> Result<PathBuf, String> {
@@ -317,40 +363,17 @@ pub fn validate_game_dir(game_dir: &str) -> Result<PathBuf, String> {
         }
     }
 
-    let target_canonical = if path.exists() {
-        path.canonicalize()
-            .map_err(|e| format!("Error canonicalizando ruta de juego: {}", e))?
-    } else {
-        let mut ancestor = path.as_path();
-        while !ancestor.exists() {
-            match ancestor.parent() {
-                Some(p) => ancestor = p,
-                None => break,
-            }
-        }
-        if ancestor.exists() {
-            let canonical_ancestor = ancestor
-                .canonicalize()
-                .map_err(|e| format!("Error canonicalizando ancestro: {}", e))?;
-            let relative = path.strip_prefix(ancestor).unwrap_or(Path::new(""));
-            canonical_ancestor.join(relative)
-        } else {
-            path.clone()
-        }
-    };
+    let target_canonical = canonicalize_lenient(&path)
+        .map_err(|e| format!("Error canonicalizando ruta de juego: {}", e))?;
 
-    let authorized_roots = get_authorized_file_roots();
-    let is_authorized = authorized_roots.iter().any(|root| {
-        target_canonical.starts_with(root)
-            || path.starts_with(root)
-            || target_canonical
-                .to_string_lossy()
-                .to_lowercase()
-                .starts_with(&root.to_string_lossy().to_lowercase())
-            || path
-                .to_string_lossy()
-                .to_lowercase()
-                .starts_with(&root.to_string_lossy().to_lowercase())
+    // Ruta y raíces se normalizan igual (symlinks resueltos, sin `\\?\`) y se comparan por
+    // componentes: así `.crystaltides-otra` no cuela como `.crystaltides`, ni un symlink
+    // dentro de una raíz que apunte fuera de ella.
+    let target_cmp = strip_verbatim_prefix(&target_canonical);
+    let is_authorized = get_authorized_file_roots().iter().any(|root| {
+        canonicalize_lenient(root)
+            .map(|r| is_within_root(&target_cmp, &strip_verbatim_prefix(&r)))
+            .unwrap_or(false)
     });
 
     if !is_authorized {
@@ -512,5 +535,81 @@ mod tests {
         );
         #[cfg(target_os = "windows")]
         assert!(validate_game_dir("C:\\Windows\\System32").is_err());
+    }
+
+    #[test]
+    fn test_is_within_root_compara_componentes_no_prefijos_de_texto() {
+        #[cfg(target_os = "windows")]
+        let root = Path::new(r"C:\Users\ana\.crystaltides");
+        #[cfg(not(target_os = "windows"))]
+        let root = Path::new("/home/ana/.crystaltides");
+
+        assert!(is_within_root(root, root));
+        assert!(is_within_root(&root.join("instances").join("x"), root));
+        assert!(!is_within_root(
+            &root.with_file_name(".crystaltides-otra"),
+            root
+        ));
+        assert!(!is_within_root(
+            &root.with_file_name(".crystaltidesX").join("mods"),
+            root
+        ));
+        assert!(!is_within_root(root.parent().unwrap(), root));
+        // Raíces vacías o relativas nunca autorizan nada
+        assert!(!is_within_root(root, Path::new("")));
+        assert!(!is_within_root(root, Path::new("relativa")));
+    }
+
+    #[test]
+    fn test_is_within_root_mayusculas_segun_sistema() {
+        #[cfg(target_os = "windows")]
+        assert!(is_within_root(
+            Path::new(r"c:\USERS\Ana\.CrystalTides\instances"),
+            Path::new(r"C:\Users\ana\.crystaltides")
+        ));
+        #[cfg(target_os = "linux")]
+        assert!(!is_within_root(
+            Path::new("/home/ana/.CrystalTides/instances"),
+            Path::new("/home/ana/.crystaltides")
+        ));
+    }
+
+    #[test]
+    fn test_strip_verbatim_prefix() {
+        assert_eq!(
+            strip_verbatim_prefix(Path::new(r"\\?\C:\a\b")),
+            PathBuf::from(r"C:\a\b")
+        );
+        assert_eq!(
+            strip_verbatim_prefix(Path::new(r"\\?\UNC\srv\share\x")),
+            PathBuf::from(r"\\srv\share\x")
+        );
+        assert_eq!(
+            strip_verbatim_prefix(Path::new("/home/ana")),
+            PathBuf::from("/home/ana")
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_validate_game_dir_acepta_otra_capitalizacion_en_windows() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let upper = temp
+            .path()
+            .join("Instancia")
+            .to_string_lossy()
+            .to_uppercase();
+        assert!(validate_game_dir(&upper).is_ok());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_validate_game_dir_rechaza_symlink_que_sale_de_la_raiz() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let link = temp.path().join("escape");
+        std::os::unix::fs::symlink("/etc", &link).expect("symlink");
+        // La ruta "cruda" vive en una raíz autorizada (temp), pero resuelve a /etc
+        assert!(validate_game_dir(&link.to_string_lossy()).is_err());
+        assert!(validate_game_dir(&link.join("nuevo").to_string_lossy()).is_err());
     }
 }
