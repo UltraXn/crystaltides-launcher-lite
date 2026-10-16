@@ -144,12 +144,23 @@ const getSegmentWidth = (
   isCompact: boolean,
   showLabels: boolean,
 ): number => {
+  if (dockConfig.layoutMode === 'dock' && dockConfig.customSegmentWidth) {
+    const isLaunch = btnId === 'launch';
+    return isLaunch
+      ? Math.round(dockConfig.customSegmentWidth * 1.15)
+      : dockConfig.customSegmentWidth;
+  }
   const customW = dockConfig.buttonCustomizations?.[btnId]?.customWidth;
   if (customW) return customW;
   return getBaseButtonDimensions(btnId === 'launch', isCompact, showLabels).width;
 };
 
-export const getDockHeight = (isCompact: boolean, showLabels: boolean): number => {
+export const getDockHeight = (
+  isCompact: boolean,
+  showLabels: boolean,
+  customDockHeight?: number,
+): number => {
+  if (customDockHeight) return customDockHeight;
   if (showLabels) {
     return isCompact ? 74 : 108;
   }
@@ -166,7 +177,7 @@ const calculateDockDimensions = (
     (sum, btnId) => sum + getSegmentWidth(btnId, dockConfig, isCompact, showLabels),
     8,
   );
-  const height = getDockHeight(isCompact, showLabels);
+  const height = getDockHeight(isCompact, showLabels, dockConfig.customDockHeight);
   return { width: Math.max(280, width), height: Math.max(50, height) };
 };
 
@@ -228,8 +239,8 @@ export const getSafeYBelowHudBar = (
   winH: number = typeof window !== 'undefined' ? window.innerHeight : 720,
 ): number => {
   const dims = getElementDimensions(elementId, dockConfig);
-  // HUD Edit Bar bottom is ~103px + 12px clearance gap = 115px
-  const safePxY = 115 + dims.height / 2;
+  // HUD Edit Bar bottom is ~106px + 12px clearance gap = 118px
+  const safePxY = 118 + dims.height / 2;
   return Math.round((safePxY / winH) * 100 * 10) / 10;
 };
 
@@ -340,9 +351,9 @@ const getStaticWindowObstacles = (
       obstacles.push({
         id: 'static:hudBar',
         x: winW / 2,
-        y: 74,
+        y: 84,
         width: Math.min(winW - 60, 760),
-        height: 58,
+        height: 54,
       });
     }
   }

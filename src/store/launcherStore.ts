@@ -276,6 +276,8 @@ export interface DockConfig {
   buttonPositions: Record<string, { x: number; y: number }>;
   widgetPositions: WidgetPositions;
   scale: 'normal' | 'compact';
+  customDockHeight?: number;
+  customSegmentWidth?: number;
   showLabels: boolean;
   bgOpacity: number;
   borderRadius: number;
@@ -356,6 +358,7 @@ export interface LauncherState {
   activeModal: ModalType;
   customizingButtonId: DockButtonId | null;
   selectedDockButtonId: DockButtonId | null;
+  isButtonInspectorOpen: boolean;
   instances: GameInstance[];
   activeInstanceId: string;
   launch: LaunchProgress;
@@ -611,6 +614,7 @@ let state: LauncherState = {
   activeModal: 'none',
   customizingButtonId: null,
   selectedDockButtonId: null,
+  isButtonInspectorOpen: false,
   instances: getSavedInstances(),
   activeInstanceId: getActiveInstanceId(),
   launch: {
@@ -935,8 +939,15 @@ export const launcherActions = {
     setStoreState(() => ({ currentView: view }));
   },
 
-  setSelectedDockButtonId: (id: DockButtonId | null) => {
-    setStoreState(() => ({ selectedDockButtonId: id }));
+  setSelectedDockButtonId: (id: DockButtonId | null, openInspector = false) => {
+    setStoreState(() => ({
+      selectedDockButtonId: id,
+      isButtonInspectorOpen: id !== null ? openInspector : false,
+    }));
+  },
+
+  setButtonInspectorOpen: (open: boolean) => {
+    setStoreState(() => ({ isButtonInspectorOpen: open }));
   },
 
   setEditingHud: (editing: boolean) => {
@@ -951,6 +962,7 @@ export const launcherActions = {
       return {
         isEditingHud: editing,
         selectedDockButtonId: null,
+        isButtonInspectorOpen: false,
         customizingButtonId: null,
         activeModal: 'none',
         dockConfig: nextDockConfig,

@@ -346,10 +346,10 @@ const HorizontalPresetAndActionControls: React.FC<HorizontalPresetProps> = ({
           color: accentColor,
           fontWeight: 600,
         }}
-        title="Haz clic en cualquier botón del Dock para personalizarlo a fondo"
+        title="Haz doble clic en cualquier botón del Dock para personalizarlo a fondo"
       >
         <Sparkles size={12} />
-        <span>Clic en botón para personalizar</span>
+        <span>Doble clic en botón para personalizar</span>
       </div>
 
       <div style={{ width: '1px', height: '18px', background: 'rgba(255, 255, 255, 0.12)' }} />

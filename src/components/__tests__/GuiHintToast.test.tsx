@@ -30,7 +30,7 @@ describe('GuiHintToast', () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it('renderiza notificación toast en vista home cuando se activa edición', async () => {
+  it('suprime la notificación toast durante la edición activa de la GUI para no obstruir controles', async () => {
     const { container } = render(<GuiHintToast />);
 
     // Activamos modo edición en store
@@ -38,16 +38,32 @@ describe('GuiHintToast', () => {
       useLauncherStore.setState({ isEditingHud: true });
     });
 
-    // Avanzamos timers para transiciones
     act(() => {
       vi.advanceTimersByTime(200);
     });
 
+    // Mientras se edita, no debe haber pill flotante redundante obstruyendo
+    expect(container.querySelector('output')).toBeNull();
+  });
+
+  it('renderiza notificación de guardado al salir del modo de edición', () => {
+    const { container } = render(<GuiHintToast />);
+
+    act(() => {
+      useLauncherStore.setState({ isEditingHud: true });
+    });
+    act(() => {
+      useLauncherStore.setState({ isEditingHud: false });
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
     const output = container.querySelector('output');
-    if (output) {
-      expect(output).toBeDefined();
-      expect(output.getAttribute('aria-live')).toBe('polite');
-    }
+    expect(output).not.toBeNull();
+    expect(output?.getAttribute('aria-live')).toBe('polite');
+    expect(container.textContent).toContain('Disposición Guardada');
   });
 
   it('permite cerrar la notificación manualmente pulsando el botón cerrar', () => {
@@ -56,12 +72,16 @@ describe('GuiHintToast', () => {
     act(() => {
       useLauncherStore.setState({ isEditingHud: true });
     });
+    act(() => {
+      useLauncherStore.setState({ isEditingHud: false });
+    });
 
     act(() => {
       vi.advanceTimersByTime(100);
     });
 
     const closeBtn = container.querySelector('.capsule-close-btn');
+    expect(closeBtn).not.toBeNull();
     if (closeBtn) {
       fireEvent.click(closeBtn);
       act(() => {
@@ -77,8 +97,16 @@ describe('GuiHintToast', () => {
     act(() => {
       useLauncherStore.setState({ isEditingHud: true });
     });
+    act(() => {
+      useLauncherStore.setState({ isEditingHud: false });
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
 
     const output = container.querySelector('output');
+    expect(output).not.toBeNull();
     if (output) {
       fireEvent.mouseEnter(output);
       act(() => {
@@ -89,8 +117,38 @@ describe('GuiHintToast', () => {
 
       fireEvent.mouseLeave(output);
       act(() => {
-        vi.advanceTimersByTime(6000);
+        // El tiempo restante se reanuda y desaparece tras completar el ciclo
+        vi.advanceTimersByTime(3600);
       });
+      expect(container.querySelector('output')).toBeNull();
     }
+  });
+
+  it('desaparece automáticamente tras el tiempo de auto-desaparición investigado (3200ms + animación)', () => {
+    const { container } = render(<GuiHintToast />);
+
+    act(() => {
+      useLauncherStore.setState({ isEditingHud: true });
+    });
+    act(() => {
+      useLauncherStore.setState({ isEditingHud: false });
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    // En 2500ms aún debe estar visible
+    act(() => {
+      vi.advanceTimersByTime(2500);
+    });
+    expect(container.querySelector('output')).not.toBeNull();
+    expect(container.querySelector('.capsule-timer-bar')).not.toBeNull();
+
+    // Tras completar los 3200ms + 240ms de fade-out, debe removerse del DOM
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(container.querySelector('output')).toBeNull();
   });
 });

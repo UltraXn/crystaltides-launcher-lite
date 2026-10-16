@@ -202,8 +202,7 @@ export const GuestForm: React.FC<GuestFormProps> = ({
       </button>
       <button
         type="submit"
-        className="settings-action-btn"
-        style={{ background: '#22c55e', color: '#ffffff', borderColor: '#22c55e' }}
+        className="settings-action-btn primary"
       >
         {t.accounts.saveProfileBtn}
       </button>
@@ -269,12 +268,7 @@ const CrystalForm: React.FC<CrystalFormProps> = ({
       <button
         type="submit"
         disabled={loading}
-        className="settings-action-btn"
-        style={{
-          background: 'linear-gradient(135deg, #00e5ff 0%, #0284c7 100%)',
-          color: '#ffffff',
-          borderColor: '#00e5ff',
-        }}
+        className="settings-action-btn primary"
       >
         {loading ? 'Conectando...' : 'Conectar Cuenta'}
       </button>

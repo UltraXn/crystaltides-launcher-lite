@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, ArrowRight, ArrowLeft, Loader2, Globe } from 'lucide-react';
+import { X, ArrowRight, ArrowLeft, Loader2, Globe, Clock } from 'lucide-react';
 import { DiscordIcon } from './icons/DiscordIcon';
 import { SpainFlag, UsaFlag } from './icons/FlagIcons';
 import logoImg from '../assets/logo.webp';
@@ -231,11 +231,7 @@ export const LoginView: React.FC = () => {
               </label>
 
               {/* Solid Green Continue Button */}
-              <button
-                type="submit"
-                disabled={Boolean(activeLogin)}
-                className="login-continue-btn"
-              >
+              <button type="submit" disabled={Boolean(activeLogin)} className="login-continue-btn">
                 {activeLogin === 'offline' ? (
                   <Loader2 className="login-btn-spinner" />
                 ) : (
@@ -256,22 +252,23 @@ export const LoginView: React.FC = () => {
 
             {/* Social / Connected Accounts Options */}
             <div className="login-oauth-options">
-              {/* CrystalTides Login with Octopus Mascot */}
+              {/* CrystalTides Login with Octopus Mascot (Deshabilitado: Próximamente) */}
               <button
                 type="button"
-                aria-label="Iniciar sesión con cuenta de CrystalTides"
-                onClick={() => {
-                  setAuthMode('crystaltides');
-                  setErrorMsg(null);
-                }}
-                disabled={Boolean(activeLogin)}
-                className="login-crystaltides-box"
+                aria-label={`${t.login.crystalLoginTitle} - ${t.login.crystalComingSoon}`}
+                title={t.login.crystalComingSoonTooltip}
+                disabled
+                className="login-crystaltides-box disabled"
               >
                 <img src={logoImg} alt="Octopus Mascot" className="ct-box-logo" />
                 <div className="ct-box-labels">
                   <span className="ct-box-sub">{t.login.officialAccount}</span>
                   <span className="ct-box-title">{t.login.crystalLoginTitle}</span>
                 </div>
+                <span className="ct-coming-soon-badge">
+                  <Clock style={{ width: '10px', height: '10px', strokeWidth: 2.5 }} />
+                  <span>{t.login.crystalComingSoon}</span>
+                </span>
               </button>
 
               {/* Microsoft Login Box */}
@@ -398,11 +395,7 @@ export const LoginView: React.FC = () => {
               </label>
 
               {/* Cyan Glowing CrystalTides Submit Button */}
-              <button
-                type="submit"
-                disabled={Boolean(activeLogin)}
-                className="login-crystal-btn"
-              >
+              <button type="submit" disabled={Boolean(activeLogin)} className="login-crystal-btn">
                 {activeLogin === 'crystaltides' ? (
                   <Loader2 className="login-btn-spinner" />
                 ) : (

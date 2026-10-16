@@ -107,7 +107,8 @@ describe('HomeDock Component & Helpers Suite', () => {
     });
 
     it('resolveButtonZIndex asigna el zIndex correcto según el contexto', () => {
-      expect(resolveButtonZIndex(true, true)).toBe(960);
+      expect(resolveButtonZIndex(true, true)).toBe(990);
+      expect(resolveButtonZIndex(false, true, true)).toBe(980);
       expect(resolveButtonZIndex(false, true)).toBe(940);
       expect(resolveButtonZIndex(false, false)).toBe(25);
     });
@@ -377,9 +378,9 @@ describe('HomeDock Component & Helpers Suite', () => {
       }
 
       // Probar corner resize handle (SE)
-      const seHandle = container.querySelector(
-        '[title="Pescar esquina: arrastra para cambiar ancho y alto libremente"]',
-      );
+      const seHandle =
+        container.querySelector('.dock-resize-handle-se') ||
+        container.querySelector('[title*="arrastra para cambiar ancho y alto"]');
       expect(seHandle).not.toBeNull();
       if (seHandle) {
         fireEvent.mouseDown(seHandle, { clientX: 100, clientY: 100 });
@@ -463,10 +464,11 @@ describe('HomeDock Component & Helpers Suite', () => {
       expect(screen.getByLabelText('Fabric Logo')).toBeDefined();
     });
 
-    it('abre la pestaña icon al hacer clic en el icono y bg al hacer clic en el botón en modo edición sin botones anidados', () => {
+    it('selecciona el botón con un clic simple y abre el inspector con doble clic o clic derecho', () => {
       useLauncherStore.setState({
         isEditingHud: true,
         selectedDockButtonId: null,
+        isButtonInspectorOpen: false,
         dockConfig: {
           ...useLauncherStore.getState().dockConfig,
           layoutMode: 'dock',
@@ -479,30 +481,84 @@ describe('HomeDock Component & Helpers Suite', () => {
       // Verificar que no existen botones anidados (HTML estricto y válido)
       expect(container.querySelectorAll('button button').length).toBe(0);
 
-      // 1. Clic en el icono del botón de Ajustes -> debe abrir inspector en pestaña "icon"
-      const settingsIcon = container.querySelector('[data-dock-icon="true"]');
+      const settingsLabel = screen.getByText(/Ajustes/i);
+
+      // 1. Clic simple -> Selecciona el botón, pero NO abre el inspector
+      fireEvent.click(settingsLabel);
+      expect(useLauncherStore.getState().selectedDockButtonId).toBe('settings');
+      expect(useLauncherStore.getState().isButtonInspectorOpen).toBe(false);
+      expect(screen.queryByRole('dialog', { name: /Inspector de Botón/i })).toBeNull();
+
+      // 2. Doble clic en el icono de Ajustes -> Abre inspector en pestaña "icon"
+      const settingsButton = settingsLabel.closest('button');
+      const settingsIcon = settingsButton?.querySelector('[data-dock-icon="true"]');
       expect(settingsIcon).not.toBeNull();
       if (settingsIcon) {
-        fireEvent.click(settingsIcon);
+        fireEvent.doubleClick(settingsIcon);
       }
 
-      expect(useLauncherStore.getState().selectedDockButtonId).not.toBeNull();
+      expect(useLauncherStore.getState().selectedDockButtonId).toBe('settings');
+      expect(useLauncherStore.getState().isButtonInspectorOpen).toBe(true);
       expect(screen.getByRole('dialog', { name: /Inspector de Botón/i })).toBeDefined();
       expect(screen.getByText(/Escala del Icono/i)).toBeDefined();
 
       // Cerrar inspector
-      useLauncherStore.setState({ selectedDockButtonId: null });
+      useLauncherStore.setState({ isButtonInspectorOpen: false, selectedDockButtonId: null });
 
-      // 2. Clic en el resto del botón (la etiqueta de texto) -> debe abrir inspector en pestaña "bg"
-      const settingsLabel = screen.getByText(/Ajustes/i);
-      fireEvent.click(settingsLabel);
+      // 3. Clic derecho en el botón -> Abre directamente el inspector en pestaña "bg"
+      fireEvent.contextMenu(settingsLabel);
 
       expect(useLauncherStore.getState().selectedDockButtonId).toBe('settings');
+      expect(useLauncherStore.getState().isButtonInspectorOpen).toBe(true);
       expect(screen.getByRole('dialog', { name: /Inspector de Botón/i })).toBeDefined();
       expect(screen.getByText(/Color o tinte del fondo/i)).toBeDefined();
 
       // Verificar nuevamente que no existen botones anidados
       expect(container.querySelectorAll('button button').length).toBe(0);
+    });
+
+    it('restringe las dimensiones del dock en modo barra para que los botones nunca superen el límite permitido', () => {
+      useLauncherStore.setState({
+        dockConfig: {
+          ...useLauncherStore.getState().dockConfig,
+          layoutMode: 'dock',
+          scale: 'normal',
+          showLabels: true,
+          customSegmentWidth: 500, // Valor desmedido fuera de límites
+          customDockHeight: 400,   // Valor desmedido fuera de límites
+        },
+      });
+
+      const { container } = render(<HomeDock />);
+      const dock = container.querySelector('.home-unified-dock') as HTMLElement;
+      expect(dock).not.toBeNull();
+
+      // Los botones deben estar acotados al tope permitido (180px para normales y 130px de alto)
+      const firstButton = dock.querySelector('.dock-segment') as HTMLElement;
+      expect(firstButton).not.toBeNull();
+      expect(parseInt(firstButton.style.width, 10)).toBeLessThanOrEqual(207); // 180px * 1.15 = 207px para start
+      expect(parseInt(firstButton.style.height, 10)).toBeLessThanOrEqual(130);
+    });
+
+    it('mantiene el inspector abierto tras mover la barra o hacer clic mientras se edita', () => {
+      useLauncherStore.setState({
+        isEditingHud: true,
+        selectedDockButtonId: 'settings',
+        isButtonInspectorOpen: true,
+      });
+
+      const { container } = render(<HomeDock />);
+
+      expect(useLauncherStore.getState().isButtonInspectorOpen).toBe(true);
+      expect(screen.getByRole('dialog', { name: /Inspector de Botón/i })).toBeDefined();
+
+      const dockLabels = container.querySelectorAll('.dock-label');
+      expect(dockLabels.length).toBeGreaterThan(0);
+      fireEvent.click(dockLabels[3]); // Botón de Ajustes
+
+      // El inspector debe permanecer abierto
+      expect(useLauncherStore.getState().isButtonInspectorOpen).toBe(true);
+      expect(screen.getByRole('dialog', { name: /Inspector de Botón/i })).toBeDefined();
     });
   });
 });

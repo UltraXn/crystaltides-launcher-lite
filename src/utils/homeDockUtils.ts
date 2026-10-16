@@ -71,8 +71,14 @@ export const resolveButtonCursor = (isEditingHud: boolean, isDraggingThis: boole
   return isDraggingThis ? 'grabbing' : 'grab';
 };
 
-export const resolveButtonZIndex = (isDraggingThis: boolean, isEditingHud: boolean): number => {
-  if (isDraggingThis) return 960;
+export const resolveButtonZIndex = (
+  isDraggingThis: boolean,
+  isEditingHud: boolean,
+  isSelected = false,
+  isResizing = false,
+): number => {
+  if (isDraggingThis || isResizing) return 990;
+  if (isSelected) return 980;
   if (isEditingHud) return 940;
   return 25;
 };

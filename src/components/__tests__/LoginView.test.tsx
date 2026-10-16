@@ -17,14 +17,18 @@ describe('LoginView Component', () => {
     expect(screen.getByText('CrystalTides')).toBeDefined();
     expect(screen.getByText('Entrar a Jugar')).toBeDefined();
     expect(screen.getByText('Iniciar sesión con:')).toBeDefined();
-    expect(screen.getByText('Microsoft')).toBeDefined();
+    expect(screen.getByText('CrystalTides Login')).toBeDefined();
+    expect(screen.getByText('Próximamente')).toBeDefined();
+
+    const ctBtn = screen.getByRole('button', { name: /crystaltides login/i });
+    expect(ctBtn.getAttribute('disabled')).not.toBeNull();
 
     // Comprobar presencia de botones de idioma con banderas
     expect(screen.getByRole('button', { name: /español/i })).toBeDefined();
     expect(screen.getByRole('button', { name: /english/i })).toBeDefined();
   });
 
-  it('cambia dinámicamente los textos a inglés al hacer clic en EN, traduciendo "Login with:"', () => {
+  it('cambia dinámicamente los textos a inglés al hacer clic en EN, traduciendo "Login with:" y "Coming Soon"', () => {
     render(<LoginView />);
 
     const enBtn = screen.getByRole('button', { name: /english/i });
@@ -33,6 +37,7 @@ describe('LoginView Component', () => {
     expect(screen.getByText('Play Now')).toBeDefined();
     expect(screen.getByText('Login with:')).toBeDefined();
     expect(screen.getByText('Official Account:')).toBeDefined();
+    expect(screen.getByText('Coming Soon')).toBeDefined();
     expect(screen.getByPlaceholderText('Your Nickname (No-Premium)')).toBeDefined();
   });
 
