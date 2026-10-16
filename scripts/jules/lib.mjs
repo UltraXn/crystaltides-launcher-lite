@@ -38,6 +38,20 @@ const SESSION_MARKER = /<!--\s*jules-session:\s*(\d+)\s*-->/;
 const SPEC_ERROR_MARKER = '<!-- jules-spec-error -->';
 export { SPEC_ERROR_MARKER };
 
+/**
+ * Quita los comentarios HTML hasta que no quede ninguno: una sola pasada deja `<!--` si vienen
+ * anidados (`<!-<!-- x -->-`). Los delimitadores sueltos que queden también se eliminan.
+ */
+export function stripHtmlComments(input) {
+  let previous;
+  let text = String(input);
+  do {
+    previous = text;
+    text = text.replace(/<!--[\s\S]*?-->/g, '');
+  } while (text !== previous);
+  return text.replace(/<!--|-->/g, '');
+}
+
 /** Parsea secciones `### Título` (formato de issue forms y de los issues del intake). */
 export function parseTaskSpec(body = '') {
   const sections = {};
@@ -51,7 +65,7 @@ export function parseTaskSpec(body = '') {
       sections[current].push(line);
     }
   }
-  const text = (name) => (sections[name] || []).join('\n').replace(/<!--[\s\S]*?-->/g, '').trim();
+  const text = (name) => stripHtmlComments((sections[name] || []).join('\n')).trim();
   const noResponse = (v) => (v === '_No response_' ? '' : v);
 
   const files = text(SECTION.files)

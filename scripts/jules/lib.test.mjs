@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   loadConfig,
   parseTaskSpec,
+  stripHtmlComments,
   renderTaskSpec,
   validateTaskSpec,
   parseJulesSignature,
@@ -43,6 +44,14 @@ test('parsea el formato de issue forms (incluido "_No response_")', () => {
   assert.match(spec.acceptance, /test que lo cubra/);
   assert.equal(spec.kind, '');
   assert.deepEqual(validateTaskSpec(spec), []);
+});
+
+test('los comentarios HTML anidados o sueltos no sobreviven al parseo', () => {
+  assert.equal(stripHtmlComments('a<!-<!-- x -->- oculto -->b'), 'ab');
+  assert.equal(stripHtmlComments('a<!-- sin cerrar'), 'a sin cerrar');
+  assert.equal(stripHtmlComments('a --> b'), 'a  b');
+  const spec = parseTaskSpec('### Problema\n\nreal <!-<!-- x -->- oculto --> fin');
+  assert.equal(spec.problem, 'real  fin');
 });
 
 test('render -> parse conserva la especificación y el marcador de alerta', () => {
