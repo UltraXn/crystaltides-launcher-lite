@@ -334,9 +334,10 @@ pub fn add_defender_exclusion(folder_path: &Path) -> Result<(), String> {
 
     let script = "\
         try { \
-            $esc = $env:CT_EXCLUSION_PATH.Replace('''', ''''''); \
+            $esc = [Management.Automation.Language.CodeGeneration]::EscapeSingleQuotedStringContent($env:CT_EXCLUSION_PATH); \
             $cmd = \"Add-MpPreference -ExclusionPath '$esc'\"; \
-            $p = Start-Process powershell -Verb RunAs -ArgumentList @('-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', $cmd) -Wait -PassThru -ErrorAction Stop; \
+            $encoded = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($cmd)); \
+            $p = Start-Process powershell -Verb RunAs -ArgumentList @('-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-EncodedCommand', $encoded) -Wait -PassThru -ErrorAction Stop; \
             if ($p.ExitCode -ne 0) { exit $p.ExitCode } \
         } catch { \
             exit 1 \
