@@ -249,11 +249,21 @@ fn delete_installed_shortcuts() {
 }
 
 pub fn unregister_system_app(install_dir: &Path, remove_user_data: bool) -> Result<(), String> {
-    // 1. Eliminar entradas de registro nativamente
-    delete_uninstall_registry();
-
-    // 2. Eliminar accesos directos nativamente
-    delete_installed_shortcuts();
+    // 1-2. Registro y accesos directos: solo si pertenecen a esta instalación
+    let registered = get_registered_install_location();
+    if super::owns_system_registration(install_dir, registered.as_deref()) {
+        delete_uninstall_registry();
+        delete_installed_shortcuts();
+    } else {
+        crate::logger::log(
+            "WARN",
+            "Sys",
+            &format!(
+                "{:?} no es la instalación registrada ({:?}); se conservan registro y accesos directos.",
+                install_dir, registered
+            ),
+        );
+    }
 
     // 3. Limpieza de archivos en disco (conservando datos de usuario si remove_user_data es false)
     super::cleanup_install_dir(install_dir, remove_user_data);

@@ -1383,6 +1383,56 @@ pub fn get_shared_http_client() -> &'static reqwest::Client {
     })
 }
 
+/// `QuietUninstallString` del registro: `"<exe>" --uninstall --silent`.
+fn is_silent_uninstall(args: &[String]) -> bool {
+    let has = |flags: &[&str]| {
+        args.iter()
+            .skip(1)
+            .any(|arg| flags.iter().any(|flag| arg.eq_ignore_ascii_case(flag)))
+    };
+    has(&["--uninstall", "-u"]) && has(&["--silent"])
+}
+
+/// Desinstalación sin ventana con los mismos valores por defecto que `UninstallerView`:
+/// conserva los datos del usuario y programa el borrado de `bin/` al salir.
+fn run_silent_uninstall() -> i32 {
+    let current_exe = std::env::current_exe().unwrap_or_default();
+    let install_dir = resolve_install_dir(&current_exe);
+    if !sys::is_app_installed(&install_dir) {
+        logger::log(
+            "WARN",
+            "Uninstall",
+            &format!(
+                "Desinstalación silenciosa: no hay instalación en {:?}",
+                install_dir
+            ),
+        );
+        return 1;
+    }
+
+    let dir = install_dir.to_string_lossy().to_string();
+    match perform_self_uninstall_sync(&dir, Some(false))
+        .and_then(|()| schedule_self_deletion_sync(&dir))
+    {
+        Ok(()) => {
+            logger::log(
+                "INFO",
+                "Uninstall",
+                &format!("Desinstalación silenciosa completada en {:?}", install_dir),
+            );
+            0
+        }
+        Err(e) => {
+            logger::log(
+                "ERROR",
+                "Uninstall",
+                &format!("Desinstalación silenciosa fallida: {}", e),
+            );
+            1
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let args: Vec<String> = std::env::args().collect();
@@ -1390,6 +1440,9 @@ pub fn run() {
         // Termina el proceso si el traspaso tuvo éxito; si no, se sigue con el arranque normal
         // (el nombre temporal contiene "installer", así que se ofrece reinstalar).
         self_update::perform_update_handoff();
+    }
+    if is_silent_uninstall(&args) {
+        std::process::exit(run_silent_uninstall());
     }
 
     let http_client = get_shared_http_client().clone();
@@ -1531,6 +1584,27 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         fs::write(dir.path().join(".installed.json"), r#"{"installed":true}"#).unwrap();
         dir
+    }
+
+    #[test]
+    fn test_is_silent_uninstall_matches_registry_quiet_uninstall_string() {
+        let args = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert!(is_silent_uninstall(&args(&[
+            "C:\\x\\bin\\CrystalTidesLauncher.exe",
+            "--uninstall",
+            "--silent"
+        ])));
+        assert!(is_silent_uninstall(&args(&[
+            "launcher.exe",
+            "-u",
+            "--SILENT"
+        ])));
+        // Sin --silent sigue siendo el asistente con UI
+        assert!(!is_silent_uninstall(&args(&[
+            "launcher.exe",
+            "--uninstall"
+        ])));
+        assert!(!is_silent_uninstall(&args(&["launcher.exe", "--silent"])));
     }
 
     #[test]
