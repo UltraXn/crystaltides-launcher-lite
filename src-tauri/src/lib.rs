@@ -654,6 +654,21 @@ pub fn resolve_classpath_sync(
 
     let mut add_if_exists = |candidate: PathBuf| {
         if candidate.is_file() {
+            if let Ok(meta) = candidate.metadata() {
+                if meta.len() < 22 {
+                    crate::logger::log(
+                        "WARN",
+                        "Classpath",
+                        &format!(
+                            "Omitiendo archivo JAR vacío o corrupto (< 22 bytes) en classpath: {:?}",
+                            candidate
+                        ),
+                    );
+                    let _ = std::fs::remove_file(&candidate);
+                    return;
+                }
+            }
+
             let canonical_key = candidate
                 .canonicalize()
                 .map(|p| p.to_string_lossy().to_lowercase())
@@ -1783,5 +1798,40 @@ mod tests {
 
         // Limpieza
         let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_resolve_classpath_ignores_and_removes_zero_byte_jar() {
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        let game_dir = temp_dir.path().join("game");
+        let home_dir = temp_dir.path().join("home");
+        let ver_dir = game_dir.join("versions").join("quilt-loader-test-1.21.1");
+        fs::create_dir_all(&ver_dir).expect("create ver dir");
+
+        // Crear un jar corrupto de 0 bytes
+        let empty_jar = ver_dir.join("quilt-loader-test-1.21.1.jar");
+        fs::write(&empty_jar, b"").expect("write empty jar");
+        assert!(empty_jar.exists());
+
+        // Crear un jar base válido (con tamaño >= 22 bytes)
+        let base_ver_dir = game_dir.join("versions").join("1.21.1");
+        fs::create_dir_all(&base_ver_dir).expect("create base ver dir");
+        let valid_jar = base_ver_dir.join("1.21.1.jar");
+        fs::write(&valid_jar, b"PK\x05\x0600000000000000000000").expect("write valid jar");
+
+        let cp = resolve_classpath_sync(
+            &game_dir.to_string_lossy(),
+            &home_dir.to_string_lossy(),
+            "quilt-loader-test-1.21.1",
+            "1.21.1",
+            &[],
+        );
+
+        // El jar vacío no debe estar en el classpath
+        assert!(!cp.contains("quilt-loader-test-1.21.1.jar"));
+        // El jar vacío debe haber sido eliminado del disco para auto-sanar
+        assert!(!empty_jar.exists());
+        // El jar base válido sí debe estar presente
+        assert!(cp.contains("1.21.1.jar"));
     }
 }

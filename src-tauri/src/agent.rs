@@ -729,12 +729,21 @@ fn resolve_instance_mc_version(base_path: &Path) -> String {
     "1.21.1".to_string()
 }
 
+fn clean_path_for_jvm(path: &Path) -> String {
+    let s = path.to_string_lossy();
+    if let Some(stripped) = s.strip_prefix(r"\\?\") {
+        stripped.to_string()
+    } else {
+        s.to_string()
+    }
+}
+
 pub fn build_agent_jvm_args(base_path: &Path) -> Result<Vec<String>, String> {
     let natives_dir = base_path.join("natives");
     let mc_version = resolve_instance_mc_version(base_path);
 
     let mut args = vec![
-        format!("-Djava.library.path={}", natives_dir.to_string_lossy()),
+        format!("-Djava.library.path={}", clean_path_for_jvm(&natives_dir)),
         "-Dcrystaltides.agent.enabled=true".to_string(),
         format!("-Dcrystaltides.minecraft.version={}", mc_version),
         format!("-Dcrystaltides.ipc.port={}", get_actual_game_ipc_port()),
@@ -756,7 +765,7 @@ pub fn build_agent_jvm_args(base_path: &Path) -> Result<Vec<String>, String> {
 
     for candidate in &agent_jar_candidates {
         if candidate.exists() {
-            args.push(format!("-javaagent:{}", candidate.to_string_lossy()));
+            args.push(format!("-javaagent:{}", clean_path_for_jvm(candidate)));
             break;
         }
     }
@@ -768,7 +777,7 @@ pub fn build_agent_jvm_args(base_path: &Path) -> Result<Vec<String>, String> {
 
     for candidate in &ct_agent_candidates {
         if candidate.exists() {
-            args.push(format!("-agentpath:{}", candidate.to_string_lossy()));
+            args.push(format!("-agentpath:{}", clean_path_for_jvm(candidate)));
             break;
         }
     }

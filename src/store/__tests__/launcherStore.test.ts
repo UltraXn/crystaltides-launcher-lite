@@ -161,6 +161,18 @@ describe('launcherStore helpers & actions', () => {
       expect(resolveEffectiveLoaderVersion('neoforge', '21.1.100')).toBe('21.1.100');
       expect(resolveEffectiveLoaderVersion('fabric', '0.15.11')).toBe('0.15.11');
     });
+
+    it('extracts compound beta loader version from mcVersion when rawVersion is empty', () => {
+      expect(
+        resolveEffectiveLoaderVersion('quilt', '', 'quilt-loader-0.31.0-beta.4-26.2'),
+      ).toBe('0.31.0-beta.4');
+      expect(
+        resolveEffectiveLoaderVersion('quilt', '', 'quilt-loader-0.31.0-beta.4-26.2 (quilt)'),
+      ).toBe('0.31.0-beta.4');
+      expect(
+        resolveEffectiveLoaderVersion('fabric', '', 'fabric-loader-0.16.10-1.21.1'),
+      ).toBe('0.16.10');
+    });
   });
 
   describe('buildLaunchOptions', () => {

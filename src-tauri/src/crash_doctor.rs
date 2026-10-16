@@ -103,6 +103,17 @@ fn read_fallback_log_text(base: &Path) -> String {
     };
 
     if target_log.exists() {
+        // Ignorar logs obsoletos de sesiones pasadas (> 300 segundos)
+        if let Ok(meta) = fs::metadata(&target_log) {
+            if let Ok(modified) = meta.modified() {
+                if let Ok(elapsed) = std::time::SystemTime::now().duration_since(modified) {
+                    if elapsed.as_secs() > 300 {
+                        return String::new();
+                    }
+                }
+            }
+        }
+
         if let Ok(content) = fs::read_to_string(&target_log) {
             let lines: Vec<&str> = content.lines().collect();
             let start = if lines.len() > 300 {
@@ -129,6 +140,21 @@ fn match_diagnosis_patterns(text: &str, exit_code: Option<i32>) -> CrashDiagnosi
             recommendation: "Aumenta la RAM a un mínimo de 4096 MB en Ajustes del Launcher.".to_string(),
             suggested_action: Some(SuggestedAction::IncreaseRam),
             log_snippet: extract_snippet(text, "OutOfMemoryError"),
+        };
+    }
+
+    if text.contains("ZipException: zip file is empty")
+        || text.contains("zip file is empty")
+        || (text.contains("ZipException") && text.contains("error reading"))
+    {
+        return CrashDiagnosis {
+            crash_type: CrashType::CorruptedConfig,
+            title: "Archivo JAR Corrupto o Vacío (ZipException)".to_string(),
+            explanation: "Un archivo JAR en la versión o librerías de la instancia está vacío (0 bytes) o corrupto, provocando un error en el cargador de Minecraft.".to_string(),
+            offending_mod: None,
+            recommendation: "El Launcher ha detectado y eliminado automáticamente el archivo corrupto. Vuelve a iniciar para regenerarlo.".to_string(),
+            suggested_action: Some(SuggestedAction::ViewLogs),
+            log_snippet: extract_snippet(text, "ZipException"),
         };
     }
 

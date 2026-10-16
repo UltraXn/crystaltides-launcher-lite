@@ -33,6 +33,7 @@ import {
   getEffectiveActiveButtons,
 } from '../utils/collisionSystem';
 import { isVideoSource, clearDockPanorama, clearButtonMedia } from '../utils/wallpaperStorage';
+import { extractLoaderVersionFromCompound } from '../utils/settingsUtils';
 import { Language, getTranslation, TranslationDictionary } from '../i18n';
 
 export type { Language };
@@ -824,6 +825,13 @@ export const resolveEffectiveLoaderVersion = (
     return undefined;
   }
   const trimmed = rawVersion ? rawVersion.trim() : '';
+
+  // Si mcVersion es un identificador compuesto (ej: quilt-loader-0.31.0-beta.4-26.2), extraer la versión real del loader
+  const compoundLoaderVer = extractLoaderVersionFromCompound(mcVersion, loaderType);
+  if (compoundLoaderVer) {
+    return compoundLoaderVer;
+  }
+
   if (loaderType === 'neoforge') {
     if (!trimmed || trimmed === '21.1.65') {
       return '21.1.252';
@@ -834,7 +842,7 @@ export const resolveEffectiveLoaderVersion = (
     return trimmed || '0.16.10';
   }
   if (loaderType === 'quilt') {
-    return trimmed || '0.30.2';
+    return trimmed || '0.31.0-beta.4';
   }
   if (loaderType === 'forge') {
     if (trimmed) return trimmed;
@@ -1026,6 +1034,7 @@ export const launcherActions = {
         customCoordinates: { x: 50, y: 50 },
         buttonPositions: calculatedPositions,
         widgetPositions: { ...DEFAULT_DOCK_CONFIG.widgetPositions },
+        buttonOrder: ['instances', 'about', 'accounts', 'settings', 'launch'],
       };
 
       const sanitized = sanitizeAllPositions(nextConfig);
@@ -1050,8 +1059,29 @@ export const launcherActions = {
   },
 
   resetDockConfig: () => {
+    const freshDefault: DockConfig = {
+      ...DEFAULT_DOCK_CONFIG,
+      positionPreset: 'center',
+      customCoordinates: { x: 50, y: 50 },
+      buttonOrder: ['instances', 'about', 'accounts', 'settings', 'launch'],
+      visibleButtons: ['instances', 'about', 'accounts', 'settings', 'launch'],
+      buttonPositions: {
+        instances: { x: 26, y: 50 },
+        about: { x: 38, y: 50 },
+        accounts: { x: 50, y: 50 },
+        settings: { x: 62, y: 50 },
+        launch: { x: 74, y: 50 },
+      },
+      widgetPositions: {
+        userPill: { x: 8, y: 93 },
+        socials: { x: 50, y: 93 },
+        serverStatus: { x: 92, y: 93 },
+      },
+      customButtonColors: {},
+      buttonCustomizations: {},
+    };
     try {
-      localStorage.removeItem(DOCK_CONFIG_STORAGE_KEY);
+      localStorage.setItem(DOCK_CONFIG_STORAGE_KEY, JSON.stringify(freshDefault));
     } catch {}
     const currentConfig = state.dockConfig;
     clearDockPanorama().catch(() => {});
@@ -1069,7 +1099,7 @@ export const launcherActions = {
       clearButtonMedia(btnId, false).catch(() => {});
       clearButtonMedia(btnId, true).catch(() => {});
     }
-    setStoreState(() => ({ dockConfig: DEFAULT_DOCK_CONFIG }));
+    setStoreState(() => ({ dockConfig: freshDefault, hudManualSide: 'auto' }));
   },
 
   toggleDockButton: (id: DockButtonId) => {

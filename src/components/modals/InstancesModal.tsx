@@ -35,6 +35,7 @@ import {
   fetchInstalledLocalVersions,
   resolveBaseMinecraftVersion,
 } from '../../services/minecraftMetadataService';
+import { extractLoaderVersionFromCompound } from '../../utils/settingsUtils';
 import {
   listSingleplayerSaves,
   readServersDat,
@@ -615,17 +616,20 @@ export const InstancesModal: React.FC = () => {
                           width: '100%',
                           flexWrap: 'wrap',
                         }}
-                        title={`${inst.mcVersion} • ${inst.loaderType.toUpperCase()}${inst.loaderVersion ? ` (${inst.loaderVersion})` : ''}`}
+                        title={`${inst.mcVersion} • ${inst.loaderType.toUpperCase()}${
+                          extractLoaderVersionFromCompound(inst.mcVersion, inst.loaderType) ||
+                          inst.loaderVersion
+                            ? ` (${extractLoaderVersionFromCompound(inst.mcVersion, inst.loaderType) || inst.loaderVersion})`
+                            : ''
+                        }`}
                       >
                         <span>
                           {(() => {
                             const cleanMc = resolveBaseMinecraftVersion(inst.mcVersion);
                             const lType = inst.loaderType.toUpperCase();
                             const lVer =
-                              inst.loaderVersion ||
-                              (inst.mcVersion.includes('loader-')
-                                ? inst.mcVersion.split('-')[2]
-                                : undefined);
+                              extractLoaderVersionFromCompound(inst.mcVersion, inst.loaderType) ||
+                              inst.loaderVersion;
                             if (lVer && lType !== 'VANILLA') {
                               return `${cleanMc} • ${lType} (${lVer})`;
                             }

@@ -72,6 +72,7 @@ export const translations = {
     window: {
       minimize: 'Minimizar',
       maximize: 'Maximizar',
+      restore: 'Restaurar',
       close: 'Cerrar',
       edition: 'Edición Lite',
       badgeTitle: 'CrystalTides Launcher Lite',
@@ -189,6 +190,15 @@ export const translations = {
       cancel: 'Cancelar',
       close: 'Cerrar',
       openLogs: 'Ver Registros de Consola',
+      // Updates
+      updatesTitle: 'Actualizaciones del Sistema',
+      updatesDesc: 'Comprueba si existe una versión más reciente de CrystalTides Launcher Lite.',
+      checkUpdatesBtn: 'Buscar Actualización',
+      checkingUpdates: 'Buscando actualizaciones...',
+      upToDate: '¡Estás en la versión más reciente!',
+      updateAvailable: '¡Nueva versión disponible!',
+      viewDetails: 'Ver Detalles',
+      offlineUpdates: 'Servidor de actualización no disponible (Modo Dev / Offline)',
     },
     // Accounts Modal
     accounts: {
@@ -471,6 +481,7 @@ export const translations = {
     window: {
       minimize: 'Minimize',
       maximize: 'Maximize',
+      restore: 'Restore',
       close: 'Close',
       edition: 'Lite Edition',
       badgeTitle: 'CrystalTides Launcher Lite',
@@ -584,6 +595,15 @@ export const translations = {
       cancel: 'Cancel',
       close: 'Close',
       openLogs: 'View Console Logs',
+      // Updates
+      updatesTitle: 'System Updates',
+      updatesDesc: 'Check if a newer version of CrystalTides Launcher Lite is available.',
+      checkUpdatesBtn: 'Check for Updates',
+      checkingUpdates: 'Checking for updates...',
+      upToDate: 'You are on the latest version!',
+      updateAvailable: 'New version available!',
+      viewDetails: 'View Details',
+      offlineUpdates: 'Update server unavailable (Dev / Offline mode)',
     },
     // Accounts Modal
     accounts: {

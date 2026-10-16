@@ -838,5 +838,19 @@ describe('SettingsModal Component & Helpers Suite', () => {
         expect(defenderBtn).toBeDefined();
       });
     });
+
+    it('permite comprobar actualizaciones del sistema y mostrar feedback', async () => {
+      render(<SettingsModal />);
+      const updateBtn = screen.getByRole('button', {
+        name: /Buscar Actualización/i,
+      });
+      expect(updateBtn).toBeDefined();
+      fireEvent.click(updateBtn);
+
+      await waitFor(() => {
+        expect(screen.getByText(/¡Estás en la versión más reciente!/i)).toBeDefined();
+      });
+    });
   });
 });
+

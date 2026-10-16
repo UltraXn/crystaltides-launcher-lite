@@ -24,6 +24,8 @@ import {
   Globe,
   Puzzle,
   Lock,
+  RefreshCw,
+  GripVertical,
 } from 'lucide-react';
 import {
   useLauncherStore,
@@ -47,6 +49,10 @@ const LogViewerModal = React.lazy(() =>
 const ButtonCustomizerModal = React.lazy(() =>
   import('./ButtonCustomizerModal').then((m) => ({ default: m.ButtonCustomizerModal })),
 );
+const UpdaterModal = React.lazy(() =>
+  import('./UpdaterModal').then((m) => ({ default: m.UpdaterModal })),
+);
+import { checkForAppUpdates, type AppUpdateInfo } from '../../services/updateService';
 import {
   SettingsMinecraftSection,
   type SettingsMinecraftSectionProps,
@@ -129,6 +135,20 @@ export const SettingsModal: React.FC = () => {
   const [pendingHwAccel, setPendingHwAccel] = useState<boolean | null>(null);
   const [launcherDir, setLauncherDir] = useState('C:\\Users\\Default\\.crystaltides');
   const [isLogViewerOpen, setIsLogViewerOpen] = useState(false);
+
+  // Updates state
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+  const [updateFeedback, setUpdateFeedback] = useState<{
+    type: 'success' | 'available' | 'info';
+    message: string;
+  } | null>(null);
+  const [foundUpdate, setFoundUpdate] = useState<AppUpdateInfo | null>(null);
+  const [showUpdaterModal, setShowUpdaterModal] = useState(false);
+
+  // Dock button drag and drop state
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const dragSourceIndexRef = useRef<number | null>(null);
 
   // Wallpaper state
   const [customUrlInput, setCustomUrlInput] = useState('');
@@ -323,6 +343,7 @@ export const SettingsModal: React.FC = () => {
     setShowAllVersions(false);
     setDisableAnimations(false);
     setDisableHardwareAccel(false);
+    launcherActions.resetDockConfig();
   };
 
   const handleConfirmHwRestart = async (relaunchNow: boolean) => {
@@ -498,6 +519,34 @@ export const SettingsModal: React.FC = () => {
       message: 'Restablecido al fondo por defecto.',
     });
     setTimeout(() => setWallpaperFeedback(null), 3000);
+  };
+
+  const handleCheckUpdates = async () => {
+    setIsCheckingUpdate(true);
+    setUpdateFeedback(null);
+    try {
+      const info = await checkForAppUpdates();
+      if (info.available && info.version) {
+        setFoundUpdate(info);
+        setUpdateFeedback({
+          type: 'available',
+          message: `${t.settings.updateAvailable} (v${info.version})`,
+        });
+        setShowUpdaterModal(true);
+      } else {
+        setUpdateFeedback({
+          type: 'success',
+          message: `${t.settings.upToDate} (v${info.currentVersion})`,
+        });
+      }
+    } catch {
+      setUpdateFeedback({
+        type: 'info',
+        message: t.settings.offlineUpdates,
+      });
+    } finally {
+      setIsCheckingUpdate(false);
+    }
   };
 
   return (
@@ -1083,7 +1132,27 @@ export const SettingsModal: React.FC = () => {
                   para ocultarlos:
                 </p>
 
-                <div className="dock-buttons-reorder-list">
+                <div
+                  className={`dock-buttons-reorder-list ${draggedIndex !== null ? 'is-dragging' : ''}`}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const fromIndex =
+                      dragSourceIndexRef.current ?? (draggedIndex !== null ? draggedIndex : -1);
+                    if (fromIndex !== -1 && fromIndex !== dockConfig.buttonOrder.length - 1) {
+                      const newOrder = [...dockConfig.buttonOrder];
+                      const [movedItem] = newOrder.splice(fromIndex, 1);
+                      newOrder.push(movedItem);
+                      launcherActions.reorderDockButtons(newOrder);
+                    }
+                    dragSourceIndexRef.current = null;
+                    setDraggedIndex(null);
+                    setDragOverIndex(null);
+                  }}
+                >
                   {(() => {
                     const visibleButtonsSet = new Set(dockConfig.visibleButtons);
                     return dockConfig.buttonOrder.map((btnId: DockButtonId, index: number) => {
@@ -1127,62 +1196,139 @@ export const SettingsModal: React.FC = () => {
                       return (
                         <div
                           key={btnId}
-                          className={`dock-reorder-item ${!isVisible ? 'disabled' : ''}`}
+                          draggable={true}
+                          onDragStart={(e) => {
+                            const target = e.target as HTMLElement;
+                            if (target.closest('button') || target.closest('input')) {
+                              e.preventDefault();
+                              return;
+                            }
+                            dragSourceIndexRef.current = index;
+                            try {
+                              e.dataTransfer.setData('text/plain', String(index));
+                            } catch {}
+                            e.dataTransfer.effectAllowed = 'move';
+                            setDraggedIndex(index);
+                          }}
+                          onDragEnter={(e) => {
+                            e.preventDefault();
+                            e.dataTransfer.dropEffect = 'move';
+                            setDragOverIndex(index);
+                          }}
+                          onDragOver={(e) => {
+                            e.preventDefault();
+                            e.dataTransfer.dropEffect = 'move';
+                            if (dragOverIndex !== index) {
+                              setDragOverIndex(index);
+                            }
+                          }}
+                          onDragLeave={(e) => {
+                            if (e.currentTarget.contains(e.relatedTarget as Node)) {
+                              return;
+                            }
+                            if (dragOverIndex === index) {
+                              setDragOverIndex(null);
+                            }
+                          }}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            let fromIndex: number | null = null;
+                            try {
+                              const fromStr = e.dataTransfer.getData('text/plain');
+                              if (fromStr !== '' && !isNaN(parseInt(fromStr, 10))) {
+                                fromIndex = parseInt(fromStr, 10);
+                              }
+                            } catch {}
+                            if (fromIndex === null || isNaN(fromIndex)) {
+                              fromIndex = dragSourceIndexRef.current ?? draggedIndex;
+                            }
+                            if (
+                              fromIndex !== null &&
+                              !isNaN(fromIndex) &&
+                              fromIndex !== index &&
+                              fromIndex >= 0 &&
+                              fromIndex < dockConfig.buttonOrder.length
+                            ) {
+                              const newOrder = [...dockConfig.buttonOrder];
+                              const [movedItem] = newOrder.splice(fromIndex, 1);
+                              newOrder.splice(index, 0, movedItem);
+                              launcherActions.reorderDockButtons(newOrder);
+                            }
+                            dragSourceIndexRef.current = null;
+                            setDraggedIndex(null);
+                            setDragOverIndex(null);
+                          }}
+                          onDragEnd={() => {
+                            dragSourceIndexRef.current = null;
+                            setDraggedIndex(null);
+                            setDragOverIndex(null);
+                          }}
+                          className={`dock-reorder-item ${!isVisible ? 'disabled' : ''} ${
+                            draggedIndex === index ? 'dragging' : ''
+                          } ${dragOverIndex === index ? 'drag-over' : ''}`}
                         >
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <div
                               className="dock-drag-handle"
+                              title="Arrastrar para reordenar"
                               style={{
-                                width: '8px',
-                                height: '8px',
-                                borderRadius: '50%',
-                                backgroundColor: activeBtnColor,
-                                boxShadow: `0 0 6px ${activeBtnColor}`,
-                                flexShrink: 0,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '3px',
+                                cursor: 'grab',
                               }}
-                            />
+                            >
+                              <GripVertical
+                                size={13}
+                                style={{ color: 'rgba(248, 250, 252, 0.4)' }}
+                              />
+                              <div
+                                style={{
+                                  width: '7px',
+                                  height: '7px',
+                                  borderRadius: '50%',
+                                  backgroundColor: activeBtnColor,
+                                  boxShadow: `0 0 5px ${activeBtnColor}`,
+                                  flexShrink: 0,
+                                }}
+                              />
+                            </div>
                             {itemInfo.icon}
                             <span style={{ fontSize: '11.5px', fontWeight: 500, color: '#f8fafc' }}>
                               {itemInfo.name}
                             </span>
                           </div>
 
-                          <div className="dock-reorder-actions" style={{ gap: '6px' }}>
+                          <div
+                            className="dock-reorder-actions"
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              flexShrink: 0,
+                            }}
+                          >
                             {/* Advanced Customizer (Background, Video, SVG, Sizing, FX, Color) */}
                             <button
                               type="button"
                               onClick={() => launcherActions.openButtonCustomizer(btnId)}
-                              className="dock-action-icon-btn"
+                              className={`dock-action-customize-btn ${
+                                dockConfig.buttonCustomizations?.[btnId] ? 'has-customization' : ''
+                              }`}
                               title="Personalizar fondo, vídeo, tamaño libre, SVG o efectos especiales"
-                              style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '4px',
-                                padding: '4px 8px',
-                                borderRadius: '6px',
-                                background: dockConfig.buttonCustomizations?.[btnId]
-                                  ? 'rgba(22, 160, 133, 0.18)'
-                                  : 'rgba(255, 255, 255, 0.05)',
-                                border: dockConfig.buttonCustomizations?.[btnId]
-                                  ? '1px solid rgba(22, 160, 133, 0.45)'
-                                  : '1px solid rgba(255, 255, 255, 0.1)',
-                                color: dockConfig.buttonCustomizations?.[btnId]
-                                  ? '#16A085'
-                                  : '#cbd5e1',
-                                fontSize: '11px',
-                                fontWeight: 600,
-                                cursor: 'pointer',
-                              }}
                             >
                               <Sparkles size={12} />
                               <span>Personalizar</span>
                             </button>
 
-                            {/* Individual Color Picker */}
+                            {/* Individual Color Picker (Compact 26x26) */}
                             <CustomColorPicker
                               color={activeBtnColor}
                               onChange={(hex) => launcherActions.setButtonColor(btnId, hex)}
                               label="Pintar"
+                              compact={true}
+                              alignRight={true}
                             />
                             {isCustomColor && (
                               <button
@@ -1358,218 +1504,220 @@ export const SettingsModal: React.FC = () => {
                       mod.accentColor || mod.slots.dockButton?.defaultColor || '#16A085';
                     const hasModal = Boolean(mod.slots.modal);
 
-                  return (
-                    <div
-                      key={mod.id}
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '8px',
-                        padding: '12px 14px',
-                        borderRadius: '10px',
-                        background: enabled
-                          ? 'rgba(255, 255, 255, 0.035)'
-                          : 'rgba(255, 255, 255, 0.015)',
-                        border: enabled
-                          ? `1px solid ${modAccent}44`
-                          : '1px solid rgba(255, 255, 255, 0.06)',
-                        transition: 'border-color 0.2s ease, background-color 0.2s ease',
-                      }}
-                    >
+                    return (
                       <div
+                        key={mod.id}
                         style={{
                           display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          gap: '12px',
+                          flexDirection: 'column',
+                          gap: '8px',
+                          padding: '12px 14px',
+                          borderRadius: '10px',
+                          background: enabled
+                            ? 'rgba(255, 255, 255, 0.035)'
+                            : 'rgba(255, 255, 255, 0.015)',
+                          border: enabled
+                            ? `1px solid ${modAccent}44`
+                            : '1px solid rgba(255, 255, 255, 0.06)',
+                          transition: 'border-color 0.2s ease, background-color 0.2s ease',
                         }}
                       >
                         <div
                           style={{
                             display: 'flex',
                             alignItems: 'center',
-                            gap: '10px',
-                            minWidth: 0,
+                            justifyContent: 'space-between',
+                            gap: '12px',
                           }}
                         >
                           <div
                             style={{
-                              width: '32px',
-                              height: '32px',
-                              borderRadius: '8px',
-                              background: `${modAccent}18`,
-                              border: `1px solid ${modAccent}33`,
                               display: 'flex',
                               alignItems: 'center',
-                              justifyContent: 'center',
-                              color: modAccent,
-                              flexShrink: 0,
+                              gap: '10px',
+                              minWidth: 0,
                             }}
                           >
-                            <Puzzle size={16} />
-                          </div>
-                          <div style={{ minWidth: 0 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <span
-                                style={{
-                                  fontSize: '12.5px',
-                                  fontWeight: 700,
-                                  color: enabled ? '#f8fafc' : 'rgba(248, 250, 252, 0.6)',
-                                }}
-                              >
-                                {mod.name}
-                              </span>
-                              <span
-                                style={{
-                                  fontSize: '10px',
-                                  padding: '1px 6px',
-                                  borderRadius: '4px',
-                                  background: 'rgba(255, 255, 255, 0.06)',
-                                  color: 'rgba(248, 250, 252, 0.5)',
-                                  fontWeight: 600,
-                                }}
-                              >
-                                v{mod.version}
-                              </span>
-                              {mod.author && (
+                            <div
+                              style={{
+                                width: '32px',
+                                height: '32px',
+                                borderRadius: '8px',
+                                background: `${modAccent}18`,
+                                border: `1px solid ${modAccent}33`,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                color: modAccent,
+                                flexShrink: 0,
+                              }}
+                            >
+                              <Puzzle size={16} />
+                            </div>
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span
+                                  style={{
+                                    fontSize: '12.5px',
+                                    fontWeight: 700,
+                                    color: enabled ? '#f8fafc' : 'rgba(248, 250, 252, 0.6)',
+                                  }}
+                                >
+                                  {mod.name}
+                                </span>
                                 <span
                                   style={{
                                     fontSize: '10px',
-                                    color: 'rgba(248, 250, 252, 0.4)',
+                                    padding: '1px 6px',
+                                    borderRadius: '4px',
+                                    background: 'rgba(255, 255, 255, 0.06)',
+                                    color: 'rgba(248, 250, 252, 0.5)',
+                                    fontWeight: 600,
                                   }}
                                 >
-                                  por {mod.author}
+                                  v{mod.version}
                                 </span>
-                              )}
+                                {mod.author && (
+                                  <span
+                                    style={{
+                                      fontSize: '10px',
+                                      color: 'rgba(248, 250, 252, 0.4)',
+                                    }}
+                                  >
+                                    por {mod.author}
+                                  </span>
+                                )}
+                              </div>
+                              <p
+                                style={{
+                                  fontSize: '11px',
+                                  color: 'rgba(248, 250, 252, 0.55)',
+                                  margin: '2px 0 0 0',
+                                  lineHeight: 1.35,
+                                }}
+                              >
+                                {mod.description}
+                              </p>
                             </div>
-                            <p
-                              style={{
-                                fontSize: '11px',
-                                color: 'rgba(248, 250, 252, 0.55)',
-                                margin: '2px 0 0 0',
-                                lineHeight: 1.35,
-                              }}
-                            >
-                              {mod.description}
-                            </p>
                           </div>
-                        </div>
 
-                        <div
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            flexShrink: 0,
-                          }}
-                        >
-                          {hasModal && enabled && (
+                          <div
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                              flexShrink: 0,
+                            }}
+                          >
+                            {hasModal && enabled && (
+                              <button
+                                type="button"
+                                onClick={() => openModuleModal(mod.id)}
+                                style={{
+                                  padding: '5px 10px',
+                                  borderRadius: '6px',
+                                  border: `1px solid ${modAccent}55`,
+                                  background: `${modAccent}15`,
+                                  color: modAccent,
+                                  fontSize: '11px',
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  transition:
+                                    'background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease',
+                                }}
+                              >
+                                Abrir
+                              </button>
+                            )}
+
                             <button
                               type="button"
-                              onClick={() => openModuleModal(mod.id)}
+                              onClick={() => toggleModule(mod.id)}
                               style={{
-                                padding: '5px 10px',
+                                padding: '5px 12px',
                                 borderRadius: '6px',
-                                border: `1px solid ${modAccent}55`,
-                                background: `${modAccent}15`,
-                                color: modAccent,
+                                border: enabled
+                                  ? `1px solid ${modAccent}66`
+                                  : '1px solid rgba(255, 255, 255, 0.1)',
+                                background: enabled
+                                  ? `${modAccent}25`
+                                  : 'rgba(255, 255, 255, 0.04)',
+                                color: enabled ? '#f8fafc' : 'rgba(248, 250, 252, 0.5)',
                                 fontSize: '11px',
-                                fontWeight: 600,
+                                fontWeight: 700,
                                 cursor: 'pointer',
                                 display: 'flex',
                                 alignItems: 'center',
-                                gap: '4px',
+                                gap: '5px',
                                 transition:
                                   'background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease',
                               }}
                             >
-                              Abrir
+                              {enabled ? (
+                                <>
+                                  <Check size={12} color={modAccent} />
+                                  Habilitado
+                                </>
+                              ) : (
+                                'Deshabilitado'
+                              )}
                             </button>
-                          )}
+                          </div>
+                        </div>
 
-                          <button
-                            type="button"
-                            onClick={() => toggleModule(mod.id)}
-                            style={{
-                              padding: '5px 12px',
-                              borderRadius: '6px',
-                              border: enabled
-                                ? `1px solid ${modAccent}66`
-                                : '1px solid rgba(255, 255, 255, 0.1)',
-                              background: enabled ? `${modAccent}25` : 'rgba(255, 255, 255, 0.04)',
-                              color: enabled ? '#f8fafc' : 'rgba(248, 250, 252, 0.5)',
-                              fontSize: '11px',
-                              fontWeight: 700,
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '5px',
-                              transition:
-                                'background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease',
-                            }}
-                          >
-                            {enabled ? (
-                              <>
-                                <Check size={12} color={modAccent} />
-                                Habilitado
-                              </>
-                            ) : (
-                              'Deshabilitado'
-                            )}
-                          </button>
+                        {/* Slots info tags */}
+                        <div style={{ display: 'flex', gap: '6px', marginTop: '2px' }}>
+                          {mod.slots.dockButton && (
+                            <span
+                              style={{
+                                fontSize: '9.5px',
+                                padding: '1px 5px',
+                                borderRadius: '3px',
+                                background: 'rgba(22, 160, 133, 0.14)',
+                                color: '#16A085',
+                                border: '1px solid rgba(22, 160, 133, 0.3)',
+                              }}
+                            >
+                              Dock Integrado
+                            </span>
+                          )}
+                          {mod.slots.modal && (
+                            <span
+                              style={{
+                                fontSize: '9.5px',
+                                padding: '1px 5px',
+                                borderRadius: '3px',
+                                background: 'rgba(168, 85, 247, 0.1)',
+                                color: '#a855f7',
+                                border: '1px solid rgba(168, 85, 247, 0.2)',
+                              }}
+                            >
+                              Herramienta Modal
+                            </span>
+                          )}
+                          {mod.slots.widget && (
+                            <span
+                              style={{
+                                fontSize: '9.5px',
+                                padding: '1px 5px',
+                                borderRadius: '3px',
+                                background: 'rgba(34, 197, 94, 0.1)',
+                                color: '#22c55e',
+                                border: '1px solid rgba(34, 197, 94, 0.2)',
+                              }}
+                            >
+                              Widget UI
+                            </span>
+                          )}
                         </div>
                       </div>
-
-                      {/* Slots info tags */}
-                      <div style={{ display: 'flex', gap: '6px', marginTop: '2px' }}>
-                        {mod.slots.dockButton && (
-                          <span
-                            style={{
-                              fontSize: '9.5px',
-                              padding: '1px 5px',
-                              borderRadius: '3px',
-                              background: 'rgba(22, 160, 133, 0.14)',
-                              color: '#16A085',
-                              border: '1px solid rgba(22, 160, 133, 0.3)',
-                            }}
-                          >
-                            Dock Integrado
-                          </span>
-                        )}
-                        {mod.slots.modal && (
-                          <span
-                            style={{
-                              fontSize: '9.5px',
-                              padding: '1px 5px',
-                              borderRadius: '3px',
-                              background: 'rgba(168, 85, 247, 0.1)',
-                              color: '#a855f7',
-                              border: '1px solid rgba(168, 85, 247, 0.2)',
-                            }}
-                          >
-                            Herramienta Modal
-                          </span>
-                        )}
-                        {mod.slots.widget && (
-                          <span
-                            style={{
-                              fontSize: '9.5px',
-                              padding: '1px 5px',
-                              borderRadius: '3px',
-                              background: 'rgba(34, 197, 94, 0.1)',
-                              color: '#22c55e',
-                              border: '1px solid rgba(34, 197, 94, 0.2)',
-                            }}
-                          >
-                            Widget UI
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                });
-              })()}
-            </div>
+                    );
+                  });
+                })()}
+              </div>
             </div>
 
             {/* Section 3: Advanced Options Checkboxes */}
@@ -1698,8 +1846,17 @@ export const SettingsModal: React.FC = () => {
                 </div>
 
                 <div style={{ marginTop: '6px' }}>
-                  <p style={{ fontSize: '11px', color: 'var(--text-muted, #888)', margin: '0 0 6px 0', lineHeight: 1.4 }}>
-                    Añade la carpeta de instalación de CrystalTides a las exclusiones de Windows Defender para optimizar el rendimiento de I/O al cargar mods. Requiere confirmación de Administrador (UAC).
+                  <p
+                    style={{
+                      fontSize: '11px',
+                      color: 'var(--text-muted, #888)',
+                      margin: '0 0 6px 0',
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    Añade la carpeta de instalación de CrystalTides a las exclusiones de Windows
+                    Defender para optimizar el rendimiento de I/O al cargar mods. Requiere
+                    confirmación de Administrador (UAC).
                   </p>
                   <button
                     type="button"
@@ -1760,6 +1917,115 @@ export const SettingsModal: React.FC = () => {
               </div>
             </div>
 
+            {/* Section: Actualizaciones del Sistema */}
+            <div
+              className="settings-section"
+              style={{ borderTop: '1px solid rgba(255, 255, 255, 0.05)', paddingTop: '14px' }}
+            >
+              <div className="settings-section-header">
+                <span
+                  className="settings-label-title"
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#2DD4BF' }}
+                >
+                  <Sparkles size={14} style={{ color: '#2DD4BF' }} />
+                  {t.settings.updatesTitle}
+                </span>
+                <span
+                  style={{
+                    fontSize: '11px',
+                    color: 'rgba(255, 255, 255, 0.45)',
+                    fontFamily: 'monospace',
+                  }}
+                >
+                  v0.1.0-lite
+                </span>
+              </div>
+              <p
+                style={{
+                  fontSize: '11px',
+                  color: 'rgba(248, 250, 252, 0.5)',
+                  margin: '4px 0 10px 0',
+                }}
+              >
+                {t.settings.updatesDesc}
+              </p>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  disabled={isCheckingUpdate}
+                  onClick={handleCheckUpdates}
+                  className="settings-action-btn"
+                  style={{
+                    background: isCheckingUpdate
+                      ? 'rgba(45, 212, 191, 0.1)'
+                      : 'rgba(45, 212, 191, 0.15)',
+                    border: '1px solid rgba(45, 212, 191, 0.35)',
+                    borderRadius: '8px',
+                    color: '#2DD4BF',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    padding: '8px 14px',
+                    cursor: isCheckingUpdate ? 'wait' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '7px',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  <RefreshCw
+                    size={13}
+                    style={{
+                      animation: isCheckingUpdate ? 'spin 1s linear infinite' : 'none',
+                    }}
+                  />
+                  <span>
+                    {isCheckingUpdate ? t.settings.checkingUpdates : t.settings.checkUpdatesBtn}
+                  </span>
+                </button>
+
+                {updateFeedback && (
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      fontSize: '11.5px',
+                      color:
+                        updateFeedback.type === 'success'
+                          ? '#34D399'
+                          : updateFeedback.type === 'available'
+                            ? '#2DD4BF'
+                            : '#94A3B8',
+                    }}
+                  >
+                    {updateFeedback.type === 'success' && <CheckCircle2 size={13} />}
+                    {updateFeedback.type === 'available' && <Sparkles size={13} />}
+                    <span>{updateFeedback.message}</span>
+                    {updateFeedback.type === 'available' && foundUpdate && (
+                      <button
+                        type="button"
+                        onClick={() => setShowUpdaterModal(true)}
+                        style={{
+                          background: 'linear-gradient(135deg, #2DD4BF 0%, #0D9488 100%)',
+                          border: 'none',
+                          color: '#052A26',
+                          borderRadius: '6px',
+                          padding: '4px 8px',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          marginLeft: '4px',
+                        }}
+                      >
+                        {t.settings.viewDetails}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
             {/* Section 6: App Lifecycle */}
             <div
               className="settings-section"
@@ -1811,6 +2077,12 @@ export const SettingsModal: React.FC = () => {
       {isLogViewerOpen && (
         <Suspense fallback={null}>
           <LogViewerModal isOpen={isLogViewerOpen} onClose={() => setIsLogViewerOpen(false)} />
+        </Suspense>
+      )}
+
+      {showUpdaterModal && foundUpdate && (
+        <Suspense fallback={null}>
+          <UpdaterModal updateInfo={foundUpdate} onClose={() => setShowUpdaterModal(false)} />
         </Suspense>
       )}
 
