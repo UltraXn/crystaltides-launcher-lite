@@ -223,6 +223,10 @@ pub async fn db_get_profiles() -> Result<Vec<ProfileRecord>, String> {
 }
 
 pub fn save_profile(conn: &Connection, profile: &ProfileRecord) -> Result<(), String> {
+    // game_dir pasa a ser raíz autorizada de disco (paths::get_authorized_file_roots)
+    if let Some(gd) = profile.game_dir.as_deref().filter(|s| !s.trim().is_empty()) {
+        crate::paths::validate_profile_game_dir(gd)?;
+    }
     conn.execute(
         "INSERT INTO profiles (id, name, mc_version, loader_type, loader_version, min_ram, max_ram, jvm_args, game_dir, resolution_width, resolution_height, fullscreen, pre_launch_command, wrapper_command, post_exit_command, environment_variables, created_at, updated_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
@@ -551,5 +555,42 @@ mod tests {
         delete_profile(&conn, "prof-test").unwrap();
         let profiles_after = get_profiles(&conn).unwrap();
         assert!(profiles_after.is_empty());
+    }
+
+    #[test]
+    fn test_db_save_profile_rechaza_game_dir_demasiado_amplio() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_db(&conn).unwrap();
+        let temp = tempfile::tempdir().unwrap();
+
+        let mut profile = ProfileRecord {
+            id: "prof-dir".to_string(),
+            name: "Dir".to_string(),
+            mc_version: "1.21.1".to_string(),
+            loader_type: "fabric".to_string(),
+            loader_version: None,
+            min_ram: 1024,
+            max_ram: 4096,
+            jvm_args: None,
+            game_dir: Some(temp.path().join("instancia").to_string_lossy().to_string()),
+            resolution_width: None,
+            resolution_height: None,
+            fullscreen: None,
+            pre_launch_command: None,
+            wrapper_command: None,
+            post_exit_command: None,
+            environment_variables: None,
+            created_at: 1000,
+            updated_at: 1000,
+        };
+        save_profile(&conn, &profile).unwrap();
+
+        let home = dirs::home_dir().unwrap();
+        profile.game_dir = Some(home.to_string_lossy().to_string());
+        assert!(save_profile(&conn, &profile).is_err());
+
+        // El perfil guardado no se modificó
+        let saved = get_profiles(&conn).unwrap();
+        assert!(saved[0].game_dir.as_deref().unwrap().ends_with("instancia"));
     }
 }
