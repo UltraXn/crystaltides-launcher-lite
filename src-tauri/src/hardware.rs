@@ -132,10 +132,22 @@ fn calculate_cpu_affinity_mask(
     }
 }
 
+/// Núcleos físicos que cubre la máscara. En Windows los dos hilos de un núcleo con HT son procesadores
+/// lógicos contiguos (2k y 2k+1), así que con HT cada pareja tocada es un núcleo y sin HT cada bit lo es.
+fn physical_cores_in_mask(mask: u64, has_ht: bool) -> usize {
+    if !has_ht {
+        return mask.count_ones() as usize;
+    }
+    (0u32..32)
+        .filter(|pair| (mask >> (pair * 2)) & 0b11 != 0)
+        .count()
+}
+
 fn build_recommended_jvm_flags(
     is_xeon_or_legacy: bool,
     total_memory_mb: u64,
     java_version: Option<u8>,
+    game_physical_cores: usize,
 ) -> Vec<String> {
     let jv = java_version.unwrap_or(21);
     let mut jvm_flags = Vec::new();
@@ -172,6 +184,13 @@ fn build_recommended_jvm_flags(
     jvm_flags.push("-XX:+UseSHA".to_string());
     jvm_flags.push("-XX:CICompilerCount=4".to_string());
     jvm_flags.push("-Djava.net.preferIPv4Stack=true".to_string());
+    // Java no distingue núcleos físicos de hilos HT: CrystalTides Boost dimensiona con este dato su pool
+    // de workers en segundo plano (backgroundWorkerLimit=auto). Sin el mod, la propiedad no tiene efecto.
+    if game_physical_cores > 0 {
+        jvm_flags.push(format!(
+            "-Dcrystaltides.boost.physicalCores={game_physical_cores}"
+        ));
+    }
     jvm_flags
 }
 
@@ -200,7 +219,19 @@ pub fn calculate_hardware_profile(
         is_xeon_or_legacy,
     );
 
-    let jvm_flags = build_recommended_jvm_flags(is_xeon_or_legacy, total_memory_mb, java_version);
+    // La máscara solo se aplica en Windows (process_manager::apply_os_optimizations); en el resto de
+    // sistemas el juego ve todos los núcleos
+    let game_physical_cores = if cfg!(target_os = "windows") {
+        physical_cores_in_mask(mask, has_hyperthreading)
+    } else {
+        physical_cores
+    };
+    let jvm_flags = build_recommended_jvm_flags(
+        is_xeon_or_legacy,
+        total_memory_mb,
+        java_version,
+        game_physical_cores,
+    );
 
     CpuInfo {
         brand: brand.to_string(),
@@ -457,5 +488,80 @@ mod tests {
         );
         assert!(!info.is_hybrid, "i3-12100 no es híbrido (0 E-cores)");
         assert_eq!(info.recommended_affinity_mask, 0x00FF);
+    }
+
+    #[test]
+    fn test_physical_cores_in_mask() {
+        assert_eq!(
+            physical_cores_in_mask(0xFFFF, true),
+            8,
+            "8 núcleos con sus dos hilos"
+        );
+        assert_eq!(
+            physical_cores_in_mask(0x5555, true),
+            8,
+            "un hilo por núcleo (hilos pares)"
+        );
+        assert_eq!(physical_cores_in_mask(0x0FFF, true), 6);
+        assert_eq!(
+            physical_cores_in_mask(0xFF, false),
+            8,
+            "sin HT cada bit es un núcleo"
+        );
+        assert_eq!(physical_cores_in_mask(0b10, true), 1);
+        assert_eq!(physical_cores_in_mask(0, true), 0);
+    }
+
+    fn boost_physical_cores_flag(info: &CpuInfo) -> Option<&String> {
+        info.jvm_recommended_flags
+            .iter()
+            .find(|flag| flag.starts_with("-Dcrystaltides.boost.physicalCores="))
+    }
+
+    #[test]
+    fn test_boost_physical_cores_flag_follows_affinity_mask() {
+        // Xeon con HT: la máscara deja un hilo en cada uno de 8 núcleos (solo se aplica en Windows)
+        let xeon = calculate_hardware_profile(
+            "Intel(R) Xeon(R) CPU E5-2678 v3 @ 2.50GHz",
+            "GenuineIntel",
+            24,
+            48,
+            32768,
+            Some(21),
+        );
+        let expected = if cfg!(target_os = "windows") { 8 } else { 24 };
+        assert_eq!(
+            boost_physical_cores_flag(&xeon),
+            Some(&format!("-Dcrystaltides.boost.physicalCores={expected}"))
+        );
+
+        // 6 núcleos con HT y máscara completa: 6 en cualquier sistema
+        let i5 = calculate_hardware_profile(
+            "12th Gen Intel(R) Core(TM) i5-12400F",
+            "GenuineIntel",
+            6,
+            12,
+            16384,
+            Some(21),
+        );
+        assert_eq!(
+            boost_physical_cores_flag(&i5),
+            Some(&"-Dcrystaltides.boost.physicalCores=6".to_string())
+        );
+
+        // X3D de dos CCD: la máscara se queda con los 8 núcleos (16 hilos) del CCD0
+        let x3d = calculate_hardware_profile(
+            "AMD Ryzen 9 7950X3D 16-Core Processor",
+            "AuthenticAMD",
+            16,
+            32,
+            32768,
+            Some(25),
+        );
+        let expected = if cfg!(target_os = "windows") { 8 } else { 16 };
+        assert_eq!(
+            boost_physical_cores_flag(&x3d),
+            Some(&format!("-Dcrystaltides.boost.physicalCores={expected}"))
+        );
     }
 }
