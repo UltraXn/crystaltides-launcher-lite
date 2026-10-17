@@ -249,14 +249,14 @@ pub fn calculate_hardware_profile(
 
 pub fn detect_hardware_profile_sync(java_version: Option<u8>) -> CpuInfo {
     let sys = System::new_with_specifics(
-        RefreshKind::new()
+        RefreshKind::nothing()
             .with_cpu(CpuRefreshKind::everything())
             .with_memory(sysinfo::MemoryRefreshKind::everything()),
     );
 
     let cpus = sys.cpus();
     let logical_cores = cpus.len();
-    let physical_cores = sys.physical_core_count().unwrap_or(logical_cores);
+    let physical_cores = System::physical_core_count().unwrap_or(logical_cores);
     let total_memory_mb = sys.total_memory() / 1024 / 1024;
 
     let brand = if !cpus.is_empty() {
