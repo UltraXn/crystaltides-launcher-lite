@@ -191,7 +191,7 @@ export const encryptPayload = async <T>(data: T): Promise<string> => {
     return JSON.stringify(container);
   } catch (error) {
     console.error('[Secure Vault] Encryption failed:', error);
-    throw new Error('No se pudo cifrar los datos de forma segura.');
+    throw new Error('No se pudo cifrar los datos de forma segura.', { cause: error });
   }
 };
 
