@@ -55,42 +55,75 @@ jobs:
       - name: React Doctor Quality Gate (Score >= 68)
         run: pnpm run doctor:ci
 
+  # Windows es la plataforma real del launcher; Linux compila los stubs y corre en CI.
+  # fmt, clippy -D warnings, cargo-deny y ct-agent venian del CI del monorepo, que ya no
+  # compila este submodulo.
   rust-check:
-    name: Rust Backend Safety
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+    name: Rust Backend Safety (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
       - name: Install Linux Dependencies for Tauri
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libwebkit2gtk-4.1-dev \
-            build-essential \
-            curl \
-            wget \
-            file \
-            libssl-dev \
-            libgtk-3-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            patchelf \
-            xdg-utils
+          sudo apt-get install -y --no-install-recommends             libwebkit2gtk-4.1-dev             build-essential             curl             wget             file             libssl-dev             libgtk-3-dev             libayatana-appindicator3-dev             librsvg2-dev             patchelf             xdg-utils
 
       - name: Setup Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
 
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
         with:
           workspaces: 'src-tauri -> src-tauri/target'
 
+      - name: Check Formatting
+        if: runner.os == 'Linux'
+        run: cargo fmt --check --manifest-path src-tauri/Cargo.toml
+
       # --locked: falla si Cargo.lock no coincide con Cargo.toml en vez de re-resolver en silencio
-      - name: Cargo Check
-        run: cargo check --locked --manifest-path src-tauri/Cargo.toml
+      - name: Clippy
+        run: cargo clippy --all-targets --locked --manifest-path src-tauri/Cargo.toml -- -D warnings
 
       - name: Cargo Test
         run: cargo test --locked --manifest-path src-tauri/Cargo.toml
+
+      - name: Install cargo-deny
+        if: runner.os == 'Linux'
+        uses: taiki-e/install-action@cargo-deny
+
+      - name: Security & Dependency Audit
+        if: runner.os == 'Linux'
+        working-directory: src-tauri
+        run: cargo deny check advisories
+
+      - name: Verify ct-agent.dll compilation (MSVC x64)
+        if: runner.os == 'Windows'
+        working-directory: native/ct-agent
+        shell: pwsh
+        run: |
+          $jdk = if ($env:JAVA_HOME_21_X64) { $env:JAVA_HOME_21_X64 } else { $env:JAVA_HOME }
+          .\build.ps1 -JdkPath $jdk
+          $dumpbinCmd = Get-Command dumpbin.exe -ErrorAction SilentlyContinue
+          $headers = if ($dumpbinCmd) {
+            dumpbin /headers ct-agent.dll
+          } else {
+            $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+            $vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+            $vcvars = Join-Path $vsPath "VC\Auxiliary\Build\vcvars64.bat"
+            cmd /c "call `"$vcvars`" >nul && dumpbin /headers ct-agent.dll"
+          }
+          if (($headers -join "`n") -notmatch "machine \(x64\)") {
+            Write-Error "ct-agent.dll is not x64 architecture!"
+            exit 1
+          }

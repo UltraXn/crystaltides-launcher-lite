@@ -1,3 +1,4 @@
+#[cfg(target_os = "windows")]
 use serde_json::json;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::OnceLock;
@@ -16,6 +17,9 @@ pub struct DiscordPipeClient {
 
 impl DiscordPipeClient {
     pub fn connect(client_id: &str) -> Option<Self> {
+        // Discord IPC only exists as a Windows named pipe here.
+        #[cfg(not(target_os = "windows"))]
+        let _ = client_id;
         #[cfg(target_os = "windows")]
         {
             use std::fs::OpenOptions;
@@ -48,6 +52,8 @@ impl DiscordPipeClient {
         details: &str,
         start_timestamp: Option<u64>,
     ) -> std::io::Result<()> {
+        #[cfg(not(target_os = "windows"))]
+        let _ = (state, details, start_timestamp);
         #[cfg(target_os = "windows")]
         {
             let mut activity = json!({
