@@ -129,8 +129,8 @@ export const LoginView: React.FC = () => {
         },
         rememberAccount,
       );
-    } catch (e) {
-      setErrorMsg(e instanceof Error ? e.message : t.login.crystalLoginError);
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : t.login.crystalLoginError);
     } finally {
       setActiveLogin(null);
     }
