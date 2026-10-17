@@ -12,7 +12,7 @@ const CommunityHubModalContent: React.FC<{ ctx: LauncherModuleContext; onClose: 
     {
       title: 'Discord de la Comunidad',
       desc: 'Comunidad, canales de voz y anuncios oficiales.',
-      url: 'https://discord.gg/crystaltides',
+      url: 'https://discord.gg/TDmwYNnvyT',
       icon: <MessageSquare size={16} color="#38bdf8" />,
     },
     {

@@ -15,7 +15,7 @@
   <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/Rust-2021-DEA584?style=for-the-badge&logo=rust&logoColor=white" alt="Rust" /></a>
   <a href="https://react.dev/"><img src="https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react&logoColor=black" alt="React 19" /></a>
   <a href="https://vite.dev/"><img src="https://img.shields.io/badge/Vite-7%20(SWC)-BD34FE?style=for-the-badge&logo=vite&logoColor=white" alt="Vite 7" /></a>
-  <a href="https://discord.gg/crystaltides"><img src="https://img.shields.io/badge/Discord-Join%20Community-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord" /></a>
+  <a href="https://discord.gg/TDmwYNnvyT"><img src="https://img.shields.io/badge/Discord-Join%20Community-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord" /></a>
 </p>
 
 ---
@@ -280,7 +280,7 @@ crystaltides-launcher-lite/
 
 ## 🌐 Community & Support
 
-- 💬 **Discord**: [Join CrystalTides Discord](https://discord.gg/crystaltides)
+- 💬 **Discord**: [Join CrystalTides Discord](https://discord.gg/TDmwYNnvyT)
 - 🌐 **Official Website**: [crystaltidessmp.net](https://crystaltidessmp.net)
 - 🐛 **Report a Bug**: [GitHub Issues](https://github.com/UltraXn/crystaltides-launcher-lite/issues) or [Support Portal](https://crystaltidessmp.net/support)
 

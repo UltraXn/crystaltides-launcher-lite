@@ -480,7 +480,7 @@ export const BottomBarSocialsWidget: React.FC<BottomBarSocialsWidgetProps> = ({
           <YoutubeIcon style={{ width: '16px', height: '16px' }} />
         </a>
         <a
-          href="https://discord.gg/crystaltides"
+          href="https://discord.gg/TDmwYNnvyT"
           target="_blank"
           rel="noreferrer"
           className="papyrus-social-btn"

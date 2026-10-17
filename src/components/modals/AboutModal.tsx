@@ -125,7 +125,7 @@ export const AboutModal: React.FC = () => {
         {/* Footer Links */}
         <div className="about-footer-row">
           <a
-            href="https://discord.gg/crystaltides"
+            href="https://discord.gg/TDmwYNnvyT"
             target="_blank"
             rel="noreferrer"
             className="about-link-icon"

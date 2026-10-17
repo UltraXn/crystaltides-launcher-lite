@@ -442,7 +442,7 @@ export const LoginView: React.FC = () => {
           <YoutubeIcon style={{ width: '18px', height: '18px' }} />
         </a>
         <a
-          href="https://discord.gg/crystaltides"
+          href="https://discord.gg/TDmwYNnvyT"
           target="_blank"
           rel="noreferrer"
           className="login-social-icon"
