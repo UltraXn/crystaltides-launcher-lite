@@ -1,5 +1,5 @@
-use sysinfo::{System, CpuRefreshKind, RefreshKind};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
+use sysinfo::{CpuRefreshKind, RefreshKind, System};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct CpuInfo {
@@ -15,22 +15,52 @@ pub struct CpuInfo {
     pub jvm_recommended_flags: Vec<String>,
 }
 
-fn is_intel_hybrid(brand_lower: &str, vendor: &str) -> bool {
+fn is_intel_hybrid(
+    brand_lower: &str,
+    vendor: &str,
+    physical_cores: usize,
+    logical_cores: usize,
+) -> bool {
     let is_intel = brand_lower.contains("intel") || vendor.to_lowercase().contains("intel");
-    is_intel
-        && (brand_lower.contains("12th")
-            || brand_lower.contains("13th")
-            || brand_lower.contains("14th")
-            || brand_lower.contains("ultra")
-            || brand_lower.contains("i7-12")
-            || brand_lower.contains("i7-13")
-            || brand_lower.contains("i7-14")
-            || brand_lower.contains("i9-12")
-            || brand_lower.contains("i9-13")
-            || brand_lower.contains("i9-14")
-            || brand_lower.contains("i5-12")
-            || brand_lower.contains("i5-13")
-            || brand_lower.contains("i5-14"))
+    if !is_intel {
+        return false;
+    }
+
+    // Invariante matemático: Si los hilos lógicos son exactamente el doble de los núcleos físicos,
+    // todos los núcleos cuentan con multithreading simultáneo (2 hilos/núcleo). Los núcleos de eficiencia
+    // (E-cores) de Intel nunca poseen HyperThreading (1 hilo/núcleo), por lo que la cantidad de E-cores es 0.
+    if physical_cores > 0 && logical_cores == 2 * physical_cores {
+        return false;
+    }
+
+    // Modelos de sobremesa explícitamente no híbridos (i3 12/13/14va gen, i5-12400/12500/12600 no-K)
+    if brand_lower.contains("i3-12")
+        || brand_lower.contains("i3-13")
+        || brand_lower.contains("i3-14")
+        || brand_lower.contains("12100")
+        || brand_lower.contains("12300")
+        || brand_lower.contains("12400")
+        || brand_lower.contains("12500")
+        || (brand_lower.contains("12600") && !brand_lower.contains("12600k"))
+        || brand_lower.contains("13100")
+        || brand_lower.contains("14100")
+    {
+        return false;
+    }
+
+    brand_lower.contains("ultra")
+        || brand_lower.contains("12th")
+        || brand_lower.contains("13th")
+        || brand_lower.contains("14th")
+        || brand_lower.contains("i7-12")
+        || brand_lower.contains("i7-13")
+        || brand_lower.contains("i7-14")
+        || brand_lower.contains("i9-12")
+        || brand_lower.contains("i9-13")
+        || brand_lower.contains("i9-14")
+        || brand_lower.contains("i5-12")
+        || brand_lower.contains("i5-13")
+        || brand_lower.contains("i5-14")
 }
 
 fn is_ryzen_dual_ccd_x3d(brand_lower: &str, vendor: &str, physical_cores: usize) -> bool {
@@ -102,17 +132,31 @@ fn calculate_cpu_affinity_mask(
     }
 }
 
+/// Núcleos físicos que cubre la máscara. En Windows los dos hilos de un núcleo con HT son procesadores
+/// lógicos contiguos (2k y 2k+1), así que con HT cada pareja tocada es un núcleo y sin HT cada bit lo es.
+fn physical_cores_in_mask(mask: u64, has_ht: bool) -> usize {
+    if !has_ht {
+        return mask.count_ones() as usize;
+    }
+    (0u32..32)
+        .filter(|pair| (mask >> (pair * 2)) & 0b11 != 0)
+        .count()
+}
+
 fn build_recommended_jvm_flags(
     is_xeon_or_legacy: bool,
     total_memory_mb: u64,
     java_version: Option<u8>,
+    game_physical_cores: usize,
 ) -> Vec<String> {
     let jv = java_version.unwrap_or(21);
     let mut jvm_flags = Vec::new();
 
     if jv >= 21 && total_memory_mb >= 4096 {
         jvm_flags.push("-XX:+UseZGC".to_string());
-        jvm_flags.push("-XX:+ZGenerational".to_string());
+        if jv <= 22 {
+            jvm_flags.push("-XX:+ZGenerational".to_string());
+        }
         jvm_flags.push("-XX:ZAllocationSpikeTolerance=5".to_string());
     } else {
         jvm_flags.push("-XX:+UseG1GC".to_string());
@@ -140,6 +184,13 @@ fn build_recommended_jvm_flags(
     jvm_flags.push("-XX:+UseSHA".to_string());
     jvm_flags.push("-XX:CICompilerCount=4".to_string());
     jvm_flags.push("-Djava.net.preferIPv4Stack=true".to_string());
+    // Java no distingue núcleos físicos de hilos HT: CrystalTides Boost dimensiona con este dato su pool
+    // de workers en segundo plano (backgroundWorkerLimit=auto). Sin el mod, la propiedad no tiene efecto.
+    if game_physical_cores > 0 {
+        jvm_flags.push(format!(
+            "-Dcrystaltides.boost.physicalCores={game_physical_cores}"
+        ));
+    }
     jvm_flags
 }
 
@@ -155,7 +206,7 @@ pub fn calculate_hardware_profile(
     let brand_lower = brand.to_lowercase();
     let has_hyperthreading = logical_cores > physical_cores;
     let is_xeon_or_legacy = is_xeon_or_legacy_cpu(&brand_lower);
-    let is_hybrid = is_intel_hybrid(&brand_lower, vendor);
+    let is_hybrid = is_intel_hybrid(&brand_lower, vendor, physical_cores, logical_cores);
     let is_ryzen_x3d_dual_ccd = is_ryzen_dual_ccd_x3d(&brand_lower, vendor, physical_cores);
 
     let safe_logical = logical_cores.clamp(1, 64);
@@ -168,7 +219,19 @@ pub fn calculate_hardware_profile(
         is_xeon_or_legacy,
     );
 
-    let jvm_flags = build_recommended_jvm_flags(is_xeon_or_legacy, total_memory_mb, java_version);
+    // La máscara solo se aplica en Windows (process_manager::apply_os_optimizations); en el resto de
+    // sistemas el juego ve todos los núcleos
+    let game_physical_cores = if cfg!(target_os = "windows") {
+        physical_cores_in_mask(mask, has_hyperthreading)
+    } else {
+        physical_cores
+    };
+    let jvm_flags = build_recommended_jvm_flags(
+        is_xeon_or_legacy,
+        total_memory_mb,
+        java_version,
+        game_physical_cores,
+    );
 
     CpuInfo {
         brand: brand.to_string(),
@@ -184,19 +247,18 @@ pub fn calculate_hardware_profile(
     }
 }
 
-#[tauri::command]
-pub fn detect_hardware_profile(java_version: Option<u8>) -> CpuInfo {
+pub fn detect_hardware_profile_sync(java_version: Option<u8>) -> CpuInfo {
     let sys = System::new_with_specifics(
         RefreshKind::new()
             .with_cpu(CpuRefreshKind::everything())
-            .with_memory(sysinfo::MemoryRefreshKind::everything())
+            .with_memory(sysinfo::MemoryRefreshKind::everything()),
     );
 
     let cpus = sys.cpus();
     let logical_cores = cpus.len();
     let physical_cores = sys.physical_core_count().unwrap_or(logical_cores);
     let total_memory_mb = sys.total_memory() / 1024 / 1024;
-    
+
     let brand = if !cpus.is_empty() {
         cpus[0].brand().to_string()
     } else {
@@ -217,6 +279,13 @@ pub fn detect_hardware_profile(java_version: Option<u8>) -> CpuInfo {
         total_memory_mb,
         java_version,
     )
+}
+
+#[tauri::command]
+pub async fn detect_hardware_profile(java_version: Option<u8>) -> CpuInfo {
+    tokio::task::spawn_blocking(move || detect_hardware_profile_sync(java_version))
+        .await
+        .unwrap_or_else(|_| detect_hardware_profile_sync(java_version))
 }
 
 #[cfg(test)]
@@ -299,11 +368,42 @@ mod tests {
             32768,
             Some(21),
         );
-        assert!(info.jvm_recommended_flags.contains(&"-XX:+UseZGC".to_string()));
-        assert!(info.jvm_recommended_flags.contains(&"-XX:+ZGenerational".to_string()));
-        assert!(info.jvm_recommended_flags.contains(&"-XX:ZAllocationSpikeTolerance=5".to_string()));
-        assert!(!info.jvm_recommended_flags.contains(&"-XX:+UseG1GC".to_string()));
-        assert!(!info.jvm_recommended_flags.contains(&"-XX:+UnlockExperimentalVMOptions".to_string()));
+        assert!(info
+            .jvm_recommended_flags
+            .contains(&"-XX:+UseZGC".to_string()));
+        assert!(info
+            .jvm_recommended_flags
+            .contains(&"-XX:+ZGenerational".to_string()));
+        assert!(info
+            .jvm_recommended_flags
+            .contains(&"-XX:ZAllocationSpikeTolerance=5".to_string()));
+        assert!(!info
+            .jvm_recommended_flags
+            .contains(&"-XX:+UseG1GC".to_string()));
+        assert!(!info
+            .jvm_recommended_flags
+            .contains(&"-XX:+UnlockExperimentalVMOptions".to_string()));
+    }
+
+    #[test]
+    fn test_zgc_omits_generational_flag_on_java23_plus() {
+        let info = calculate_hardware_profile(
+            "AMD Ryzen 7 7800X3D 8-Core Processor",
+            "AuthenticAMD",
+            8,
+            16,
+            32768,
+            Some(25),
+        );
+        assert!(info
+            .jvm_recommended_flags
+            .contains(&"-XX:+UseZGC".to_string()));
+        assert!(!info
+            .jvm_recommended_flags
+            .contains(&"-XX:+ZGenerational".to_string()));
+        assert!(info
+            .jvm_recommended_flags
+            .contains(&"-XX:ZAllocationSpikeTolerance=5".to_string()));
     }
 
     #[test]
@@ -316,8 +416,12 @@ mod tests {
             32768,
             Some(17),
         );
-        assert!(info.jvm_recommended_flags.contains(&"-XX:+UseG1GC".to_string()));
-        assert!(!info.jvm_recommended_flags.contains(&"-XX:+UseZGC".to_string()));
+        assert!(info
+            .jvm_recommended_flags
+            .contains(&"-XX:+UseG1GC".to_string()));
+        assert!(!info
+            .jvm_recommended_flags
+            .contains(&"-XX:+UseZGC".to_string()));
     }
 
     #[test]
@@ -330,8 +434,12 @@ mod tests {
             3072, // 3GB RAM
             Some(21),
         );
-        assert!(info.jvm_recommended_flags.contains(&"-XX:+UseG1GC".to_string()));
-        assert!(!info.jvm_recommended_flags.contains(&"-XX:+UseZGC".to_string()));
+        assert!(info
+            .jvm_recommended_flags
+            .contains(&"-XX:+UseG1GC".to_string()));
+        assert!(!info
+            .jvm_recommended_flags
+            .contains(&"-XX:+UseZGC".to_string()));
     }
 
     #[test]
@@ -348,5 +456,112 @@ mod tests {
         assert!(info.is_hybrid);
         // Sin HT: debe tomar los primeros 8 P-cores correlativos (bits 0..7 = 0xFF), sin saltar con hilos pares
         assert_eq!(info.recommended_affinity_mask, 0xFF);
+    }
+
+    #[test]
+    fn test_intel_non_hybrid_i5_12400_uses_all_threads() {
+        // i5-12400 has 6 physical cores and 12 logical threads (6P/12T, 0 E-cores)
+        let info = calculate_hardware_profile(
+            "12th Gen Intel(R) Core(TM) i5-12400F",
+            "GenuineIntel",
+            6,
+            12,
+            16384,
+            Some(21),
+        );
+        assert!(!info.is_hybrid, "i5-12400F no es híbrido (0 E-cores)");
+        assert!(!info.is_ryzen_x3d_dual_ccd);
+        // Debe tener todos los 12 hilos habilitados (0x0FFF = 12 bits en 1)
+        assert_eq!(info.recommended_affinity_mask, 0x0FFF);
+    }
+
+    #[test]
+    fn test_intel_non_hybrid_i3_12100_uses_all_threads() {
+        // i3-12100 has 4 physical cores and 8 logical threads (4P/8T, 0 E-cores)
+        let info = calculate_hardware_profile(
+            "12th Gen Intel(R) Core(TM) i3-12100",
+            "GenuineIntel",
+            4,
+            8,
+            16384,
+            Some(21),
+        );
+        assert!(!info.is_hybrid, "i3-12100 no es híbrido (0 E-cores)");
+        assert_eq!(info.recommended_affinity_mask, 0x00FF);
+    }
+
+    #[test]
+    fn test_physical_cores_in_mask() {
+        assert_eq!(
+            physical_cores_in_mask(0xFFFF, true),
+            8,
+            "8 núcleos con sus dos hilos"
+        );
+        assert_eq!(
+            physical_cores_in_mask(0x5555, true),
+            8,
+            "un hilo por núcleo (hilos pares)"
+        );
+        assert_eq!(physical_cores_in_mask(0x0FFF, true), 6);
+        assert_eq!(
+            physical_cores_in_mask(0xFF, false),
+            8,
+            "sin HT cada bit es un núcleo"
+        );
+        assert_eq!(physical_cores_in_mask(0b10, true), 1);
+        assert_eq!(physical_cores_in_mask(0, true), 0);
+    }
+
+    fn boost_physical_cores_flag(info: &CpuInfo) -> Option<&String> {
+        info.jvm_recommended_flags
+            .iter()
+            .find(|flag| flag.starts_with("-Dcrystaltides.boost.physicalCores="))
+    }
+
+    #[test]
+    fn test_boost_physical_cores_flag_follows_affinity_mask() {
+        // Xeon con HT: la máscara deja un hilo en cada uno de 8 núcleos (solo se aplica en Windows)
+        let xeon = calculate_hardware_profile(
+            "Intel(R) Xeon(R) CPU E5-2678 v3 @ 2.50GHz",
+            "GenuineIntel",
+            24,
+            48,
+            32768,
+            Some(21),
+        );
+        let expected = if cfg!(target_os = "windows") { 8 } else { 24 };
+        assert_eq!(
+            boost_physical_cores_flag(&xeon),
+            Some(&format!("-Dcrystaltides.boost.physicalCores={expected}"))
+        );
+
+        // 6 núcleos con HT y máscara completa: 6 en cualquier sistema
+        let i5 = calculate_hardware_profile(
+            "12th Gen Intel(R) Core(TM) i5-12400F",
+            "GenuineIntel",
+            6,
+            12,
+            16384,
+            Some(21),
+        );
+        assert_eq!(
+            boost_physical_cores_flag(&i5),
+            Some(&"-Dcrystaltides.boost.physicalCores=6".to_string())
+        );
+
+        // X3D de dos CCD: la máscara se queda con los 8 núcleos (16 hilos) del CCD0
+        let x3d = calculate_hardware_profile(
+            "AMD Ryzen 9 7950X3D 16-Core Processor",
+            "AuthenticAMD",
+            16,
+            32,
+            32768,
+            Some(25),
+        );
+        let expected = if cfg!(target_os = "windows") { 8 } else { 16 };
+        assert_eq!(
+            boost_physical_cores_flag(&x3d),
+            Some(&format!("-Dcrystaltides.boost.physicalCores={expected}"))
+        );
     }
 }

@@ -9,6 +9,7 @@ import {
   LogOut,
   Upload,
   Image as ImageIcon,
+  AlertTriangle,
 } from 'lucide-react';
 import {
   useLauncherStore,
@@ -18,7 +19,7 @@ import {
   useT,
 } from '../../store/launcherStore';
 import { validateMinecraftUsername, generateOfflineUuid } from '../../services/offlineAuth';
-import logoImg from '../../assets/logo.png';
+import logoImg from '../../assets/logo.webp';
 import { loginWithCrystalTides } from '../../services/crystalAuthService';
 
 interface AccountRowItemProps {
@@ -89,6 +90,9 @@ export const AccountRowItem: React.FC<AccountRowItemProps> = ({
           <div className="account-username-row">
             <span className="account-username">{acc.username}</span>
             {isActive && <span className="account-active-tag">{t.accounts.activeTag}</span>}
+            {acc.requiresReauth && (
+              <span className="account-reauth-tag">{t.accounts.requiresReauthTag}</span>
+            )}
           </div>
           <span className="account-type-sub">{getAccountTypeLabel()}</span>
         </div>
@@ -198,8 +202,7 @@ export const GuestForm: React.FC<GuestFormProps> = ({
       </button>
       <button
         type="submit"
-        className="settings-action-btn"
-        style={{ background: '#22c55e', color: '#ffffff', borderColor: '#22c55e' }}
+        className="settings-action-btn primary"
       >
         {t.accounts.saveProfileBtn}
       </button>
@@ -265,12 +268,7 @@ const CrystalForm: React.FC<CrystalFormProps> = ({
       <button
         type="submit"
         disabled={loading}
-        className="settings-action-btn"
-        style={{
-          background: 'linear-gradient(135deg, #00e5ff 0%, #0284c7 100%)',
-          color: '#ffffff',
-          borderColor: '#00e5ff',
-        }}
+        className="settings-action-btn primary"
       >
         {loading ? 'Conectando...' : 'Conectar Cuenta'}
       </button>
@@ -285,7 +283,7 @@ const cropSkinToAvatarHead = (dataUrl: string): Promise<string> => {
       return;
     }
     const img = new Image();
-    img.onload = () => {
+    img.addEventListener('load', () => {
       try {
         const canvas = document.createElement('canvas');
         canvas.width = 64;
@@ -319,8 +317,8 @@ const cropSkinToAvatarHead = (dataUrl: string): Promise<string> => {
       } catch {
         resolve(dataUrl);
       }
-    };
-    img.onerror = () => resolve(dataUrl);
+    });
+    img.addEventListener('error', () => resolve(dataUrl));
     img.src = dataUrl;
   });
 };
@@ -330,6 +328,7 @@ export const AccountsModal: React.FC = () => {
   const activeModal = useLauncherStore((s: LauncherState) => s.activeModal);
   const accounts = useLauncherStore((s: LauncherState) => s.accounts);
   const activeAccountId = useLauncherStore((s: LauncherState) => s.activeAccountId);
+  const accountPersistenceError = useLauncherStore((s: LauncherState) => s.accountPersistenceError);
 
   const [newUsername, setNewUsername] = useState('');
   const [newSkinUrl, setNewSkinUrl] = useState<string | undefined>(undefined);
@@ -497,152 +496,208 @@ export const AccountsModal: React.FC = () => {
           onChange={(e) => handleFileChange(e, false)}
         />
 
-        <button
-          type="button"
-          onClick={launcherActions.closeModal}
-          className="settings-card-close"
-          title={t.settings.close}
-          aria-label={t.settings.close}
-        >
-          <X style={{ width: '16px', height: '16px' }} />
-        </button>
+        {/* Header oscuro idéntico al de Ajustes */}
+        <div className="accounts-header-block">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+            <h2 id="accounts-modal-title" className="settings-main-title" style={{ margin: 0 }}>
+              {t.accounts.title}
+            </h2>
+            <p
+              style={{
+                fontSize: '12px',
+                color: '#94a3b8',
+                fontFamily: 'var(--font-inter)',
+                margin: 0,
+              }}
+            >
+              {t.accounts.subtitle}
+            </p>
+          </div>
 
-        <div className="settings-header-block">
-          <h2 id="accounts-modal-title" className="settings-main-title">
-            {t.accounts.title}
-          </h2>
-          <p style={{ fontSize: '12px', color: '#94a3b8', fontFamily: 'var(--font-inter)' }}>
-            {t.accounts.subtitle}
-          </p>
+          <button
+            type="button"
+            onClick={launcherActions.closeModal}
+            className="settings-card-close"
+            title={t.settings.close}
+            aria-label={t.settings.close}
+            style={{ position: 'static', width: '28px', height: '28px', flexShrink: 0 }}
+          >
+            <X style={{ width: '16px', height: '16px' }} />
+          </button>
         </div>
 
-        <div className="accounts-list-container">
-          {accounts.map((acc: UserAccount) => (
-            <AccountRowItem
-              key={acc.id}
-              acc={acc}
-              isActive={acc.id === activeAccountId}
-              totalAccounts={accounts.length}
-              onSelect={launcherActions.setActiveAccount}
-              onRemove={launcherActions.removeAccount}
-              onUploadSkin={triggerRowSkinUpload}
+        <div className="accounts-modal-body">
+          {accountPersistenceError && (
+            <div
+              className="login-error-alert"
+              style={{
+                fontSize: '11px',
+                padding: '8px 12px',
+                marginBottom: '10px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                background: 'rgba(245, 158, 11, 0.12)',
+                border: '1px solid rgba(245, 158, 11, 0.35)',
+                color: '#fcd34d',
+                borderRadius: '6px',
+              }}
+            >
+              <AlertTriangle
+                style={{ width: '14px', height: '14px', flexShrink: 0, color: '#f59e0b' }}
+              />
+              <span>{t.accounts.accountPersistenceWarning}</span>
+            </div>
+          )}
+          {accounts.some((a) => a.requiresReauth) && (
+            <div
+              className="login-error-alert"
+              style={{
+                fontSize: '11px',
+                padding: '8px 12px',
+                marginBottom: '10px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                background: 'rgba(239, 68, 68, 0.12)',
+                border: '1px solid rgba(239, 68, 68, 0.35)',
+                color: '#fca5a5',
+                borderRadius: '6px',
+              }}
+            >
+              <Shield style={{ width: '14px', height: '14px', flexShrink: 0, color: '#ef4444' }} />
+              <span>{t.accounts.vaultDecryptionWarning}</span>
+            </div>
+          )}
+
+          <div className="accounts-list-container">
+            {accounts.map((acc: UserAccount) => (
+              <AccountRowItem
+                key={acc.id}
+                acc={acc}
+                isActive={acc.id === activeAccountId}
+                totalAccounts={accounts.length}
+                onSelect={launcherActions.setActiveAccount}
+                onRemove={launcherActions.removeAccount}
+                onUploadSkin={triggerRowSkinUpload}
+                t={t}
+              />
+            ))}
+          </div>
+
+          {addMode === 'guest' && (
+            <GuestForm
+              username={newUsername}
+              onChangeUsername={(u) => {
+                setNewUsername(u);
+                if (guestError) setGuestError(null);
+              }}
+              error={guestError}
+              skinUrl={newSkinUrl}
+              onOpenSkinUpload={() => fileInputRef.current?.click()}
+              onCancel={() => {
+                setAddMode('none');
+                setNewSkinUrl(undefined);
+                setGuestError(null);
+              }}
+              onSubmit={handleCreateGuest}
               t={t}
             />
-          ))}
-        </div>
+          )}
 
-        {addMode === 'guest' && (
-          <GuestForm
-            username={newUsername}
-            onChangeUsername={(u) => {
-              setNewUsername(u);
-              if (guestError) setGuestError(null);
-            }}
-            error={guestError}
-            skinUrl={newSkinUrl}
-            onOpenSkinUpload={() => fileInputRef.current?.click()}
-            onCancel={() => {
-              setAddMode('none');
-              setNewSkinUrl(undefined);
-              setGuestError(null);
-            }}
-            onSubmit={handleCreateGuest}
-            t={t}
-          />
-        )}
-
-        {addMode === 'crystaltides' && (
-          <CrystalForm
-            email={crystalEmail}
-            setEmail={setCrystalEmail}
-            password={crystalPassword}
-            setPassword={setCrystalPassword}
-            error={crystalError}
-            loading={isAddingCrystal}
-            onCancel={() => {
-              setAddMode('none');
-              setCrystalError(null);
-            }}
-            onSubmit={handleCreateCrystal}
-            t={t}
-          />
-        )}
-
-        {msError && (
-          <div
-            className="login-error-alert"
-            style={{ fontSize: '11px', padding: '6px', margin: '4px 0 8px 0', width: '100%' }}
-          >
-            {msError}
-          </div>
-        )}
-
-        {addMode === 'none' && (
-          <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
-            <button
-              onClick={() => {
-                setAddMode('guest');
-                setGuestError(null);
-                setMsError(null);
-              }}
-              className="account-add-btn"
-              style={{ flex: 1 }}
-            >
-              <Plus style={{ width: '15px', height: '15px', color: '#22c55e' }} />{' '}
-              {t.accounts.btnOffline}
-            </button>
-            <button
-              onClick={() => {
-                setAddMode('crystaltides');
+          {addMode === 'crystaltides' && (
+            <CrystalForm
+              email={crystalEmail}
+              setEmail={setCrystalEmail}
+              password={crystalPassword}
+              setPassword={setCrystalPassword}
+              error={crystalError}
+              loading={isAddingCrystal}
+              onCancel={() => {
+                setAddMode('none');
                 setCrystalError(null);
-                setMsError(null);
               }}
-              className="account-add-btn"
-              style={{ flex: 1, borderColor: 'rgba(0, 229, 255, 0.35)' }}
+              onSubmit={handleCreateCrystal}
+              t={t}
+            />
+          )}
+
+          {msError && (
+            <div
+              className="login-error-alert"
+              style={{ fontSize: '11px', padding: '6px', margin: '4px 0 8px 0', width: '100%' }}
             >
-              <img
-                src={logoImg}
-                alt="Octopus"
-                style={{ width: '14px', height: '14px', objectFit: 'contain' }}
-              />{' '}
-              <span style={{ color: '#00e5ff' }}>CrystalTides</span>
-            </button>
-            <button
-              type="button"
-              onClick={handleAddMicrosoft}
-              disabled={isAddingMs}
-              className="account-add-btn"
-              style={{ flex: 1, borderColor: 'rgba(0, 164, 239, 0.3)' }}
-            >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 21 21"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-                style={{ flexShrink: 0 }}
-                aria-hidden="true"
+              {msError}
+            </div>
+          )}
+
+          {addMode === 'none' && (
+            <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
+              <button
+                onClick={() => {
+                  setAddMode('guest');
+                  setGuestError(null);
+                  setMsError(null);
+                }}
+                className="account-add-btn"
+                style={{ flex: 1 }}
               >
-                <rect x="1" y="1" width="9" height="9" fill="#f25022" rx="1" />
-                <rect x="11" y="1" width="9" height="9" fill="#7fba00" rx="1" />
-                <rect x="1" y="11" width="9" height="9" fill="#00a4ef" rx="1" />
-                <rect x="11" y="11" width="9" height="9" fill="#ffb900" rx="1" />
-              </svg>
-              <span>{isAddingMs ? t.accounts.connecting : t.accounts.btnMicrosoft}</span>
+                <Plus style={{ width: '15px', height: '15px', color: '#22c55e' }} />{' '}
+                {t.accounts.btnOffline}
+              </button>
+              <button
+                onClick={() => {
+                  setAddMode('crystaltides');
+                  setCrystalError(null);
+                  setMsError(null);
+                }}
+                className="account-add-btn"
+                style={{ flex: 1, borderColor: 'rgba(0, 229, 255, 0.35)' }}
+              >
+                <img
+                  src={logoImg}
+                  alt="Octopus"
+                  style={{ width: '14px', height: '14px', objectFit: 'contain' }}
+                />{' '}
+                <span style={{ color: '#00e5ff' }}>CrystalTides</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleAddMicrosoft}
+                disabled={isAddingMs}
+                className="account-add-btn"
+                style={{ flex: 1, borderColor: 'rgba(0, 164, 239, 0.3)' }}
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 21 21"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                  style={{ flexShrink: 0 }}
+                  aria-hidden="true"
+                >
+                  <rect x="1" y="1" width="9" height="9" fill="#f25022" rx="1" />
+                  <rect x="11" y="1" width="9" height="9" fill="#7fba00" rx="1" />
+                  <rect x="1" y="11" width="9" height="9" fill="#00a4ef" rx="1" />
+                  <rect x="11" y="11" width="9" height="9" fill="#ffb900" rx="1" />
+                </svg>
+                <span>{isAddingMs ? t.accounts.connecting : t.accounts.btnMicrosoft}</span>
+              </button>
+            </div>
+          )}
+
+          <div className="accounts-footer-row">
+            <div className="accounts-vault-badge">
+              <Shield style={{ width: '13px', height: '13px', color: '#22c55e' }} />
+              <span>{t.accounts.vaultBadge}</span>
+            </div>
+
+            <button onClick={() => launcherActions.logout()} className="accounts-logout-btn">
+              <LogOut style={{ width: '12px', height: '12px' }} />
+              <span>{t.accounts.logoutBtn}</span>
             </button>
           </div>
-        )}
-
-        <div className="accounts-footer-row">
-          <div className="accounts-vault-badge">
-            <Shield style={{ width: '13px', height: '13px', color: '#22c55e' }} />
-            <span>{t.accounts.vaultBadge}</span>
-          </div>
-
-          <button onClick={() => launcherActions.logout()} className="accounts-logout-btn">
-            <LogOut style={{ width: '12px', height: '12px' }} />
-            <span>{t.accounts.logoutBtn}</span>
-          </button>
         </div>
       </dialog>
     </div>

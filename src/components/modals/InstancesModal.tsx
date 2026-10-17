@@ -33,7 +33,9 @@ import {
 import {
   fetchVanillaVersions,
   fetchInstalledLocalVersions,
+  resolveBaseMinecraftVersion,
 } from '../../services/minecraftMetadataService';
+import { extractLoaderVersionFromCompound } from '../../utils/settingsUtils';
 import {
   listSingleplayerSaves,
   readServersDat,
@@ -107,7 +109,6 @@ export const InstancesModal: React.FC = () => {
   const instances = useLauncherStore((s: LauncherState) => s.instances);
   const activeInstanceId = useLauncherStore((s: LauncherState) => s.activeInstanceId);
   const launchStatus = useLauncherStore((s: LauncherState) => s.launch.status);
-  const activeInstance = instances.find((i) => i.id === activeInstanceId) || instances[0];
 
   const [activeTab, setActiveTab] = useState<
     'list' | 'create' | 'saves' | 'servers' | 'mods' | 'import' | 'edit'
@@ -316,10 +317,10 @@ export const InstancesModal: React.FC = () => {
       />
       <dialog
         open
-        className="papyrus-settings-card"
+        className="papyrus-settings-card instances-modal-dialog"
         style={{
-          width: '920px',
-          maxWidth: '94vw',
+          width: '940px',
+          maxWidth: '95vw',
           height: '88vh',
           maxHeight: '88vh',
           minHeight: '88vh',
@@ -329,39 +330,24 @@ export const InstancesModal: React.FC = () => {
           margin: 0,
           overflow: 'hidden',
           boxSizing: 'border-box',
+          padding: 0,
         }}
         aria-labelledby="instances-modal-title"
       >
-        {/* Header */}
+        {/* Header Fijo / Sticky */}
         <div
+          className="instances-header-block"
           style={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            marginBottom: '16px',
             flexWrap: 'wrap',
             gap: '12px',
-            flexShrink: 0,
           }}
         >
           <div style={{ minWidth: '220px', flex: '1 1 auto' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              {activeInstance?.loaderType ? (
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    filter: 'drop-shadow(0 2px 5px rgba(0, 0, 0, 0.45))',
-                    flexShrink: 0,
-                  }}
-                >
-                  <LoaderLogo type={activeInstance.loaderType} size={22} />
-                </div>
-              ) : (
-                <Layers
-                  style={{ width: '22px', height: '22px', color: '#16A085', flexShrink: 0 }}
-                />
-              )}
+              <Layers style={{ width: '22px', height: '22px', color: '#16A085', flexShrink: 0 }} />
               <h2 id="instances-modal-title" className="settings-main-title" style={{ margin: 0 }}>
                 {t.instances.title}
               </h2>
@@ -484,16 +470,17 @@ export const InstancesModal: React.FC = () => {
         {/* Modal Body */}
         {activeTab === 'list' && (
           <div
+            className="instances-grid-scroll"
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))',
               gap: '14px',
               overflowY: 'auto',
               overflowX: 'hidden',
               flex: 1,
               minHeight: 0,
               alignContent: 'start',
-              padding: '10px 10px 18px 8px',
+              padding: '18px 26px 24px 26px',
               boxSizing: 'border-box',
               width: '100%',
             }}
@@ -513,48 +500,59 @@ export const InstancesModal: React.FC = () => {
                     style={{
                       display: 'flex',
                       alignItems: 'flex-start',
-                      justifyContent: 'space-between',
-                      gap: '10px',
+                      gap: '12px',
                       minWidth: 0,
+                      width: '100%',
                     }}
                   >
+                    <div className="instance-icon-box" style={{ position: 'relative' }}>
+                      {getIconComponent(inst.icon)}
+                      <span
+                        style={{
+                          position: 'absolute',
+                          bottom: '-3px',
+                          right: '-3px',
+                          filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.6))',
+                        }}
+                      >
+                        <LoaderIconBadge type={inst.loaderType} size={15} />
+                      </span>
+                    </div>
+
                     <div
                       style={{
                         display: 'flex',
-                        alignItems: 'center',
-                        gap: '12px',
+                        flexDirection: 'column',
                         minWidth: 0,
                         flex: 1,
+                        gap: '5px',
                       }}
                     >
-                      <div className="instance-icon-box" style={{ position: 'relative' }}>
-                        {getIconComponent(inst.icon)}
-                        <span
-                          style={{
-                            position: 'absolute',
-                            bottom: '-3px',
-                            right: '-3px',
-                            filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.6))',
-                          }}
-                        >
-                          <LoaderIconBadge type={inst.loaderType} size={15} />
-                        </span>
-                      </div>
+                      {/* Top Row: Title & Badges */}
                       <div
-                        style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'flex-start',
+                          justifyContent: 'space-between',
+                          gap: '8px',
+                          width: '100%',
+                        }}
                       >
                         <div
-                          style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            minWidth: 0,
+                            flex: 1,
+                            flexWrap: 'wrap',
+                          }}
                         >
                           <span
                             style={{
                               fontWeight: 600,
                               fontSize: '14px',
                               color: '#f8fafc',
-                              display: '-webkit-box',
-                              WebkitLineClamp: 2,
-                              WebkitBoxOrient: 'vertical',
-                              overflow: 'hidden',
                               wordBreak: 'break-word',
                               lineHeight: '1.25',
                               letterSpacing: '-0.01em',
@@ -581,72 +579,66 @@ export const InstancesModal: React.FC = () => {
                             </span>
                           )}
                         </div>
-                        <div
-                          style={{
-                            fontSize: '11.5px',
-                            color: '#94a3b8',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                            marginTop: '4px',
-                            minWidth: 0,
-                            flexWrap: 'wrap',
-                          }}
-                          title={`${inst.mcVersion} • ${inst.loaderType.toUpperCase()}${inst.loaderVersion ? ` (${inst.loaderVersion})` : ''}`}
-                        >
+
+                        {isActive && (
                           <span
                             style={{
                               display: 'inline-flex',
                               alignItems: 'center',
                               gap: '5px',
-                              minWidth: 0,
+                              fontSize: '10.5px',
+                              color: '#16A085',
+                              fontWeight: 700,
+                              background: 'rgba(21, 111, 105, 0.16)',
+                              border: '1px solid rgba(22, 160, 133, 0.35)',
+                              padding: '2px 8px',
+                              borderRadius: '6px',
+                              flexShrink: 0,
+                              letterSpacing: '0.04em',
                             }}
                           >
-                            <LoaderIconBadge type={inst.loaderType} size={15} />
-                            <span
-                              style={{
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                whiteSpace: 'nowrap',
-                              }}
-                            >
-                              {(() => {
-                                const lType = inst.loaderType.toUpperCase();
-                                const lVer = inst.loaderVersion;
-                                if (lVer && inst.mcVersion.includes(lVer)) {
-                                  return `${inst.mcVersion} • ${lType}`;
-                                }
-                                return `${inst.mcVersion} • ${lType}${lVer ? ` (${lVer})` : ''}`;
-                              })()}
-                            </span>
+                            <LoaderLogo type={inst.loaderType} size={12} />
+                            <CheckCircle2 style={{ width: '12px', height: '12px' }} />
+                            {t.instances.activeTag}
                           </span>
-                          {renderScreenResolutionTag(inst)}
-                        </div>
+                        )}
+                      </div>
+
+                      {/* Bottom Row: Subtitle across the entire remaining width */}
+                      <div
+                        style={{
+                          fontSize: '11.5px',
+                          color: '#94a3b8',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          minWidth: 0,
+                          width: '100%',
+                          flexWrap: 'wrap',
+                        }}
+                        title={`${inst.mcVersion} • ${inst.loaderType.toUpperCase()}${
+                          extractLoaderVersionFromCompound(inst.mcVersion, inst.loaderType) ||
+                          inst.loaderVersion
+                            ? ` (${extractLoaderVersionFromCompound(inst.mcVersion, inst.loaderType) || inst.loaderVersion})`
+                            : ''
+                        }`}
+                      >
+                        <span>
+                          {(() => {
+                            const cleanMc = resolveBaseMinecraftVersion(inst.mcVersion);
+                            const lType = inst.loaderType.toUpperCase();
+                            const lVer =
+                              extractLoaderVersionFromCompound(inst.mcVersion, inst.loaderType) ||
+                              inst.loaderVersion;
+                            if (lVer && lType !== 'VANILLA') {
+                              return `${cleanMc} • ${lType} (${lVer})`;
+                            }
+                            return `${cleanMc} • ${lType}`;
+                          })()}
+                        </span>
+                        {renderScreenResolutionTag(inst)}
                       </div>
                     </div>
-
-                    {isActive && (
-                      <span
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '5px',
-                          fontSize: '10.5px',
-                          color: '#16A085',
-                          fontWeight: 700,
-                          background: 'rgba(21, 111, 105, 0.16)',
-                          border: '1px solid rgba(22, 160, 133, 0.35)',
-                          padding: '3px 8px',
-                          borderRadius: '6px',
-                          flexShrink: 0,
-                          letterSpacing: '0.04em',
-                        }}
-                      >
-                        <LoaderLogo type={inst.loaderType} size={12} />
-                        <CheckCircle2 style={{ width: '12px', height: '12px' }} />
-                        {t.instances.activeTag}
-                      </span>
-                    )}
                   </div>
 
                   {/* Actions Footer */}
@@ -747,7 +739,15 @@ export const InstancesModal: React.FC = () => {
 
         {/* Tab: Crear Instancia */}
         {activeTab === 'create' && (
-          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: '6px' }}>
+          <div
+            style={{
+              flex: 1,
+              minHeight: 0,
+              overflowY: 'auto',
+              padding: '18px 26px 24px 26px',
+              boxSizing: 'border-box',
+            }}
+          >
             <InstancesCreateTab
               availableVersions={availableVersions}
               onCancel={() => setActiveTab('list')}
@@ -758,10 +758,20 @@ export const InstancesModal: React.FC = () => {
 
         {/* Tab: Editar Instancia */}
         {activeTab === 'edit' && editingInstance && (
-          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: '6px' }}>
+          <div
+            style={{
+              flex: 1,
+              minHeight: 0,
+              overflowY: 'auto',
+              padding: '18px 26px 24px 26px',
+              boxSizing: 'border-box',
+            }}
+          >
             <InstancesCreateTab
               availableVersions={availableVersions}
-              initialInstance={instances.find((i) => i.id === editingInstance.id) ?? editingInstance}
+              initialInstance={
+                instances.find((i) => i.id === editingInstance.id) ?? editingInstance
+              }
               onCancel={() => {
                 setEditingInstance(null);
                 setActiveTab('list');
@@ -777,15 +787,41 @@ export const InstancesModal: React.FC = () => {
 
         {/* Tab: Importar Instancia */}
         {activeTab === 'import' && (
-          <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+          <div
+            style={{
+              flex: 1,
+              minHeight: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              padding: '18px 26px 24px 26px',
+              boxSizing: 'border-box',
+            }}
+          >
             <InstancesImportTab onImportSuccess={() => setActiveTab('list')} />
           </div>
         )}
 
         {/* Tab: Mundos Locales (Rust NBT Level.dat Engine) */}
         {activeTab === 'saves' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', flex: 1, minHeight: 0 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '14px',
+              flex: 1,
+              minHeight: 0,
+              padding: '18px 26px 24px 26px',
+              boxSizing: 'border-box',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexShrink: 0,
+              }}
+            >
               <p style={{ margin: 0, fontSize: '13px', color: '#94a3b8' }}>
                 {t.instances.savesSubtitle}
               </p>
@@ -926,8 +962,25 @@ export const InstancesModal: React.FC = () => {
 
         {/* Tab: Servidores Guardados (Rust NBT Servers.dat Engine) */}
         {activeTab === 'servers' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', flex: 1, minHeight: 0 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '14px',
+              flex: 1,
+              minHeight: 0,
+              padding: '18px 26px 24px 26px',
+              boxSizing: 'border-box',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexShrink: 0,
+              }}
+            >
               <p style={{ margin: 0, fontSize: '13px', color: '#94a3b8' }}>
                 {t.instances.serversSubtitle}
               </p>
@@ -1165,7 +1218,17 @@ export const InstancesModal: React.FC = () => {
 
         {/* Tab: Mods de la Instancia */}
         {activeTab === 'mods' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', flex: 1, minHeight: 0 }}>
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '14px',
+              flex: 1,
+              minHeight: 0,
+              padding: '18px 26px 24px 26px',
+              boxSizing: 'border-box',
+            }}
+          >
             <div
               style={{
                 display: 'flex',

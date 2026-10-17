@@ -3,6 +3,7 @@
   "name": "@crystaltides/launcher-lite",
   "private": true,
   "version": "0.1.0",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -16,8 +17,10 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "lint": "node --max-old-space-size=4096 ./node_modules/typescript/bin/tsc --noEmit",
-    "lint:fast": "oxlint --threads 8 --no-ignore src",
+    "typecheck:tests": "node --max-old-space-size=4096 ./node_modules/typescript/bin/tsc --noEmit -p tsconfig.test.json",
+    "lint:fast": "oxlint --threads 8 --no-ignore --deny-warnings src",
     "doctor": "react-doctor",
+    "doctor:ci": "node scripts/check_react_doctor.mjs",
     "doctor:score": "react-doctor --score",
     "doctor:staged": "react-doctor --staged --blocking warning",
     "doctor:changed": "react-doctor --verbose --scope changed",
@@ -30,7 +33,9 @@
     "jules:status": "node scripts/jules_orchestrator.mjs --status"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.3.0",
+    "@fontsource/inter": "^5.3.0",
+    "@fontsource/jost": "^5.3.0",
+    "@tauri-apps/api": "^2.12.1",
     "clsx": "^2.1.1",
     "dompurify": "^3.4.16",
     "jose": "^6.2.12",
@@ -41,14 +46,16 @@
     "zustand": "^5.0.3"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2",
+    "@tauri-apps/cli": "^2.12.2",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
+    "@types/node": "^24.12.0",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react-swc": "^3.8.0",
     "jsdom": "^27.4.0",
     "oxlint": "^0.15.11",
+    "react-doctor": "^0.9.18",
     "typescript": "~5.8.3",
     "vite": "^7.0.4",
     "vitest": "^4.1.10"

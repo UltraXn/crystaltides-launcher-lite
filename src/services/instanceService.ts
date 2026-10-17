@@ -9,6 +9,7 @@ export interface GameInstance {
   loaderVersion?: string;
   icon: 'crystal' | 'cube' | 'sword' | 'feather' | 'flame' | 'shield';
   isOfficial?: boolean;
+  disableOptimization?: boolean;
   gameDir?: string;
   importedSourceId?: string;
   minRamGb?: number;

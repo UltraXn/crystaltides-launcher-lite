@@ -1,14 +1,29 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Sparkles, X, Check, Move } from 'lucide-react';
 import { useLauncherStore, launcherActions, LauncherState } from '../store/launcherStore';
-import { getEffectiveHudSide } from '../utils/collisionSystem';
 
-type ToastMode = 'hint' | 'editing_active' | 'editing_saved';
+export type ToastMode = 'hint' | 'editing_active' | 'editing_saved';
 
-function getToastDuration(mode: ToastMode): number {
-  if (mode === 'editing_saved') return 3200;
-  if (mode === 'editing_active') return 5000;
-  return 6000;
+/**
+ * Duraciones de auto-desaparición investigadas según estándares de UX/HCI:
+ * - WCAG 2.2 (SC 2.2.1: Timing Adjustable & SC 2.2.4: Postponements)
+ * - Tasa media de lectura cognitiva para adultos (~260-280ms por palabra/token)
+ * - Latencia de fijación y percepción periférica (~1000-1200ms)
+ * - Ley de Fitts / Hick: Buffer de decisión y acción motora para atajos (F8, Esc)
+ */
+export function getToastDuration(mode: ToastMode): number {
+  switch (mode) {
+    case 'editing_saved':
+      // 4 palabras, confirmación pasiva: 1000ms base + 1200ms lectura + 800ms buffer = 3000ms
+      return 3000;
+    case 'editing_active':
+      // 8 palabras/tokens interactivos (F8, Esc): 1200ms base + 2300ms lectura + 1500ms decisión motora = 5000ms
+      return 5000;
+    case 'hint':
+    default:
+      // Hint inicial en Home: 1200ms base + 2100ms lectura + 1700ms descubrimiento = 5000ms
+      return 5000;
+  }
 }
 
 function getToastAccentColor(mode: ToastMode): string {
@@ -43,6 +58,11 @@ function useGuiHintToast() {
   const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const remainingMsRef = useRef<number>(0);
   const startTimeRef = useRef<number>(0);
+  const isHoveredRef = useRef(false);
+
+  useEffect(() => {
+    isHoveredRef.current = isHovered;
+  }, [isHovered]);
 
   const triggerDismiss = useCallback(() => {
     if (hideTimerRef.current) {
@@ -69,44 +89,59 @@ function useGuiHintToast() {
   useEffect(() => {
     if (prevEditingRef.current !== isEditingHud) {
       setIsDismissing(false);
-      setToastMode(isEditingHud ? 'editing_active' : 'editing_saved');
+      if (!isEditingHud && prevEditingRef.current) {
+        setToastMode('editing_saved');
+      } else {
+        setToastMode(null);
+      }
       prevEditingRef.current = isEditingHud;
     }
   }, [isEditingHud]);
 
   useEffect(() => {
-    if (!toastMode || isDismissing) return;
-    const baseDuration = getToastDuration(toastMode);
-    remainingMsRef.current = baseDuration;
+    if (!toastMode || isDismissing) {
+      if (hideTimerRef.current) {
+        clearTimeout(hideTimerRef.current);
+        hideTimerRef.current = null;
+      }
+      return;
+    }
+
+    const duration = getToastDuration(toastMode);
+    remainingMsRef.current = duration;
     startTimeRef.current = Date.now();
 
-    if (!isHovered) {
+    if (!isHoveredRef.current) {
       if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
-      hideTimerRef.current = setTimeout(triggerDismiss, baseDuration);
+      hideTimerRef.current = setTimeout(triggerDismiss, duration);
     }
-    return () => {
-      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
-    };
-  }, [toastMode, isHovered, isDismissing, triggerDismiss]);
 
-  const handleMouseEnter = () => {
+    return () => {
+      if (hideTimerRef.current) {
+        clearTimeout(hideTimerRef.current);
+        hideTimerRef.current = null;
+      }
+    };
+  }, [toastMode, isDismissing, triggerDismiss]);
+
+  const handleMouseEnter = useCallback(() => {
     if (isDismissing) return;
     if (hideTimerRef.current) {
       clearTimeout(hideTimerRef.current);
       hideTimerRef.current = null;
     }
     const elapsed = Date.now() - startTimeRef.current;
-    remainingMsRef.current = Math.max(1500, remainingMsRef.current - elapsed);
+    remainingMsRef.current = Math.max(1200, remainingMsRef.current - elapsed);
     setIsHovered(true);
-  };
+  }, [isDismissing]);
 
-  const handleMouseLeave = () => {
+  const handleMouseLeave = useCallback(() => {
     if (isDismissing) return;
     setIsHovered(false);
     startTimeRef.current = Date.now();
     if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
     hideTimerRef.current = setTimeout(triggerDismiss, remainingMsRef.current);
-  };
+  }, [isDismissing, triggerDismiss]);
 
   useEffect(() => {
     return () => {
@@ -118,6 +153,7 @@ function useGuiHintToast() {
   return {
     toastMode,
     isDismissing,
+    isHovered,
     isEditingHud,
     currentView,
     dockConfig,
@@ -208,10 +244,8 @@ export const GuiHintToast: React.FC = () => {
   const {
     toastMode,
     isDismissing,
-    isEditingHud,
+    isHovered,
     currentView,
-    dockConfig,
-    hudManualSide,
     triggerDismiss,
     handleMouseEnter,
     handleMouseLeave,
@@ -220,9 +254,9 @@ export const GuiHintToast: React.FC = () => {
   if (!toastMode || currentView !== 'home') return null;
 
   const accentColor = getToastAccentColor(toastMode);
-  const effectiveSide = getEffectiveHudSide(dockConfig, hudManualSide);
-  const topPos = isEditingHud && effectiveSide === 'center' ? '98px' : '48px';
+  const topPos = '64px';
   const info = getToastInfo(toastMode);
+  const duration = getToastDuration(toastMode);
 
   return (
     <output
@@ -257,6 +291,17 @@ export const GuiHintToast: React.FC = () => {
       >
         <X size={12} strokeWidth={2.5} />
       </button>
+
+      {/* Barra de progreso de auto-desaparición (feedback visual UX / WCAG 2.2) */}
+      <div
+        key={toastMode}
+        className="capsule-timer-bar"
+        style={{
+          background: `linear-gradient(90deg, ${accentColor}, ${accentColor}70)`,
+          animationDuration: `${duration}ms`,
+          animationPlayState: isHovered ? 'paused' : 'running',
+        }}
+      />
     </output>
   );
 };

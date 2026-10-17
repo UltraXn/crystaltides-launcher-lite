@@ -1,6 +1,20 @@
-import React, { useState } from 'react';
-import { AlertOctagon, Copy, Check, RefreshCw, X, FileText } from 'lucide-react';
-import { LogViewerModal } from './LogViewerModal';
+import React, { useState, Suspense } from 'react';
+import {
+  AlertOctagon,
+  Copy,
+  Check,
+  RefreshCw,
+  X,
+  FileText,
+  Activity,
+  RotateCcw,
+  ShieldAlert,
+  CloudLightning,
+} from 'lucide-react';
+
+const LogViewerModal = React.lazy(() =>
+  import('./LogViewerModal').then((m) => ({ default: m.LogViewerModal }))
+);
 
 interface CrashReportModalProps {
   isOpen: boolean;
@@ -89,307 +103,213 @@ export const CrashReportModal: React.FC<CrashReportModalProps> = ({
 
   return (
     <>
-      <div
-        style={{
-          position: 'fixed',
-        inset: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.75)',
-        backdropFilter: 'blur(8px)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1000,
-        padding: '20px',
-      }}
-    >
-      <div
-        style={{
-          width: '100%',
-          maxWidth: '520px',
-          backgroundColor: '#16131B',
-          border: '1px solid rgba(244, 63, 94, 0.3)',
-          borderRadius: '16px',
-          padding: '24px',
-          boxShadow: '0 20px 50px rgba(0, 0, 0, 0.5), 0 0 30px rgba(244, 63, 94, 0.15)',
-          color: '#F8FAFC',
-          position: 'relative',
-        }}
-      >
-        {/* Botón cerrar */}
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Cerrar reporte de error"
-          style={{
-            position: 'absolute',
-            top: '16px',
-            right: '16px',
-            background: 'transparent',
-            border: 'none',
-            color: 'rgba(248, 250, 252, 0.5)',
-            cursor: 'pointer',
-          }}
-        >
-          <X size={18} />
-        </button>
-
-        {/* Encabezado del Crash */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
-          <div
-            style={{
-              width: '42px',
-              height: '42px',
-              borderRadius: '12px',
-              background: 'rgba(244, 63, 94, 0.15)',
-              border: '1px solid #F43F5E',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <AlertOctagon size={22} color="#F43F5E" />
-          </div>
-          <div>
-            <h3 style={{ fontSize: '16px', fontWeight: 700, margin: 0 }}>
-              El juego se cerró inesperadamente
-            </h3>
-            <span style={{ fontSize: '12px', color: 'rgba(248, 250, 252, 0.5)' }}>
-              Código de salida: {exitCode}
-            </span>
-          </div>
-        </div>
-
-        {/* Diagnóstico en caliente */}
+      <div className="crash-modal-overlay">
         <div
-          style={{
-            background: 'rgba(244, 63, 94, 0.08)',
-            border: '1px solid rgba(244, 63, 94, 0.2)',
-            borderRadius: '10px',
-            padding: '12px 14px',
-            marginBottom: '16px',
-          }}
+          className="crash-modal-card"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="crash-dialog-title"
         >
-          <div style={{ fontSize: '12px', fontWeight: 600, color: '#FDA4AF', marginBottom: '4px' }}>
-            Causa detectada por Crash Doctor:
-          </div>
-          <div style={{ fontSize: '13px', color: '#F8FAFC' }}>{crashReason}</div>
-        </div>
-
-        {/* Feedback de acción rápida */}
-        {actionFeedback && (
-          <div
-            style={{
-              background: 'rgba(34, 197, 94, 0.15)',
-              border: '1px solid rgba(34, 197, 94, 0.4)',
-              borderRadius: '10px',
-              padding: '10px 14px',
-              marginBottom: '16px',
-              color: '#4ade80',
-              fontSize: '12px',
-              fontWeight: 600,
-            }}
+          {/* Botón cerrar */}
+          <button
+            type="button"
+            onClick={onClose}
+            className="crash-modal-close-btn"
+            aria-label="Cerrar reporte de error"
           >
-            {actionFeedback}
-          </div>
-        )}
+            <X size={16} />
+          </button>
 
-        {/* 1-Click Fix: Desactivar mod conflictivo */}
-        {suggestedAction === 'DISABLE_MOD' && offendingMod && gameDir && (
-          <div style={{ marginBottom: '16px' }}>
-            <button
-              type="button"
-              disabled={isFixing}
-              onClick={handleFixMod}
+          {/* Encabezado del Crash */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '16px' }}>
+            <div className="crash-icon-box">
+              <AlertOctagon size={22} color="#fb7185" />
+            </div>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <h3
+                id="crash-dialog-title"
+                style={{
+                  fontSize: '16.5px',
+                  fontWeight: 700,
+                  margin: '0 0 5px 0',
+                  color: '#f8fafc',
+                  letterSpacing: '-0.015em',
+                }}
+              >
+                El juego se cerró inesperadamente
+              </h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <span className="crash-exit-badge">
+                  <span className="crash-exit-dot" />
+                  Código de salida: {exitCode}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Diagnóstico en caliente (Crash Doctor) */}
+          <div className="crash-diagnosis-box">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+              <Activity size={13} color="#fda4af" />
+              <span
+                style={{
+                  fontSize: '10.5px',
+                  fontWeight: 700,
+                  color: '#fda4af',
+                  letterSpacing: '0.04em',
+                  textTransform: 'uppercase',
+                }}
+              >
+                Crash Doctor • Diagnóstico inteligente
+              </span>
+            </div>
+            <div style={{ fontSize: '13px', lineHeight: 1.45, color: '#f1f5f9', fontWeight: 500 }}>
+              {crashReason}
+            </div>
+          </div>
+
+          {/* Feedback de acción rápida */}
+          {actionFeedback && (
+            <div
               style={{
-                width: '100%',
-                background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.2) 0%, rgba(249, 115, 22, 0.25) 100%)',
-                border: '1px solid rgba(249, 115, 22, 0.5)',
+                background: 'rgba(16, 185, 129, 0.12)',
+                border: '1px solid rgba(16, 185, 129, 0.35)',
                 borderRadius: '10px',
-                padding: '11px 14px',
-                color: '#fdba74',
-                fontSize: '13px',
-                fontWeight: 700,
+                padding: '10px 14px',
+                marginBottom: '16px',
+                color: '#34d399',
+                fontSize: '12px',
+                fontWeight: 600,
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center',
                 gap: '8px',
-                cursor: isFixing ? 'not-allowed' : 'pointer',
-                boxShadow: '0 4px 16px rgba(249, 115, 22, 0.15)',
               }}
             >
-              <span>🛡️ {isFixing ? 'Desactivando...' : `Desactivar "${offendingMod}" y Reintentar`}</span>
-            </button>
-          </div>
-        )}
+              <Check size={14} />
+              <span>{actionFeedback}</span>
+            </div>
+          )}
 
-        {/* 1-Click Fix: Restablecer options.txt */}
-        {suggestedAction === 'RESET_OPTIONS' && gameDir && (
-          <div style={{ marginBottom: '16px' }}>
-            <button
-              type="button"
-              disabled={isFixing}
-              onClick={handleResetOptions}
-              style={{
-                width: '100%',
-                background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.2) 0%, rgba(234, 179, 8, 0.25) 100%)',
-                border: '1px solid rgba(245, 158, 11, 0.5)',
-                borderRadius: '10px',
-                padding: '11px 14px',
-                color: '#fde047',
-                fontSize: '13px',
-                fontWeight: 700,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px',
-                cursor: isFixing ? 'not-allowed' : 'pointer',
-              }}
-            >
-              <span>⚙️ {isFixing ? 'Restableciendo...' : 'Restablecer options.txt y Reintentar'}</span>
-            </button>
-          </div>
-        )}
-
-        {/* Botón especial si es Out of Memory */}
-        {(suggestedAction === 'INCREASE_RAM' ||
-          exitCode === 137 ||
-          /out of memory|heap space|could not reserve/i.test(crashReason + ' ' + (crashDetails || ''))) &&
-          onOpenOomAssistant && (
+          {/* 1-Click Fix: Desactivar mod conflictivo */}
+          {suggestedAction === 'DISABLE_MOD' && offendingMod && gameDir && (
             <div style={{ marginBottom: '16px' }}>
               <button
                 type="button"
-                onClick={() => {
-                  onClose();
-                  onOpenOomAssistant();
-                }}
-                style={{
-                  width: '100%',
-                  background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.18) 0%, rgba(99, 102, 241, 0.2) 100%)',
-                  border: '1px solid rgba(56, 189, 248, 0.45)',
-                  borderRadius: '10px',
-                  padding: '10px 14px',
-                  color: '#38bdf8',
-                  fontSize: '12.5px',
-                  fontWeight: 700,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px',
-                  cursor: 'pointer',
-                  boxShadow: '0 4px 16px rgba(56, 189, 248, 0.15)',
-                }}
+                disabled={isFixing}
+                onClick={handleFixMod}
+                className="crash-fix-btn crash-fix-mod"
               >
-                <span>☁️ Solucionar Falta de RAM (La Nubecita)</span>
+                <ShieldAlert size={15} />
+                <span>
+                  {isFixing ? 'Desactivando...' : `Desactivar "${offendingMod}" y Reintentar`}
+                </span>
               </button>
             </div>
           )}
 
-        {/* Consola resumida de error */}
-        <div style={{ marginBottom: '20px' }}>
-          <span
-            style={{
-              fontSize: '11px',
-              fontWeight: 600,
-              color: 'rgba(248, 250, 252, 0.5)',
-              textTransform: 'uppercase',
-              display: 'block',
-              marginBottom: '4px',
-            }}
-          >
-            Detalle del error:
-          </span>
-          <pre
-            style={{
-              background: 'rgba(0, 0, 0, 0.5)',
-              border: '1px solid rgba(255, 255, 255, 0.08)',
-              borderRadius: '8px',
-              padding: '10px 12px',
-              fontSize: '11px',
-              fontFamily: 'monospace',
-              color: '#FCA5A5',
-              maxHeight: '120px',
-              overflowY: 'auto',
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-all',
-              margin: '6px 0 0 0',
-            }}
-          >
-            {crashDetails}
-          </pre>
-        </div>
+          {/* 1-Click Fix: Restablecer options.txt */}
+          {suggestedAction === 'RESET_OPTIONS' && gameDir && (
+            <div style={{ marginBottom: '16px' }}>
+              <button
+                type="button"
+                disabled={isFixing}
+                onClick={handleResetOptions}
+                className="crash-fix-btn crash-fix-options"
+              >
+                <RotateCcw size={15} className={isFixing ? 'crash-spin' : ''} />
+                <span>{isFixing ? 'Restableciendo...' : 'Restablecer options.txt y Reintentar'}</span>
+              </button>
+            </div>
+          )}
 
-        {/* Acciones */}
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <button
-            onClick={onRetry}
-            style={{
-              flex: 1,
-              background: 'linear-gradient(135deg, #2DD4BF 0%, #0EA5E9 100%)',
-              border: 'none',
-              borderRadius: '10px',
-              padding: '12px 16px',
-              color: '#0A090E',
-              fontSize: '13px',
-              fontWeight: 700,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '6px',
-              cursor: 'pointer',
-            }}
-          >
-            <RefreshCw size={14} /> Reintentar
-          </button>
-          <button
-            onClick={handleCopyReport}
-            style={{
-              background: 'rgba(255, 255, 255, 0.06)',
-              border: '1px solid rgba(255, 255, 255, 0.12)',
-              borderRadius: '10px',
-              padding: '12px 16px',
-              color: '#F8FAFC',
-              fontSize: '13px',
-              fontWeight: 600,
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              cursor: 'pointer',
-            }}
-          >
-            {copied ? <Check size={14} color="#2DD4BF" /> : <Copy size={14} />}
-            {copied ? "¡Copiado!" : "Copiar reporte"}
-          </button>
-          <button
-            onClick={() => setIsLogViewerOpen(true)}
-            title="Ver registros detallados de Minecraft"
-            style={{
-              background: "rgba(56, 189, 248, 0.12)",
-              border: "1px solid rgba(56, 189, 248, 0.3)",
-              borderRadius: "10px",
-              padding: "12px 16px",
-              color: "#38bdf8",
-              fontSize: "13px",
-              fontWeight: 600,
-              display: "flex",
-              alignItems: "center",
-              gap: "6px",
-              cursor: "pointer",
-            }}
-          >
-            <FileText size={14} />
-            Ver Registros
-          </button>
+          {/* Botón especial si es Out of Memory */}
+          {(suggestedAction === 'INCREASE_RAM' ||
+            exitCode === 137 ||
+            /out of memory|heap space|could not reserve/i.test(
+              crashReason + ' ' + (crashDetails || ''),
+            )) &&
+            onOpenOomAssistant && (
+              <div style={{ marginBottom: '16px' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onOpenOomAssistant();
+                  }}
+                  className="crash-fix-btn crash-fix-oom"
+                >
+                  <CloudLightning size={15} />
+                  <span>Solucionar Falta de RAM (La Nubecita)</span>
+                </button>
+              </div>
+            )}
+
+          {/* Consola resumida de error con cabecera de terminal */}
+          <div className="crash-terminal-container">
+            <div className="crash-terminal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div className="crash-terminal-dots">
+                  <span className="crash-terminal-dot" style={{ background: 'rgba(244, 63, 94, 0.7)' }} />
+                  <span className="crash-terminal-dot" style={{ background: 'rgba(234, 179, 8, 0.7)' }} />
+                  <span className="crash-terminal-dot" style={{ background: 'rgba(34, 197, 94, 0.7)' }} />
+                </div>
+                <span
+                  style={{
+                    fontSize: '10px',
+                    fontWeight: 600,
+                    letterSpacing: '0.06em',
+                    color: '#94a3b8',
+                    fontFamily: 'ui-monospace, monospace',
+                  }}
+                >
+                  DETALLE DEL ERROR / STACK TRACE
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={handleCopyReport}
+                className="crash-terminal-copy-btn"
+                title="Copiar detalles del error"
+              >
+                {copied ? <Check size={11} color="#34d399" /> : <Copy size={11} />}
+                <span>{copied ? 'Copiado' : 'Copiar'}</span>
+              </button>
+            </div>
+            <pre className="crash-terminal-body">{crashDetails}</pre>
+          </div>
+
+          {/* Acciones principales */}
+          <div className="crash-actions-row">
+            <button type="button" onClick={onRetry} className="crash-btn-primary">
+              <RefreshCw size={14} className={isFixing ? 'crash-spin' : ''} />
+              <span>Reintentar</span>
+            </button>
+            <button type="button" onClick={handleCopyReport} className="crash-btn-secondary">
+              {copied ? <Check size={14} color="#34d399" /> : <Copy size={14} />}
+              <span>{copied ? '¡Copiado!' : 'Copiar reporte'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsLogViewerOpen(true)}
+              title="Ver registros detallados de Minecraft"
+              className="crash-btn-tertiary"
+            >
+              <FileText size={14} />
+              <span>Ver Registros</span>
+            </button>
+          </div>
         </div>
       </div>
-    </div>
 
-    {isLogViewerOpen && (
-      <LogViewerModal
-        isOpen={isLogViewerOpen}
-        onClose={() => setIsLogViewerOpen(false)}
-        defaultTab="minecraft"
-      />
-    )}
-  </>
-);
+      {isLogViewerOpen && (
+        <Suspense fallback={null}>
+          <LogViewerModal
+            isOpen={isLogViewerOpen}
+            onClose={() => setIsLogViewerOpen(false)}
+            defaultTab="minecraft"
+          />
+        </Suspense>
+      )}
+    </>
+  );
 };

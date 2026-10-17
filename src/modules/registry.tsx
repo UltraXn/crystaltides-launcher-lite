@@ -29,6 +29,44 @@ export const isSafeExternalUrl = (url?: string): boolean => {
   return trimmed.startsWith('https://') || trimmed.startsWith('http://');
 };
 
+export const resolveSafeActionTargetDir = async (
+  target?: string,
+): Promise<string | null> => {
+  if (!target || typeof target !== 'string') return null;
+
+  const trimmed = target.trim();
+  const knownMarkers = ['{instanceDir}', '{modsDir}', '{logsDir}'];
+  const hasKnownMarker = knownMarkers.some((m) => trimmed.startsWith(m));
+
+  if (!hasKnownMarker) {
+    console.warn(
+      `[Modules] Destino de carpeta rechazado por seguridad (no usa marcadores permitidos): ${trimmed}`,
+    );
+    return null;
+  }
+
+  if (trimmed.includes('..')) {
+    console.warn(`[Modules] Ruta con posible directory traversal rechazada: ${trimmed}`);
+    return null;
+  }
+
+  const state = getLauncherState();
+  const activeInst =
+    state.instances.find((i) => i.id === state.activeInstanceId) ||
+    state.instances[0];
+
+  if (!activeInst) return null;
+
+  const { resolveInstanceGameDir } = await import('../services/instanceService');
+  const baseDir = await resolveInstanceGameDir(activeInst);
+  const normalizedBase = baseDir.replace(/\\/g, '/');
+
+  return trimmed
+    .replace('{instanceDir}', normalizedBase)
+    .replace('{modsDir}', `${normalizedBase}/mods`)
+    .replace('{logsDir}', `${normalizedBase}/logs`);
+};
+
 const ENABLED_MODULES_KEY = 'crystaltides_lite_enabled_modules_v1';
 const CUSTOM_PLUGINS_KEY = 'crystaltides_lite_custom_plugins_v1';
 
@@ -183,9 +221,15 @@ export const createModuleFromManifest = (manifest: CustomPluginManifest): Launch
         } else if (dockSlot.actionType === 'modal') {
           ctx.openModuleModal(manifest.id);
         } else if (dockSlot.actionType === 'openDir' && dockSlot.actionTarget) {
-          invoke('open_folder', { path: dockSlot.actionTarget }).catch((err) =>
-            console.warn('[Modules] Error abriendo carpeta:', err),
-          );
+          resolveSafeActionTargetDir(dockSlot.actionTarget)
+            .then((safePath) => {
+              if (safePath) {
+                return invoke('open_folder', { path: safePath });
+              }
+            })
+            .catch((err) =>
+              console.warn('[Modules] Error abriendo carpeta segura:', err),
+            );
         } else if (manifest.slots?.modal) {
           ctx.openModuleModal(manifest.id);
         }

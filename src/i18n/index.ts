@@ -16,6 +16,8 @@ export const translations = {
       launch: 'Iniciar Juego',
       launching: 'Iniciando...',
       running: 'En ejecución',
+      stopGame: 'Detener',
+      runningTooltip: 'Minecraft en ejecución (Clic para cerrar el juego)',
     },
     // HUD Editor Overlay
     hudEditor: {
@@ -43,6 +45,22 @@ export const translations = {
       uploadBarMedia: 'Subir Fondo de Barra',
       clearBarMedia: 'Quitar Fondo de Barra',
       splitScreenButtons: 'Pantalla Dividida (Botones que comparten la imagen):',
+      scaleNormal: 'Normal',
+      scaleCompact: 'Compacto',
+      dockScale: 'Tamaño de Botones',
+      textLabels: 'Etiquetas',
+      showText: 'Texto',
+      hideText: 'Sin Texto',
+      opacity: 'Opacidad',
+      borderRadius: 'Bordes',
+      posY: 'Posición Vertical (Y)',
+      posX: 'Posición Horizontal (X)',
+      zoomScale: 'Zoom / Escala',
+      bgOpacity: 'Opacidad de Fondo',
+      videoOpacity: 'Opacidad de Vídeo',
+      iconScale: 'Escala del Icono',
+      rotation: 'Rotación',
+      customBgColor: 'Color personalizado de fondo',
     },
     // Bottom Bar
     bottomBar: {
@@ -56,6 +74,7 @@ export const translations = {
     window: {
       minimize: 'Minimizar',
       maximize: 'Maximizar',
+      restore: 'Restaurar',
       close: 'Cerrar',
       edition: 'Edición Lite',
       badgeTitle: 'CrystalTides Launcher Lite',
@@ -173,6 +192,15 @@ export const translations = {
       cancel: 'Cancelar',
       close: 'Cerrar',
       openLogs: 'Ver Registros de Consola',
+      // Updates
+      updatesTitle: 'Actualizaciones del Sistema',
+      updatesDesc: 'Comprueba si existe una versión más reciente de CrystalTides Launcher Lite.',
+      checkUpdatesBtn: 'Buscar Actualización',
+      checkingUpdates: 'Buscando actualizaciones...',
+      upToDate: '¡Estás en la versión más reciente!',
+      updateAvailable: '¡Nueva versión disponible!',
+      viewDetails: 'Ver Detalles',
+      offlineUpdates: 'Servidor de actualización no disponible (Modo Dev / Offline)',
     },
     // Accounts Modal
     accounts: {
@@ -184,6 +212,11 @@ export const translations = {
       btnMicrosoft: 'Microsoft',
       usernamePlaceholder: 'Nombre de usuario...',
       activeTag: 'ACTIVO',
+      requiresReauthTag: 'Requiere iniciar sesión',
+      vaultDecryptionWarning:
+        'No se pudieron descifrar las credenciales de la sesión local. Por seguridad, vuelve a iniciar sesión con tu cuenta.',
+      accountPersistenceWarning:
+        'Hubo un problema al guardar los datos de la cuenta en la base de datos local.',
       select: 'Seleccionar',
       delete: 'Eliminar',
       noAccounts:
@@ -216,6 +249,14 @@ export const translations = {
       tagline: 'CrystalTides launcher, forjado en las profundidades. 🌊✨',
       openDiscord: 'Discord Oficial',
       openWebsite: 'Sitio Web',
+    },
+    // Mod Sync
+    modSync: {
+      errorTitle: 'Fallo al verificar mods oficiales',
+      errorMessage: 'No se pudieron verificar los mods oficiales del servidor: {error}',
+      retryBtn: 'Reintentar',
+      launchAnywayBtn: 'Lanzar de todos modos',
+      cancelBtn: 'Cancelar',
     },
     // Instances Modal
     instances: {
@@ -342,6 +383,8 @@ export const translations = {
       orDivider: 'O',
       officialAccount: 'Cuenta Oficial:',
       crystalLoginTitle: 'CrystalTides Login',
+      crystalComingSoon: 'Próximamente',
+      crystalComingSoonTooltip: 'El inicio de sesión con cuenta web de CrystalTides estará disponible próximamente.',
       loginWith: 'Iniciar sesión con:',
       microsoftTitle: 'Microsoft',
       msConnecting: 'Conectando con Microsoft...',
@@ -361,6 +404,20 @@ export const translations = {
       langSpanish: 'Español',
       langEnglish: 'English',
     },
+    // Launch Flow & Lifecycle
+    launchFlow: {
+      ready: 'Listo para jugar',
+      verifying: 'Verificando sesión...',
+      renewing: 'Renovando credenciales de Minecraft...',
+      syncingMods: 'Sincronizando mods oficiales...',
+      optimizing: 'Sincronizando stack de rendimiento...',
+      launching: 'Iniciando juego...',
+      running: 'Juego en ejecución',
+      authExpired: 'Tu sesión de Microsoft ha expirado. Por favor, vuelve a iniciar sesión.',
+      savingAccountError: 'Problema al guardar la cuenta en la base de datos.',
+      killGameTitle: 'Finalizar Juego',
+      killGameSuccess: 'El proceso del juego ha sido detenido.',
+    },
   },
   en: {
     // Main Dock & Action Buttons
@@ -372,6 +429,8 @@ export const translations = {
       launch: 'Start Game',
       launching: 'Launching...',
       running: 'Running',
+      stopGame: 'Stop',
+      runningTooltip: 'Minecraft is running (Click to close game)',
     },
     // HUD Editor Overlay
     hudEditor: {
@@ -399,6 +458,22 @@ export const translations = {
       uploadBarMedia: 'Upload Bar Wallpaper',
       clearBarMedia: 'Remove Bar Wallpaper',
       splitScreenButtons: 'Split Screen (Buttons sharing the wallpaper):',
+      scaleNormal: 'Normal',
+      scaleCompact: 'Compact',
+      dockScale: 'Button Size',
+      textLabels: 'Labels',
+      showText: 'Text',
+      hideText: 'No Text',
+      opacity: 'Opacity',
+      borderRadius: 'Radius',
+      posY: 'Vertical Position (Y)',
+      posX: 'Horizontal Position (X)',
+      zoomScale: 'Zoom / Scale',
+      bgOpacity: 'Background Opacity',
+      videoOpacity: 'Video Opacity',
+      iconScale: 'Icon Scale',
+      rotation: 'Rotation',
+      customBgColor: 'Custom background color',
     },
     // Bottom Bar
     bottomBar: {
@@ -412,6 +487,7 @@ export const translations = {
     window: {
       minimize: 'Minimize',
       maximize: 'Maximize',
+      restore: 'Restore',
       close: 'Close',
       edition: 'Lite Edition',
       badgeTitle: 'CrystalTides Launcher Lite',
@@ -525,6 +601,15 @@ export const translations = {
       cancel: 'Cancel',
       close: 'Close',
       openLogs: 'View Console Logs',
+      // Updates
+      updatesTitle: 'System Updates',
+      updatesDesc: 'Check if a newer version of CrystalTides Launcher Lite is available.',
+      checkUpdatesBtn: 'Check for Updates',
+      checkingUpdates: 'Checking for updates...',
+      upToDate: 'You are on the latest version!',
+      updateAvailable: 'New version available!',
+      viewDetails: 'View Details',
+      offlineUpdates: 'Update server unavailable (Dev / Offline mode)',
     },
     // Accounts Modal
     accounts: {
@@ -536,6 +621,10 @@ export const translations = {
       btnMicrosoft: 'Microsoft',
       usernamePlaceholder: 'Username...',
       activeTag: 'ACTIVE',
+      requiresReauthTag: 'Requires login',
+      vaultDecryptionWarning:
+        'Could not decrypt stored local credentials. Please log in again with your account.',
+      accountPersistenceWarning: 'There was a problem saving account data to the local database.',
       select: 'Select',
       delete: 'Delete',
       noAccounts: 'No accounts added yet. Sign in with Microsoft or play as guest.',
@@ -567,6 +656,14 @@ export const translations = {
       tagline: 'CrystalTides launcher, forged in the deep tides. 🌊✨',
       openDiscord: 'Official Discord',
       openWebsite: 'Website',
+    },
+    // Mod Sync
+    modSync: {
+      errorTitle: 'Official mods verification failed',
+      errorMessage: 'Could not sync official server mods: {error}',
+      retryBtn: 'Retry',
+      launchAnywayBtn: 'Launch anyway',
+      cancelBtn: 'Cancel',
     },
     // Instances Modal
     instances: {
@@ -606,7 +703,7 @@ export const translations = {
       modsHint: 'You can enable, disable or remove community mods.',
       scanningMods: 'Scanning mods...',
       openModsFolder: 'Open mods folder',
-      noModsFound: 'No mods found in this instance\'s mods folder.',
+      noModsFound: "No mods found in this instance's mods folder.",
       modOfficial: 'Official',
       modCommunity: 'Community',
       modActive: 'Active',
@@ -616,8 +713,7 @@ export const translations = {
       modDeleteTitle: 'Delete mod',
 
       // Worlds / Saves Tab
-      savesSubtitle:
-        'Singleplayer worlds read directly in Rust with fastnbt from saves/.',
+      savesSubtitle: 'Singleplayer worlds read directly in Rust with fastnbt from saves/.',
       parsingLevelDat: 'Parsing level.dat...',
       noSavesFound: 'No singleplayer worlds found in this instance.',
       gameTypeCreative: 'Creative',
@@ -627,8 +723,7 @@ export const translations = {
       noDate: 'No date',
 
       // Servers Tab
-      serversSubtitle:
-        'Multiplayer servers saved in servers.dat serialized and parsed in Rust.',
+      serversSubtitle: 'Multiplayer servers saved in servers.dat serialized and parsed in Rust.',
       readingServersDat: 'Reading servers.dat...',
       serverNamePlaceholder: 'Server name (e.g. CrystalTides SMP)',
       serverIpPlaceholder: 'Server IP / Host (e.g. mc.crystaltides.net)',
@@ -660,8 +755,7 @@ export const translations = {
       importSubtitle:
         'Scan existing profiles from Official Minecraft, CurseForge, Modrinth, and Prism Launcher, or select any custom folder.',
       rescanBtn: 'Rescan',
-      customPathPlaceholder:
-        'Or enter a Minecraft folder path (e.g. D:\\Games\\MyModpack)...',
+      customPathPlaceholder: 'Or enter a Minecraft folder path (e.g. D:\\Games\\MyModpack)...',
       browseBtn: 'Browse',
       importBtn: 'Import to CrystalTides',
       alreadyImported: 'Already imported in CrystalTides',
@@ -693,6 +787,8 @@ export const translations = {
       orDivider: 'OR',
       officialAccount: 'Official Account:',
       crystalLoginTitle: 'CrystalTides Login',
+      crystalComingSoon: 'Coming Soon',
+      crystalComingSoonTooltip: 'CrystalTides web account login will be available soon in a future update.',
       loginWith: 'Login with:',
       microsoftTitle: 'Microsoft',
       msConnecting: 'Connecting to Microsoft...',
@@ -711,6 +807,20 @@ export const translations = {
       crystalLoginError: 'Error connecting to CrystalTides account.',
       langSpanish: 'Español',
       langEnglish: 'English',
+    },
+    // Launch Flow & Lifecycle
+    launchFlow: {
+      ready: 'Ready to play',
+      verifying: 'Verifying session...',
+      renewing: 'Renewing Minecraft credentials...',
+      syncingMods: 'Syncing official mods...',
+      optimizing: 'Syncing performance stack...',
+      launching: 'Launching game...',
+      running: 'Game running',
+      authExpired: 'Your Microsoft session has expired. Please log in again.',
+      savingAccountError: 'Problem saving account to local database.',
+      killGameTitle: 'Terminate Game',
+      killGameSuccess: 'The game process was stopped.',
     },
   },
 } as const;

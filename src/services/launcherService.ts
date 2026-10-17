@@ -3,6 +3,8 @@ import { ensureJava, getJavaVersionForMinecraft } from './javaService';
 import { fetchHardwareProfile, fetchGpuProfile } from './hardwareService';
 import { getAgentJvmArgs } from './agentIpcService';
 import { extractCleanMinecraftVersion } from '../utils/settingsUtils';
+import { logFrontend } from './logger';
+import { redact } from '../utils/redact';
 
 export interface LaunchParams {
   username: string;
@@ -19,6 +21,7 @@ export interface LaunchParams {
   javaPath?: string;
   resolution?: string;
   fullscreen?: boolean;
+  profileId?: string;
   preLaunchCommand?: string;
   wrapperCommand?: string;
   postExitCommand?: string;
@@ -26,18 +29,22 @@ export interface LaunchParams {
   javaDistribution?: 'adoptium' | 'graalvm';
 }
 
-interface VersionLibraryRule {
+export interface VersionLibraryRule {
   action: string;
-  os?: { name?: string };
+  os?: {
+    name?: string;
+    arch?: string;
+    versionRange?: { min?: string; max?: string };
+  };
 }
 
-interface VersionLibrary {
+export interface VersionLibrary {
   rules?: VersionLibraryRule[];
   downloads?: { artifact?: { path?: string } };
   name?: string;
 }
 
-interface VersionManifest {
+export interface VersionManifest {
   id?: string;
   mainClass?: string;
   libraries?: VersionLibrary[];
@@ -49,7 +56,7 @@ interface VersionManifest {
   javaVersion?: { component?: string; majorVersion?: number };
 }
 
-const getCurrentOs = (): 'windows' | 'osx' | 'linux' => {
+export const getCurrentOs = (): 'windows' | 'osx' | 'linux' => {
   if (typeof navigator !== 'undefined' && navigator.userAgent) {
     const ua = navigator.userAgent.toLowerCase();
     if (ua.includes('mac') || ua.includes('darwin')) return 'osx';
@@ -58,16 +65,58 @@ const getCurrentOs = (): 'windows' | 'osx' | 'linux' => {
   return 'windows';
 };
 
+const getCurrentArch = (): 'x64' | 'arm64' | 'x86' | 'arm32' => {
+  if (typeof process !== 'undefined' && process.arch) {
+    if (process.arch === 'x64') return 'x64';
+    if (process.arch === 'arm64') return 'arm64';
+    if (process.arch === 'ia32') return 'x86';
+    if (process.arch === 'arm') return 'arm32';
+  }
+  if (typeof navigator !== 'undefined' && navigator.userAgent) {
+    const ua = navigator.userAgent.toLowerCase();
+    if (ua.includes('arm64') || ua.includes('aarch64')) return 'arm64';
+    if (ua.includes('arm')) return 'arm32';
+    if (
+      ua.includes('win64') ||
+      ua.includes('x64') ||
+      ua.includes('x86_64') ||
+      ua.includes('amd64') ||
+      ua.includes('wow64')
+    ) {
+      return 'x64';
+    }
+    if (ua.includes('i686') || ua.includes('i386') || ua.includes('x86')) return 'x86';
+  }
+  return 'x64';
+};
+
 export const isWin = typeof navigator !== 'undefined' ? /win/i.test(navigator.userAgent) : true;
 export const pathSep = isWin ? '\\' : '/';
 export const cpSep = isWin ? ';' : ':';
 
+const matchesArchRule = (ruleArch: string, currentArch: string): boolean => {
+  const normRule = ruleArch.toLowerCase();
+  if (normRule === currentArch) return true;
+  if ((normRule === 'x86_64' || normRule === 'amd64' || normRule === 'x64') && currentArch === 'x64') return true;
+  if ((normRule === 'x86' || normRule === 'ia32' || normRule === 'i386') && currentArch === 'x86') return true;
+  if ((normRule === 'arm64' || normRule === 'aarch64') && currentArch === 'arm64') return true;
+  if ((normRule === 'arm' || normRule === 'arm32') && currentArch === 'arm32') return true;
+  return false;
+};
+
 const isRuleAllowed = (rules?: VersionLibraryRule[]): boolean => {
   if (!rules || rules.length === 0) return true;
   const currentOs = getCurrentOs();
+  const currentArch = getCurrentArch();
   let allowed = false;
   for (const rule of rules) {
-    const matchesOs = !rule.os || rule.os.name === currentOs;
+    let matchesOs = true;
+    if (rule.os?.name && rule.os.name !== currentOs) {
+      matchesOs = false;
+    }
+    if (rule.os?.arch && !matchesArchRule(rule.os.arch, currentArch)) {
+      matchesOs = false;
+    }
     if (rule.action === 'allow') {
       if (matchesOs) {
         allowed = true;
@@ -81,8 +130,57 @@ const isRuleAllowed = (rules?: VersionLibraryRule[]): boolean => {
   return allowed;
 };
 
+const isLibraryArchAllowed = (
+  lib: VersionLibrary,
+  currentArch: 'x64' | 'arm64' | 'x86' | 'arm32' = getCurrentArch(),
+): boolean => {
+  const rawId = `${lib.name ?? ''} ${lib.downloads?.artifact?.path ?? ''}`.toLowerCase();
+  if (!rawId.trim()) return true;
+
+  const isNative =
+    rawId.includes('native') ||
+    rawId.includes('windows') ||
+    rawId.includes('osx') ||
+    rawId.includes('macos') ||
+    rawId.includes('linux');
+
+  if (!isNative) {
+    return true;
+  }
+
+  // 1. Explicit ARM64 / AArch64
+  if (/(?:natives-[a-z]+|linux|osx|macos|windows)-(arm64|aarch64|aarch_64)/.test(rawId)) {
+    return currentArch === 'arm64';
+  }
+
+  // 2. Explicit 32-bit x86 (e.g. natives-windows-x86, not x86_64)
+  if (/(?:natives-[a-z]+|linux|osx|macos|windows)-(x86|i386|i686)(?:[^a-z0-9_]|$)/.test(rawId)) {
+    return currentArch === 'x86';
+  }
+
+  // 3. Explicit 32-bit ARM
+  if (/(?:natives-[a-z]+|linux|osx|macos|windows)-(arm32|armhf)(?:[^a-z0-9_]|$)/.test(rawId)) {
+    return currentArch === 'arm32';
+  }
+
+  // 4. Explicit x64 / amd64 / x86_64
+  if (/(?:natives-[a-z]+|linux|osx|macos|windows)-(x86_64|amd64|x64)/.test(rawId)) {
+    return currentArch === 'x64';
+  }
+
+  // 5. Generic natives without arch suffix (e.g. natives-windows, natives-macos, natives-linux)
+  if (/(?:natives-windows|natives-macos|natives-osx|natives-linux)(?:[._@]jar|[._@]zip|$|\s)/.test(rawId)) {
+    return currentArch === 'x64';
+  }
+
+  return true;
+};
+
 const isLibraryAllowed = (lib: VersionLibrary): boolean => {
-  return isRuleAllowed(lib.rules);
+  if (!isRuleAllowed(lib.rules)) {
+    return false;
+  }
+  return isLibraryArchAllowed(lib);
 };
 
 const resolveLibraryPath = (lib: VersionLibrary): string | null => {
@@ -417,14 +515,15 @@ export const buildJvmArgs = (
   const libDir = normalizePath(`${gameDirectory}/libraries`);
   const nativesPath = normalizePath(`${gameDirectory}/versions/${versionId}/natives`);
   const agentNatives = normalizePath(`${gameDirectory}/natives`);
-  const combinedNatives = `${nativesPath}${cpSep}${agentNatives}`;
+  const javaNatives = normalizePath(`${agentNatives}/java`);
+  const combinedNatives = `${nativesPath}${cpSep}${agentNatives}${cpSep}${javaNatives}`;
 
   const effectiveMcVer = mcVersion ?? params.mcVersion ?? '1.21.1';
   const jvmPlaceholders: Record<string, string> = {
     library_directory: libDir,
     classpath_separator: cpSep,
     version_name: versionId,
-    natives_directory: combinedNatives,
+    natives_directory: agentNatives,
     launcher_name: 'CrystalTides',
     launcher_version: '1.0.0',
     classpath: cpString,
@@ -900,6 +999,7 @@ const dispatchMinecraftProcess = async (
       javaPath,
       args: fullArgs,
       gameDir: gameDirectory,
+      profileId: params.profileId ?? null,
       preLaunchCommand: params.preLaunchCommand ?? null,
       wrapperCommand: params.wrapperCommand ?? null,
       postExitCommand: params.postExitCommand ?? null,
@@ -919,7 +1019,7 @@ export const launchGame = async (
   isCancelled?: () => boolean,
 ): Promise<number> => {
   const log = (msg: string, level = 'INFO') => {
-    invoke('log_frontend', { msg, level }).catch(() => {});
+    logFrontend(level, msg);
   };
 
   try {
@@ -1021,7 +1121,7 @@ export const launchGame = async (
         await invoke('prepare_crystal_agent', { gameDir: gameDirectory });
         agentArgs = await getAgentJvmArgs(gameDirectory);
         if (agentArgs.length > 0) {
-          log(`Crystal Agent JVM inyectado: ${agentArgs.join(' ')}`);
+          log(`Crystal Agent JVM inyectado: ${agentArgs.map((arg) => redact(arg)).join(' ')}`);
         }
       } catch (agentErr) {
         log(`Nota al obtener Crystal Agent JVM: ${agentErr}`, 'WARN');
@@ -1059,7 +1159,7 @@ export const launchGame = async (
     await syncOptionsFile(gameDirectory, params.fullscreen, log);
 
     onProgress?.('Iniciando proceso de Minecraft...', 92);
-    console.log(`[Launcher] Executing Java at ${javaPath} with args:`, fullArgs);
+    console.log(`[Launcher] Executing Java at ${javaPath} with args:`, fullArgs.map((a) => redact(a)));
 
     if (isCancelled?.()) {
       log('Lanzamiento cancelado por el usuario antes de despachar el proceso.', 'WARN');
@@ -1099,7 +1199,9 @@ export const checkGameRunning = async (): Promise<boolean> => {
 
 export {
   isLibraryAllowed,
+  isLibraryArchAllowed,
   isRuleAllowed,
+  getCurrentArch,
   resolveLibraryPath,
   resolveActiveGc,
   isConflictingGcArg,

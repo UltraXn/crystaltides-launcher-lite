@@ -10,6 +10,10 @@ import {
   Minus,
   ArrowLeftRight,
   Sparkles,
+  Maximize2,
+  Minimize2,
+  Type,
+  EyeOff,
 } from 'lucide-react';
 import {
   launcherActions,
@@ -60,14 +64,14 @@ const VerticalHeaderControls: React.FC<VerticalPanelProps> = ({
                 style={{
                   background:
                     hudManualSide !== 'auto'
-                      ? 'rgba(56, 189, 248, 0.2)'
+                      ? `${accentColor}33`
                       : 'rgba(255, 255, 255, 0.06)',
                   border:
                     hudManualSide !== 'auto'
-                      ? '1px solid #38bdf8'
+                      ? `1px solid ${accentColor}`
                       : '1px solid rgba(255, 255, 255, 0.12)',
                   borderRadius: '6px',
-                  color: '#38bdf8',
+                  color: accentColor,
                   padding: '4px 6px',
                   cursor: 'pointer',
                   display: 'flex',
@@ -104,14 +108,14 @@ const VerticalHeaderControls: React.FC<VerticalPanelProps> = ({
                     borderRadius: '8px',
                     border:
                       dockConfig.layoutMode === 'dock'
-                        ? '1px solid #38bdf8'
+                        ? `1px solid ${accentColor}`
                         : '1px solid rgba(255, 255, 255, 0.08)',
                     background:
                       dockConfig.layoutMode === 'dock'
-                        ? 'rgba(56, 189, 248, 0.18)'
+                        ? `${accentColor}33`
                         : 'rgba(255, 255, 255, 0.03)',
                     color:
-                      dockConfig.layoutMode === 'dock' ? '#38bdf8' : 'rgba(248, 250, 252, 0.7)',
+                      dockConfig.layoutMode === 'dock' ? accentColor : 'rgba(248, 250, 252, 0.7)',
                     fontWeight: 600,
                     fontSize: '11.5px',
                     cursor: 'pointer',
@@ -132,15 +136,15 @@ const VerticalHeaderControls: React.FC<VerticalPanelProps> = ({
                     borderRadius: '8px',
                     border:
                       dockConfig.layoutMode === 'free_buttons'
-                        ? '1px solid #38bdf8'
+                        ? `1px solid ${accentColor}`
                         : '1px solid rgba(255, 255, 255, 0.08)',
                     background:
                       dockConfig.layoutMode === 'free_buttons'
-                        ? 'rgba(56, 189, 248, 0.18)'
+                        ? `${accentColor}33`
                         : 'rgba(255, 255, 255, 0.03)',
                     color:
                       dockConfig.layoutMode === 'free_buttons'
-                        ? '#38bdf8'
+                        ? accentColor
                         : 'rgba(248, 250, 252, 0.7)',
                     fontWeight: 600,
                     fontSize: '11.5px',
@@ -162,11 +166,13 @@ const VerticalHeaderControls: React.FC<VerticalPanelProps> = ({
 interface VerticalPresetsProps {
   t: ReturnType<typeof useT>;
   dockConfig: LauncherState['dockConfig'];
+  accentColor: string;
 }
 
 const VerticalPresetsAndSliders: React.FC<VerticalPresetsProps> = ({
   t,
   dockConfig,
+  accentColor,
 }) => {
   return (
     <>
@@ -205,15 +211,15 @@ const VerticalPresetsAndSliders: React.FC<VerticalPresetsProps> = ({
                       borderRadius: '7px',
                       border:
                         dockConfig.positionPreset === 'top'
-                          ? '1px solid #38bdf8'
+                          ? `1px solid ${accentColor}`
                           : '1px solid rgba(255, 255, 255, 0.08)',
                       background:
                         dockConfig.positionPreset === 'top'
-                          ? 'rgba(56, 189, 248, 0.22)'
+                          ? `${accentColor}33`
                           : 'rgba(255, 255, 255, 0.03)',
                       color:
                         dockConfig.positionPreset === 'top'
-                          ? '#38bdf8'
+                          ? accentColor
                           : 'rgba(248, 250, 252, 0.7)',
                       fontSize: '11.5px',
                       fontWeight: 600,
@@ -240,15 +246,15 @@ const VerticalPresetsAndSliders: React.FC<VerticalPresetsProps> = ({
                       borderRadius: '7px',
                       border:
                         dockConfig.positionPreset === 'center'
-                          ? '1px solid #38bdf8'
+                          ? `1px solid ${accentColor}`
                           : '1px solid rgba(255, 255, 255, 0.08)',
                       background:
                         dockConfig.positionPreset === 'center'
-                          ? 'rgba(56, 189, 248, 0.22)'
+                          ? `${accentColor}33`
                           : 'rgba(255, 255, 255, 0.03)',
                       color:
                         dockConfig.positionPreset === 'center'
-                          ? '#38bdf8'
+                          ? accentColor
                           : 'rgba(248, 250, 252, 0.7)',
                       fontSize: '11.5px',
                       fontWeight: 600,
@@ -275,15 +281,15 @@ const VerticalPresetsAndSliders: React.FC<VerticalPresetsProps> = ({
                       borderRadius: '7px',
                       border:
                         dockConfig.positionPreset === 'bottom'
-                          ? '1px solid #38bdf8'
+                          ? `1px solid ${accentColor}`
                           : '1px solid rgba(255, 255, 255, 0.08)',
                       background:
                         dockConfig.positionPreset === 'bottom'
-                          ? 'rgba(56, 189, 248, 0.22)'
+                          ? `${accentColor}33`
                           : 'rgba(255, 255, 255, 0.03)',
                       color:
                         dockConfig.positionPreset === 'bottom'
-                          ? '#38bdf8'
+                          ? accentColor
                           : 'rgba(248, 250, 252, 0.7)',
                       fontSize: '11.5px',
                       fontWeight: 600,
@@ -298,11 +304,248 @@ const VerticalPresetsAndSliders: React.FC<VerticalPresetsProps> = ({
               </div>
             )}
 
+            {/* Dock Button Scale / Size */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <span
+                style={{
+                  fontSize: '9.5px',
+                  fontWeight: 600,
+                  color: 'rgba(248, 250, 252, 0.45)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                }}
+              >
+                {t.hudEditor.dockScale}
+              </span>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: '4px',
+                  background: 'rgba(255, 255, 255, 0.04)',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  borderRadius: '8px',
+                  padding: '2px',
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => launcherActions.setDockConfig({ scale: 'normal' })}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '4px',
+                    padding: '5px 4px',
+                    borderRadius: '6px',
+                    border: 'none',
+                    background:
+                      dockConfig.scale !== 'compact' ? `${accentColor}33` : 'transparent',
+                    color:
+                      dockConfig.scale !== 'compact' ? accentColor : 'rgba(248, 250, 252, 0.6)',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Maximize2 size={12} />
+                  <span>{t.hudEditor.scaleNormal}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => launcherActions.setDockConfig({ scale: 'compact' })}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '4px',
+                    padding: '5px 4px',
+                    borderRadius: '6px',
+                    border: 'none',
+                    background:
+                      dockConfig.scale === 'compact' ? `${accentColor}33` : 'transparent',
+                    color:
+                      dockConfig.scale === 'compact' ? accentColor : 'rgba(248, 250, 252, 0.6)',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Minimize2 size={12} />
+                  <span>{t.hudEditor.scaleCompact}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Text Labels Visibility */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <span
+                style={{
+                  fontSize: '9.5px',
+                  fontWeight: 600,
+                  color: 'rgba(248, 250, 252, 0.45)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                }}
+              >
+                {t.hudEditor.textLabels}
+              </span>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: '4px',
+                  background: 'rgba(255, 255, 255, 0.04)',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  borderRadius: '8px',
+                  padding: '2px',
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => launcherActions.setDockConfig({ showLabels: true })}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '4px',
+                    padding: '5px 4px',
+                    borderRadius: '6px',
+                    border: 'none',
+                    background: dockConfig.showLabels ? `${accentColor}33` : 'transparent',
+                    color: dockConfig.showLabels ? accentColor : 'rgba(248, 250, 252, 0.6)',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Type size={12} />
+                  <span>{t.hudEditor.showText}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => launcherActions.setDockConfig({ showLabels: false })}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '4px',
+                    padding: '5px 4px',
+                    borderRadius: '6px',
+                    border: 'none',
+                    background: !dockConfig.showLabels ? `${accentColor}33` : 'transparent',
+                    color: !dockConfig.showLabels ? accentColor : 'rgba(248, 250, 252, 0.6)',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <EyeOff size={12} />
+                  <span>{t.hudEditor.hideText}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Opacity & Radius Sliders (Unified Dock Mode) */}
+            {dockConfig.layoutMode === 'dock' && (
+              <>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: '9.5px',
+                        color: 'rgba(248, 250, 252, 0.45)',
+                        fontWeight: 600,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                      }}
+                    >
+                      {t.hudEditor.opacity}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: '10px',
+                        color: '#f8fafc',
+                        fontWeight: 700,
+                        fontVariantNumeric: 'tabular-nums',
+                      }}
+                    >
+                      {Math.round(dockConfig.bgOpacity * 100)}%
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0.1"
+                    max="1"
+                    step="0.05"
+                    value={dockConfig.bgOpacity}
+                    aria-label={t.hudEditor.opacity}
+                    onChange={(e) =>
+                      launcherActions.setDockConfig({ bgOpacity: parseFloat(e.target.value) })
+                    }
+                    style={{ width: '100%', accentColor: accentColor, cursor: 'pointer' }}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: '9.5px',
+                        color: 'rgba(248, 250, 252, 0.45)',
+                        fontWeight: 600,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                      }}
+                    >
+                      {t.hudEditor.borderRadius}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: '10px',
+                        color: '#f8fafc',
+                        fontWeight: 700,
+                        fontVariantNumeric: 'tabular-nums',
+                      }}
+                    >
+                      {dockConfig.borderRadius}px
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="30"
+                    step="1"
+                    value={dockConfig.borderRadius}
+                    aria-label={t.hudEditor.borderRadius}
+                    onChange={(e) =>
+                      launcherActions.setDockConfig({
+                        borderRadius: parseInt(e.target.value, 10),
+                      })
+                    }
+                    style={{ width: '100%', accentColor: accentColor, cursor: 'pointer' }}
+                  />
+                </div>
+              </>
+            )}
+
             {/* Customization Tip */}
             <div
               style={{
-                background: 'rgba(56, 189, 248, 0.08)',
-                border: '1px solid rgba(56, 189, 248, 0.22)',
+                background: `${accentColor}14`,
+                border: `1px solid ${accentColor}33`,
                 borderRadius: '8px',
                 padding: '8px 10px',
                 display: 'flex',
@@ -315,7 +558,7 @@ const VerticalPresetsAndSliders: React.FC<VerticalPresetsProps> = ({
                   display: 'flex',
                   alignItems: 'center',
                   gap: '5px',
-                  color: '#38bdf8',
+                  color: accentColor,
                   fontSize: '10.5px',
                   fontWeight: 700,
                 }}
@@ -373,13 +616,13 @@ const VerticalPresetsAndSliders: React.FC<VerticalPresetsProps> = ({
                   gap: '6px',
                   padding: '9px 12px',
                   borderRadius: '8px',
-                  border: 'none',
-                  background: 'linear-gradient(135deg, #0284c7, #0ea5e9)',
+                  border: `1px solid ${accentColor}`,
+                  background: `linear-gradient(135deg, ${accentColor}, #0f766e)`,
                   color: '#ffffff',
                   fontSize: '12px',
                   fontWeight: 700,
                   cursor: 'pointer',
-                  boxShadow: '0 4px 14px rgba(14, 165, 233, 0.4)',
+                  boxShadow: `0 4px 14px ${accentColor}40`,
                 }}
               >
                 <Check size={14} strokeWidth={3} />

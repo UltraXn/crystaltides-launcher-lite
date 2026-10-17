@@ -12,11 +12,17 @@ fn validate_patch_path(file_path: &str, param_name: &str) -> Result<std::path::P
     }
     let path = std::path::PathBuf::from(trimmed);
     if !path.is_absolute() {
-        return Err(format!("Ruta no autorizada: {} debe ser una ruta absoluta", param_name));
+        return Err(format!(
+            "Ruta no autorizada: {} debe ser una ruta absoluta",
+            param_name
+        ));
     }
     for component in path.components() {
         if let std::path::Component::ParentDir = component {
-            return Err(format!("Ruta no autorizada: Detectada navegación relativa hacia directorios padres en {}", param_name));
+            return Err(format!(
+                "Ruta no autorizada: Detectada navegación relativa hacia directorios padres en {}",
+                param_name
+            ));
         }
     }
     Ok(path)
@@ -29,28 +35,26 @@ mod tests {
     #[test]
     fn test_delta_patch_edge_cases() {
         // Ensures apply_binary_patch gracefully handles non-existent files
-        let result = apply_binary_patch(
-            "nonexistent_source.jar".to_string(),
-            "nonexistent_patch.patch".to_string(),
-            "target.jar".to_string(),
-            None
+        let result = apply_binary_patch_sync(
+            "nonexistent_source.jar",
+            "nonexistent_patch.patch",
+            "target.jar",
+            None,
         );
         assert!(result.is_err());
     }
 }
 
-
-/// Aplica un parche binario delta BSDIFF sobre un archivo base de forma ultra-rápida en memoria
-#[tauri::command]
-pub fn apply_binary_patch(
-    source_file: String,
-    patch_file: String,
-    target_file: String,
+/// Aplica un parche binario delta BSDIFF sobre un archivo base de forma ultra-rápida en memoria (versión síncrona interna)
+pub fn apply_binary_patch_sync(
+    source_file: &str,
+    patch_file: &str,
+    target_file: &str,
     expected_sha1: Option<String>,
 ) -> Result<(), String> {
-    let source_path = validate_patch_path(&source_file, "source_file")?;
-    let patch_path = validate_patch_path(&patch_file, "patch_file")?;
-    let target_path = validate_patch_path(&target_file, "target_file")?;
+    let source_path = validate_patch_path(source_file, "source_file")?;
+    let patch_path = validate_patch_path(patch_file, "patch_file")?;
+    let target_path = validate_patch_path(target_file, "target_file")?;
 
     if !source_path.exists() {
         return Err(format!("El archivo de origen no existe: {}", source_file));
@@ -77,10 +81,10 @@ pub fn apply_binary_patch(
         ));
     }
 
-    let source_bytes = fs::read(&source_path)
-        .map_err(|e| format!("Error leyendo archivo base: {}", e))?;
-    let patch_bytes = fs::read(&patch_path)
-        .map_err(|e| format!("Error leyendo archivo de parche: {}", e))?;
+    let source_bytes =
+        fs::read(&source_path).map_err(|e| format!("Error leyendo archivo base: {}", e))?;
+    let patch_bytes =
+        fs::read(&patch_path).map_err(|e| format!("Error leyendo archivo de parche: {}", e))?;
 
     let patcher = Bspatch::new(&patch_bytes)
         .map_err(|e| format!("Error inicializando descompresor bspatch: {}", e))?;
@@ -120,7 +124,10 @@ pub fn apply_binary_patch(
     // Escritura atómica
     let temp_target = target_path.with_file_name(format!(
         "{}.tmp_patch",
-        target_path.file_name().unwrap_or_default().to_string_lossy()
+        target_path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
     ));
     fs::write(&temp_target, &target_bytes)
         .map_err(|e| format!("Error escribiendo archivo temporal: {}", e))?;
@@ -139,4 +146,19 @@ pub fn apply_binary_patch(
     );
 
     Ok(())
+}
+
+/// Aplica un parche binario delta BSDIFF sobre un archivo base de forma ultra-rápida en memoria
+#[tauri::command]
+pub async fn apply_binary_patch(
+    source_file: String,
+    patch_file: String,
+    target_file: String,
+    expected_sha1: Option<String>,
+) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        apply_binary_patch_sync(&source_file, &patch_file, &target_file, expected_sha1)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }

@@ -1,9 +1,7 @@
 use flate2::read::GzDecoder;
-use flate2::write::GzEncoder;
-use flate2::Compression;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::io::{Read, Write};
+use std::io::Read;
 use std::path::Path;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -61,24 +59,26 @@ fn decompress_if_gzip(raw: &[u8]) -> Vec<u8> {
     if raw.len() >= 2 && raw[0] == 0x1F && raw[1] == 0x8B {
         let decoder = GzDecoder::new(raw);
         let mut decompressed = Vec::new();
-        if decoder.take(16 * 1024 * 1024).read_to_end(&mut decompressed).is_ok() {
+        if decoder
+            .take(16 * 1024 * 1024)
+            .read_to_end(&mut decompressed)
+            .is_ok()
+        {
             return decompressed;
         }
     }
     raw.to_vec()
 }
 
-/// Lee `.minecraft/servers.dat` de forma nativa en memoria
-#[tauri::command]
-pub fn read_servers_dat(game_dir: String) -> Result<Vec<ServerEntry>, String> {
-    crate::agent::validate_game_dir(&game_dir)?;
-    let servers_file = Path::new(&game_dir).join("servers.dat");
+/// Lee `.minecraft/servers.dat` de forma nativa en memoria (versión síncrona interna)
+pub fn read_servers_dat_sync(game_dir: &str) -> Result<Vec<ServerEntry>, String> {
+    crate::agent::validate_game_dir(game_dir)?;
+    let servers_file = Path::new(game_dir).join("servers.dat");
     if !servers_file.exists() {
         return Ok(Vec::new());
     }
 
-    let raw = fs::read(&servers_file)
-        .map_err(|e| format!("Error al leer servers.dat: {}", e))?;
+    let raw = fs::read(&servers_file).map_err(|e| format!("Error al leer servers.dat: {}", e))?;
 
     let bytes = decompress_if_gzip(&raw);
 
@@ -88,31 +88,29 @@ pub fn read_servers_dat(game_dir: String) -> Result<Vec<ServerEntry>, String> {
     Ok(dat.servers)
 }
 
-/// Guarda `.minecraft/servers.dat` serializando atómicamente en formato NBT
 #[tauri::command]
-pub fn save_servers_dat(game_dir: String, servers: Vec<ServerEntry>) -> Result<(), String> {
-    crate::agent::validate_game_dir(&game_dir)?;
-    let game_path = Path::new(&game_dir);
+pub async fn read_servers_dat(game_dir: String) -> Result<Vec<ServerEntry>, String> {
+    tokio::task::spawn_blocking(move || read_servers_dat_sync(&game_dir))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Guarda `.minecraft/servers.dat` serializando atómicamente en formato NBT (versión síncrona interna)
+pub fn save_servers_dat_sync(game_dir: &str, servers: Vec<ServerEntry>) -> Result<(), String> {
+    crate::agent::validate_game_dir(game_dir)?;
+    let game_path = Path::new(game_dir);
     if !game_path.exists() {
         let _ = fs::create_dir_all(game_path);
     }
     let servers_file = game_path.join("servers.dat");
     let dat = ServersDat { servers };
 
-    let nbt_bytes = fastnbt::to_bytes(&dat)
-        .map_err(|e| format!("Error serializando NBT: {}", e))?;
+    let nbt_bytes =
+        fastnbt::to_bytes(&dat).map_err(|e| format!("Error serializando NBT: {}", e))?;
 
-    // Minecraft soporta servers.dat tanto sin comprimir como GZipped; GZipping asegura máxima compatibilidad
-    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-    encoder
-        .write_all(&nbt_bytes)
-        .map_err(|e| format!("Error comprimiendo NBT: {}", e))?;
-    let compressed = encoder
-        .finish()
-        .map_err(|e| format!("Error finalizando compresión GZip: {}", e))?;
-
-    let temp_file = Path::new(&game_dir).join("servers.dat.tmp");
-    fs::write(&temp_file, &compressed)
+    // Minecraft vanilla lee servers.dat estrictamente sin comprimir (uncompressed NBT compound tag)
+    let temp_file = Path::new(game_dir).join("servers.dat.tmp");
+    fs::write(&temp_file, &nbt_bytes)
         .map_err(|e| format!("Error escribiendo archivo temporal servers.dat: {}", e))?;
 
     fs::rename(&temp_file, &servers_file)
@@ -121,18 +119,29 @@ pub fn save_servers_dat(game_dir: String, servers: Vec<ServerEntry>) -> Result<(
     crate::logger::log(
         "INFO",
         "NBTManager",
-        &format!("servers.dat actualizado exitosamente con {} servidores", dat.servers.len()),
+        &format!(
+            "servers.dat actualizado exitosamente con {} servidores",
+            dat.servers.len()
+        ),
     );
 
     Ok(())
 }
 
+#[tauri::command]
+pub async fn save_servers_dat(game_dir: String, servers: Vec<ServerEntry>) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || save_servers_dat_sync(&game_dir, servers))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 fn read_save_icon_base64(path: &Path) -> Option<String> {
     let icon_path = path.join("icon.png");
     if icon_path.exists() {
-        fs::read(&icon_path).ok().map(|b| {
-            format!("data:image/png;base64,{}", general_purpose_base64(&b))
-        })
+        use base64::prelude::*;
+        fs::read(&icon_path)
+            .ok()
+            .map(|b| format!("data:image/png;base64,{}", BASE64_STANDARD.encode(&b)))
     } else {
         None
     }
@@ -167,18 +176,17 @@ fn parse_save_level_data(path: &Path, folder_name: &str) -> Option<SingleplayerS
     })
 }
 
-/// Escanea `.minecraft/saves` y extrae metadatos e iconos de mundos locales con cero coste en JS
-#[tauri::command]
-pub fn list_singleplayer_saves(game_dir: String) -> Result<Vec<SingleplayerSaveInfo>, String> {
-    crate::agent::validate_game_dir(&game_dir)?;
-    let saves_dir = Path::new(&game_dir).join("saves");
+/// Escanea `.minecraft/saves` y extrae metadatos e iconos de mundos locales con cero coste en JS (versión síncrona interna)
+pub fn list_singleplayer_saves_sync(game_dir: &str) -> Result<Vec<SingleplayerSaveInfo>, String> {
+    crate::agent::validate_game_dir(game_dir)?;
+    let saves_dir = Path::new(game_dir).join("saves");
     if !saves_dir.exists() || !saves_dir.is_dir() {
         return Ok(Vec::new());
     }
 
     let mut result = Vec::new();
-    let entries = fs::read_dir(&saves_dir)
-        .map_err(|e| format!("Error leyendo directorio saves: {}", e))?;
+    let entries =
+        fs::read_dir(&saves_dir).map_err(|e| format!("Error leyendo directorio saves: {}", e))?;
 
     for entry in entries.flatten() {
         let path = entry.path();
@@ -198,27 +206,81 @@ pub fn list_singleplayer_saves(game_dir: String) -> Result<Vec<SingleplayerSaveI
     Ok(result)
 }
 
-fn general_purpose_base64(bytes: &[u8]) -> String {
-    const CHARSET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
-    for chunk in bytes.chunks(3) {
-        let b0 = chunk[0];
-        let b1 = if chunk.len() > 1 { chunk[1] } else { 0 };
-        let b2 = if chunk.len() > 2 { chunk[2] } else { 0 };
+#[tauri::command]
+pub async fn list_singleplayer_saves(
+    game_dir: String,
+) -> Result<Vec<SingleplayerSaveInfo>, String> {
+    tokio::task::spawn_blocking(move || list_singleplayer_saves_sync(&game_dir))
+        .await
+        .map_err(|e| e.to_string())?
+}
 
-        let n = ((b0 as u32) << 16) | ((b1 as u32) << 8) | (b2 as u32);
-        out.push(CHARSET[((n >> 18) & 63) as usize] as char);
-        out.push(CHARSET[((n >> 12) & 63) as usize] as char);
-        if chunk.len() > 1 {
-            out.push(CHARSET[((n >> 6) & 63) as usize] as char);
-        } else {
-            out.push('=');
-        }
-        if chunk.len() > 2 {
-            out.push(CHARSET[(n & 63) as usize] as char);
-        } else {
-            out.push('=');
-        }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use flate2::write::GzEncoder;
+    use flate2::Compression;
+    use std::io::Write;
+
+    #[test]
+    fn test_servers_dat_uncompressed_roundtrip() {
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        let game_dir = temp_dir.path().to_string_lossy().to_string();
+
+        let entries = vec![
+            ServerEntry {
+                name: "CrystalTides SMP".to_string(),
+                ip: "play.crystaltides.net".to_string(),
+                icon: None,
+                accept_textures: Some(1),
+            },
+            ServerEntry {
+                name: "Local Test Server".to_string(),
+                ip: "127.0.0.1:25565".to_string(),
+                icon: Some("data:image/png;base64,abc".to_string()),
+                accept_textures: None,
+            },
+        ];
+
+        save_servers_dat_sync(&game_dir, entries).expect("save servers.dat");
+
+        let file_path = temp_dir.path().join("servers.dat");
+        assert!(file_path.exists());
+        let raw = fs::read(&file_path).expect("read raw servers.dat");
+        // Must NOT be GZipped (vanilla standard)
+        assert!(raw.len() < 2 || raw[0] != 0x1F || raw[1] != 0x8B);
+
+        let loaded = read_servers_dat_sync(&game_dir).expect("read servers.dat");
+        assert_eq!(loaded.len(), 2);
+        assert_eq!(loaded[0].name, "CrystalTides SMP");
+        assert_eq!(loaded[0].ip, "play.crystaltides.net");
+        assert_eq!(loaded[0].accept_textures, Some(1));
+        assert_eq!(loaded[1].name, "Local Test Server");
     }
-    out
+
+    #[test]
+    fn test_servers_dat_legacy_gzip_backwards_compatible() {
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        let game_dir = temp_dir.path().to_string_lossy().to_string();
+
+        let entries = vec![ServerEntry {
+            name: "Legacy GZipped Server".to_string(),
+            ip: "legacy.crystaltides.net".to_string(),
+            icon: None,
+            accept_textures: Some(0),
+        }];
+        let dat = ServersDat { servers: entries };
+        let nbt_bytes = fastnbt::to_bytes(&dat).expect("to_bytes");
+
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(&nbt_bytes).expect("compress");
+        let compressed = encoder.finish().expect("finish");
+
+        fs::write(temp_dir.path().join("servers.dat"), compressed).expect("write compressed");
+
+        let loaded = read_servers_dat_sync(&game_dir).expect("read legacy servers.dat");
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].name, "Legacy GZipped Server");
+        assert_eq!(loaded[0].ip, "legacy.crystaltides.net");
+    }
 }

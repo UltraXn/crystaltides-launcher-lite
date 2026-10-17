@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import logoImg from '../../assets/logo.png';
+import logoImg from '../../assets/logo.webp';
 import { Minus, X, FolderOpen, CheckCircle2, ChevronDown } from 'lucide-react';
 import { AmbientBubbles } from '../common/AmbientBubbles';
 
@@ -155,9 +155,21 @@ export const InstallerView: React.FC<InstallerViewProps> = ({
   }, [step]);
 
   const handleBrowseFolder = async () => {
-    const chosen = prompt('Ingresa la ruta de instalación:', installPath);
-    if (chosen?.trim()) {
-      setInstallPath(chosen.trim().replace(/\\/g, '/'));
+    try {
+      const selected = await invoke<string | null>('pick_install_directory', {
+        currentDir: installPath || undefined,
+      });
+      if (selected?.trim()) {
+        setInstallPath(selected.trim().replace(/\\/g, '/'));
+        return;
+      }
+    } catch {
+      if (typeof window !== 'undefined' && !('__TAURI_INTERNALS__' in window)) {
+        const chosen = prompt('Ingresa la ruta de instalación:', installPath);
+        if (chosen?.trim()) {
+          setInstallPath(chosen.trim().replace(/\\/g, '/'));
+        }
+      }
     }
   };
 

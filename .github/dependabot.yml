@@ -4,3 +4,27 @@ updates:
     directory: '/'
     schedule:
       interval: 'weekly'
+
+  # Frontend (React/Vite/Tauri JS API). Minor y patch agrupados en un solo PR semanal;
+  # las majors llegan por separado para revisarlas una a una.
+  - package-ecosystem: 'npm'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor-patch:
+        update-types: ['minor', 'patch']
+
+  # Backend Rust (src-tauri). Los crates de Tauri se mueven juntos: agruparlos evita
+  # PRs que no compilan por versiones desalineadas de tauri / tauri-build / plugins.
+  - package-ecosystem: 'cargo'
+    directory: '/src-tauri'
+    schedule:
+      interval: 'weekly'
+    open-pull-requests-limit: 5
+    groups:
+      tauri:
+        patterns: ['tauri', 'tauri-*']
+      cargo-minor-patch:
+        update-types: ['minor', 'patch']

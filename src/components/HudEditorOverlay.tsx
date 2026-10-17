@@ -22,8 +22,10 @@ export const HudEditorOverlay: React.FC = () => {
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        const selected = getLauncherState().selectedDockButtonId;
-        if (selected) {
+        const state = getLauncherState();
+        if (state.isButtonInspectorOpen) {
+          launcherActions.setButtonInspectorOpen(false);
+        } else if (state.selectedDockButtonId) {
           launcherActions.setSelectedDockButtonId(null);
         } else {
           launcherActions.setEditingHud(false);
@@ -37,12 +39,16 @@ export const HudEditorOverlay: React.FC = () => {
       if (
         target.closest('.dock-segment') ||
         target.closest('.home-unified-dock') ||
-        target.closest('[data-inspector]')
+        target.closest('[data-inspector]') ||
+        target.closest('.dock-resize-handle')
       ) {
         return;
       }
-      const selected = getLauncherState().selectedDockButtonId;
-      if (selected) {
+      const state = getLauncherState();
+      if (state.isButtonInspectorOpen) {
+        launcherActions.setButtonInspectorOpen(false);
+      }
+      if (state.selectedDockButtonId) {
         launcherActions.setSelectedDockButtonId(null);
       }
     };
@@ -63,7 +69,7 @@ export const HudEditorOverlay: React.FC = () => {
   const getPositionStyles = (): React.CSSProperties => {
     if (effectiveSide === 'right') {
       return {
-        top: '16px',
+        top: '64px',
         right: '16px',
         bottom: '16px',
         transform: 'none',
@@ -71,14 +77,14 @@ export const HudEditorOverlay: React.FC = () => {
     }
     if (effectiveSide === 'left') {
       return {
-        top: '16px',
+        top: '64px',
         left: '16px',
         bottom: '16px',
         transform: 'none',
       };
     }
     return {
-      top: '14px',
+      top: '62px',
       left: '50%',
       transform: 'translateX(-50%)',
     };

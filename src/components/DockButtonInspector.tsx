@@ -268,6 +268,12 @@ export const DockButtonInspector: React.FC<DockButtonInspectorProps> = ({
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
       onKeyDown={(e) => e.stopPropagation()}
+      onWheel={(e) => e.stopPropagation()}
+      onScroll={(e) => {
+        if (e.currentTarget.scrollTop !== 0) {
+          e.currentTarget.scrollTop = 0;
+        }
+      }}
       style={{
         position: 'relative',
         zIndex: 1000,
@@ -277,6 +283,7 @@ export const DockButtonInspector: React.FC<DockButtonInspectorProps> = ({
         boxShadow: '0 20px 48px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(255, 255, 255, 0.05)',
         borderRadius: '16px',
         padding: '14px 16px',
+        margin: 0,
         minWidth: '330px',
         maxWidth: '390px',
         maxHeight: maxHeight ?? 'min(500px, calc(100vh - 120px))',
@@ -287,6 +294,7 @@ export const DockButtonInspector: React.FC<DockButtonInspectorProps> = ({
         fontSize: '12px',
         userSelect: 'none',
         pointerEvents: 'auto',
+        overflow: 'hidden',
       }}
     >
       {/* Hidden file pickers for direct PC uploading */}
@@ -321,7 +329,10 @@ export const DockButtonInspector: React.FC<DockButtonInspectorProps> = ({
           minHeight: 0,
           overflowY: 'auto',
           overflowX: 'hidden',
+          overscrollBehavior: 'contain',
+          overscrollBehaviorY: 'contain',
           paddingRight: '3px',
+          paddingBottom: '14px',
           display: 'flex',
           flexDirection: 'column',
           gap: '10px',
@@ -377,6 +388,7 @@ export const DockButtonInspector: React.FC<DockButtonInspectorProps> = ({
                 gap: '6px',
                 marginTop: '10px',
                 width: '100%',
+                flexShrink: 0,
               }}
             >
               <RotateCcw size={12} />

@@ -11,7 +11,7 @@ import {
   GripHorizontal,
   Sliders,
   AlertTriangle,
-  Sparkles,
+  Square,
 } from 'lucide-react';
 import {
   useLauncherStore,
@@ -74,13 +74,20 @@ interface FreeButtonElementProps {
   dockConfig: LauncherState['dockConfig'];
   t: ReturnType<typeof useT>;
   buttonRef: (el: HTMLButtonElement | null) => void;
-  onClick: () => void;
+  onClick: (e: React.MouseEvent) => void;
+  onDoubleClick?: (e: React.MouseEvent) => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
   onMouseDown: (e: React.MouseEvent) => void;
   buttonContent: React.ReactNode;
   resizeHandles: React.ReactNode;
   isSelected: boolean;
+  isInspectorOpen: boolean;
+  isResizing?: boolean;
   inspectorTab: InspectorTab;
   onCloseInspector: () => void;
+  accentColor?: string;
+  isLaunchHovered?: boolean;
+  onLaunchHover?: (h: boolean) => void;
 }
 
 interface FreeButtonCoordBadgeProps {
@@ -88,6 +95,7 @@ interface FreeButtonCoordBadgeProps {
   isColliding: boolean;
   pos: { x: number; y: number };
   collisionLabel: string;
+  accentColor?: string;
 }
 
 export const FreeButtonCoordBadge: React.FC<FreeButtonCoordBadgeProps> = ({
@@ -95,8 +103,10 @@ export const FreeButtonCoordBadge: React.FC<FreeButtonCoordBadgeProps> = ({
   isColliding,
   pos,
   collisionLabel,
+  accentColor,
 }) => {
   const isDanger = isDraggingThis && isColliding;
+  const badgeColor = accentColor || '#16A085';
   return (
     <div
       style={{
@@ -105,12 +115,12 @@ export const FreeButtonCoordBadge: React.FC<FreeButtonCoordBadgeProps> = ({
         left: '50%',
         transform: 'translateX(-50%)',
         background: isDanger ? 'rgba(239, 68, 68, 0.95)' : 'rgba(10, 14, 22, 0.9)',
-        border: isDanger ? '1px solid #f87171' : '1px solid #38bdf8',
+        border: isDanger ? '1px solid #f87171' : `1px solid ${badgeColor}`,
         borderRadius: '4px',
         padding: '1px 6px',
         fontSize: '9px',
         fontWeight: 700,
-        color: isDanger ? '#ffffff' : '#38bdf8',
+        color: isDanger ? '#ffffff' : badgeColor,
         whiteSpace: 'nowrap',
         pointerEvents: 'none',
         boxShadow: isDanger ? '0 0 12px rgba(239, 68, 68, 0.6)' : 'none',
@@ -153,7 +163,12 @@ export const FreeButtonInspectorPopup: React.FC<FreeButtonInspectorPopupProps> =
       zIndex: 1000,
     }}
   >
-    <DockButtonInspector buttonId={btnId} initialTab={inspectorTab} onClose={onClose} />
+    <DockButtonInspector
+      key={`${btnId}-${inspectorTab}`}
+      buttonId={btnId}
+      initialTab={inspectorTab}
+      onClose={onClose}
+    />
   </div>
 );
 
@@ -192,12 +207,19 @@ const FreeButtonElement: React.FC<FreeButtonElementProps> = ({
   t,
   buttonRef,
   onClick,
+  onDoubleClick,
+  onContextMenu,
   onMouseDown,
   buttonContent,
   resizeHandles,
   isSelected,
+  isInspectorOpen,
+  isResizing,
   inspectorTab,
   onCloseInspector,
+  accentColor,
+  isLaunchHovered,
+  onLaunchHover,
 }) => {
   const buttonClasses = resolveFreeButtonClasses(isLaunch, isRunning, isLaunching, effectClass);
   const borderStyle = resolveFreeButtonBorder(
@@ -207,12 +229,14 @@ const FreeButtonElement: React.FC<FreeButtonElementProps> = ({
     btnCustom,
     customBtnColor,
     dockConfig.dockBorderColorMode,
+    accentColor,
   );
   const shadowStyle = resolveFreeButtonShadow(
     isEditingHud,
     isDraggingThis,
     isColliding,
     customBtnColor,
+    accentColor,
   );
   const cursorStyle = resolveButtonCursor(isEditingHud, isDraggingThis);
 
@@ -224,7 +248,7 @@ const FreeButtonElement: React.FC<FreeButtonElementProps> = ({
         top: `${pos.y}%`,
         transform: `translate(-50%, -50%) scale(${scale}) rotate(${rotation}deg)`,
         transformOrigin: 'center center',
-        zIndex: resolveButtonZIndex(isDraggingThis, isEditingHud),
+        zIndex: resolveButtonZIndex(isDraggingThis, isEditingHud, isSelected, Boolean(isResizing)),
         transition: isDraggingThis
           ? 'none'
           : 'top 0.35s cubic-bezier(0.16, 1, 0.3, 1), left 0.35s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease, transform 0.2s ease',
@@ -234,7 +258,16 @@ const FreeButtonElement: React.FC<FreeButtonElementProps> = ({
         ref={buttonRef}
         type="button"
         onClick={onClick}
+        onDoubleClick={onDoubleClick}
+        onContextMenu={onContextMenu}
         onMouseDown={onMouseDown}
+        onMouseEnter={() => {
+          if (isLaunch) onLaunchHover?.(true);
+        }}
+        onMouseLeave={() => {
+          if (isLaunch) onLaunchHover?.(false);
+        }}
+        title={isLaunch && isRunning ? t.dock.runningTooltip : undefined}
         className={buttonClasses}
         style={{
           width: btnW,
@@ -245,12 +278,17 @@ const FreeButtonElement: React.FC<FreeButtonElementProps> = ({
             isLaunch,
             isRunning,
             isLaunching,
-            startHoverBg,
+            startHoverBg: isRunning && isLaunchHovered ? 'rgba(239, 68, 68, 0.25)' : startHoverBg,
             startSubtleBg,
             customBtnColor,
             fallbackBg: `rgba(12, 17, 24, ${dockConfig.bgOpacity})`,
           }),
-          color: resolveButtonColor(btnCustom, isLaunch, startColor, customBtnColor),
+          color: resolveButtonColor(
+            btnCustom,
+            isLaunch,
+            isRunning && isLaunchHovered ? '#ef4444' : startColor,
+            customBtnColor,
+          ),
           border: borderStyle,
           boxShadow: shadowStyle,
           backdropFilter: 'blur(20px)',
@@ -272,18 +310,12 @@ const FreeButtonElement: React.FC<FreeButtonElementProps> = ({
         )}
 
         {isEditingHud && (
-          <div className="dock-edit-badge">
-            <Sparkles size={8} />
-            <span>Editar</span>
-          </div>
-        )}
-
-        {isEditingHud && (
           <FreeButtonCoordBadge
             isDraggingThis={isDraggingThis}
             isColliding={isColliding}
             pos={pos}
             collisionLabel={t.hudEditor.collision}
+            accentColor={accentColor}
           />
         )}
 
@@ -294,8 +326,10 @@ const FreeButtonElement: React.FC<FreeButtonElementProps> = ({
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
+            justifyContent: 'center',
             gap: '4px',
             width: '100%',
+            height: '100%',
             pointerEvents: isEditingHud ? 'auto' : 'none',
           }}
         >
@@ -305,7 +339,7 @@ const FreeButtonElement: React.FC<FreeButtonElementProps> = ({
 
       {resizeHandles}
 
-      {isEditingHud && isSelected && (
+      {isEditingHud && isSelected && isInspectorOpen && (
         <FreeButtonInspectorPopup
           posY={pos.y}
           btnId={btnId}
@@ -331,11 +365,24 @@ interface FreeButtonsLayoutProps {
   isColliding: boolean;
   t: ReturnType<typeof useT>;
   buttonRefs: React.RefObject<Record<string, HTMLButtonElement | null>>;
-  onButtonClick: (btnId: DockButtonId) => void;
+  onButtonClick: (btnId: DockButtonId, e?: React.MouseEvent) => void;
+  onButtonDoubleClick?: (btnId: DockButtonId, e?: React.MouseEvent) => void;
+  onButtonContextMenu?: (btnId: DockButtonId, e?: React.MouseEvent) => void;
   onButtonMouseDown: (e: React.MouseEvent, btnId: DockButtonId) => void;
   renderButtonContent: (btnId: DockButtonId) => React.ReactNode;
   renderResizeHandles: (btnId: DockButtonId) => React.ReactNode;
   selectedDockButtonId: DockButtonId | null;
+  isInspectorOpen: boolean;
+  isResizing?: boolean;
+  resizing?: {
+    btnId: DockButtonId | 'dock';
+    startX: number;
+    startY: number;
+    startWidth: number;
+    startHeight: number;
+    direction: 'se' | 's' | 'e';
+  } | null;
+  liveResizeDims?: { width: number; height: number } | null;
   inspectorTab: InspectorTab;
   onCloseInspector: () => void;
   isRunning: boolean;
@@ -347,6 +394,9 @@ interface FreeButtonsLayoutProps {
   startSubtleBg: string;
   startColor: string;
   getButtonCustomColor: (btnId: DockButtonId) => string | null | undefined;
+  accentColor?: string;
+  isLaunchHovered?: boolean;
+  onLaunchHover?: (h: boolean) => void;
 }
 
 const FreeButtonsLayout: React.FC<FreeButtonsLayoutProps> = ({
@@ -361,10 +411,15 @@ const FreeButtonsLayout: React.FC<FreeButtonsLayoutProps> = ({
   t,
   buttonRefs,
   onButtonClick,
+  onButtonDoubleClick,
+  onButtonContextMenu,
   onButtonMouseDown,
   renderButtonContent,
   renderResizeHandles,
   selectedDockButtonId,
+  isInspectorOpen,
+  resizing,
+  liveResizeDims,
   inspectorTab,
   onCloseInspector,
   isRunning,
@@ -376,6 +431,9 @@ const FreeButtonsLayout: React.FC<FreeButtonsLayoutProps> = ({
   startSubtleBg,
   startColor,
   getButtonCustomColor,
+  accentColor,
+  isLaunchHovered,
+  onLaunchHover,
 }) => {
   const allFreeButtons = useMemo(() => {
     const modButtonIds = (activeModuleButtons || []).map(
@@ -407,8 +465,18 @@ const FreeButtonsLayout: React.FC<FreeButtonsLayoutProps> = ({
 
         const defaultBtnW = isLaunch ? startSegmentWidth : segmentWidth;
         const defaultBtnH = segmentHeight;
-        const btnW = btnCustom?.customWidth ? `${btnCustom.customWidth}px` : defaultBtnW;
-        const btnH = btnCustom?.customHeight ? `${btnCustom.customHeight}px` : defaultBtnH;
+        const isCurrentResizing = resizing?.btnId === btnId;
+        const liveDims = isCurrentResizing && liveResizeDims ? liveResizeDims : null;
+        const btnW = liveDims
+          ? `${liveDims.width}px`
+          : btnCustom?.customWidth
+            ? `${btnCustom.customWidth}px`
+            : defaultBtnW;
+        const btnH = liveDims
+          ? `${liveDims.height}px`
+          : btnCustom?.customHeight
+            ? `${btnCustom.customHeight}px`
+            : defaultBtnH;
         const scale = btnCustom?.scale ?? 1;
         const rotation = btnCustom?.rotation ?? 0;
         const radius =
@@ -444,13 +512,20 @@ const FreeButtonsLayout: React.FC<FreeButtonsLayoutProps> = ({
             buttonRef={(el) => {
               buttonRefs.current[btnId] = el;
             }}
-            onClick={() => onButtonClick(btnId)}
+            onClick={(e) => onButtonClick(btnId, e)}
+            onDoubleClick={(e) => onButtonDoubleClick?.(btnId, e)}
+            onContextMenu={(e) => onButtonContextMenu?.(btnId, e)}
             onMouseDown={(e) => onButtonMouseDown(e, btnId)}
             buttonContent={renderButtonContent(btnId)}
             resizeHandles={renderResizeHandles(btnId)}
             isSelected={selectedDockButtonId === btnId}
+            isInspectorOpen={isInspectorOpen}
+            isResizing={isCurrentResizing}
             inspectorTab={inspectorTab}
             onCloseInspector={onCloseInspector}
+            accentColor={accentColor}
+            isLaunchHovered={isLaunchHovered}
+            onLaunchHover={onLaunchHover}
           />
         );
       })}
@@ -468,8 +543,8 @@ interface GroupedDockLayoutProps {
   dockRef: React.RefObject<HTMLDivElement | null>;
   onDockMouseDown: (e: React.MouseEvent) => void;
   selectedDockButtonId: DockButtonId | null;
+  isInspectorOpen: boolean;
   inspectorTab: InspectorTab;
-  setInspectorTab: (tab: 'bg' | 'icon' | 'fx' | 'shape') => void;
   onCloseInspector: () => void;
   t: ReturnType<typeof useT>;
   activeButtons: DockButtonId[];
@@ -478,9 +553,11 @@ interface GroupedDockLayoutProps {
     slot: NonNullable<LauncherModule['slots']['dockButton']>;
   }>;
   buttonRefs: React.RefObject<Record<string, HTMLButtonElement | null>>;
-  onButtonClick: (btnId: DockButtonId) => void;
+  onButtonClick: (btnId: DockButtonId, e?: React.MouseEvent) => void;
+  onButtonDoubleClick?: (btnId: DockButtonId, e?: React.MouseEvent) => void;
+  onButtonContextMenu?: (btnId: DockButtonId, e?: React.MouseEvent) => void;
   renderButtonContent: (btnId: DockButtonId) => React.ReactNode;
-  renderResizeHandles: (btnId: DockButtonId) => React.ReactNode;
+  renderDockResizeHandles: () => React.ReactNode;
   isRunning: boolean;
   isLaunching: boolean;
   startSegmentWidth: string;
@@ -493,6 +570,9 @@ interface GroupedDockLayoutProps {
   accentColor: string;
   showLabels: boolean;
   labelFontSize: string;
+  isButtonLabelVisible?: (btnId: DockButtonId) => boolean;
+  isLaunchHovered?: boolean;
+  onLaunchHover?: (h: boolean) => void;
 }
 
 const GroupedDockLayout: React.FC<GroupedDockLayoutProps> = ({
@@ -505,16 +585,18 @@ const GroupedDockLayout: React.FC<GroupedDockLayoutProps> = ({
   dockRef,
   onDockMouseDown,
   selectedDockButtonId,
+  isInspectorOpen,
   inspectorTab,
-  setInspectorTab,
   onCloseInspector,
   t,
   activeButtons,
   activeModuleButtons,
   buttonRefs,
   onButtonClick,
+  onButtonDoubleClick,
+  onButtonContextMenu,
   renderButtonContent,
-  renderResizeHandles,
+  renderDockResizeHandles,
   isRunning,
   isLaunching,
   startSegmentWidth,
@@ -527,6 +609,9 @@ const GroupedDockLayout: React.FC<GroupedDockLayoutProps> = ({
   accentColor,
   showLabels,
   labelFontSize,
+  isButtonLabelVisible,
+  isLaunchHovered,
+  onLaunchHover,
 }) => {
   const dockZIndex = resolveButtonZIndex(draggingTarget === 'dock', isEditingHud);
   const dockBorder = resolveDockBorder(isEditingHud, dockConfig.dockBorderColorMode);
@@ -577,7 +662,7 @@ const GroupedDockLayout: React.FC<GroupedDockLayoutProps> = ({
               border: '1px solid rgba(255, 255, 255, 0.16)',
               borderRadius: '20px',
               padding: '4px 10px',
-              boxShadow: '0 8px 30px rgba(0, 0, 0, 0.7), 0 0 16px rgba(0, 229, 255, 0.12)',
+              boxShadow: `0 8px 30px rgba(0, 0, 0, 0.7), 0 0 16px ${accentColor}25`,
               animation: 'fadeInUpPill 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards',
               whiteSpace: 'nowrap',
             }}
@@ -588,7 +673,7 @@ const GroupedDockLayout: React.FC<GroupedDockLayoutProps> = ({
               style={{
                 background: 'transparent',
                 border: 'none',
-                color: '#38bdf8',
+                color: accentColor,
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
@@ -625,7 +710,7 @@ const GroupedDockLayout: React.FC<GroupedDockLayoutProps> = ({
       )}
 
       {/* Floating In-Place Inspector for Selected Button in Unified Dock */}
-      {isEditingHud && selectedDockButtonId && (
+      {isEditingHud && isInspectorOpen && selectedDockButtonId && (
         <div
           style={{
             position: 'absolute',
@@ -636,6 +721,7 @@ const GroupedDockLayout: React.FC<GroupedDockLayoutProps> = ({
           }}
         >
           <DockButtonInspector
+            key={`${selectedDockButtonId}-${inspectorTab}`}
             buttonId={selectedDockButtonId}
             initialTab={inspectorTab}
             onClose={onCloseInspector}
@@ -643,213 +729,224 @@ const GroupedDockLayout: React.FC<GroupedDockLayoutProps> = ({
         </div>
       )}
 
-      {/* Main Unified Dock Container */}
-      <div
-        ref={dockRef}
-        role="toolbar"
-        aria-label="Barra de botones del dock"
-        className="home-unified-dock"
-        onMouseDown={onDockMouseDown}
-        style={{
-          position: 'relative',
-          overflow: 'hidden',
-          background: `rgba(12, 17, 24, ${dockConfig.bgOpacity})`,
-          borderRadius: `${dockConfig.borderRadius}px`,
-          border: dockBorder,
-          boxShadow: dockBoxShadow,
-          cursor: dockCursor,
-        }}
-      >
-        {/* Dock Panoramic / Shared Background Layer */}
-        {dockConfig.dockBgType === 'image' && dockConfig.dockBgImage && (
-          <div
-            style={{
-              position: 'absolute',
-              inset: 0,
-              backgroundImage: `url(${dockConfig.dockBgImage})`,
-              backgroundPosition: `${dockConfig.dockBgPosX ?? 50}% ${dockConfig.dockBgPosY ?? 50}%`,
-              backgroundSize: `${dockConfig.dockBgScale ?? 100}%`,
-              backgroundRepeat: 'no-repeat',
-              opacity: dockConfig.dockBgOpacity ?? 1,
-              pointerEvents: 'none',
-              zIndex: 0,
-            }}
-          />
-        )}
-        {dockConfig.dockBgType === 'video' && dockConfig.dockBgVideo && (
-          <video
-            src={dockConfig.dockBgVideo}
-            autoPlay
-            loop
-            muted
-            playsInline
-            style={{
-              position: 'absolute',
-              inset: 0,
-              width: '100%',
-              height: '100%',
-              objectFit: 'cover',
-              objectPosition: `${dockConfig.dockBgPosX ?? 50}% ${dockConfig.dockBgPosY ?? 50}%`,
-              transform: `scale(${(dockConfig.dockBgScale ?? 100) / 100})`,
-              opacity: (dockConfig.dockBgOpacity ?? 1) * (dockConfig.dockBgVideoOpacity ?? 0.85),
-              pointerEvents: 'none',
-              zIndex: 0,
-            }}
-          />
-        )}
-        {activeButtons.map((btnId, idx) => {
-          const isLaunch = btnId === 'launch';
-          const btnCustom = dockConfig.buttonCustomizations?.[btnId];
-          const customBtnColor = getButtonCustomColor(btnId);
-          const isLast = idx === activeButtons.length - 1 && activeModuleButtons.length === 0;
-          const borderRightStyle = isLast ? 'none' : '1px solid rgba(255, 255, 255, 0.06)';
-
-          const defaultBtnW = isLaunch ? startSegmentWidth : segmentWidth;
-          const defaultBtnH = segmentHeight;
-          const btnW = btnCustom?.customWidth ? `${btnCustom.customWidth}px` : defaultBtnW;
-          const btnH = btnCustom?.customHeight ? `${btnCustom.customHeight}px` : defaultBtnH;
-          const scale = btnCustom?.scale ?? 1;
-          const rotation = btnCustom?.rotation ?? 0;
-          const radius =
-            btnCustom?.borderRadius !== undefined ? `${btnCustom.borderRadius}px` : undefined;
-          const effectClass = getEffectClassName(btnCustom?.specialEffect);
-
-          return (
+      {/* Main Unified Dock Container Wrapped for Handles */}
+      <div style={{ position: 'relative', display: 'inline-block' }}>
+        <div
+          ref={dockRef}
+          role="toolbar"
+          aria-label="Barra de botones del dock"
+          className="home-unified-dock"
+          onMouseDown={onDockMouseDown}
+          style={{
+            position: 'relative',
+            overflow: 'hidden',
+            background: `rgba(12, 17, 24, ${dockConfig.bgOpacity})`,
+            borderRadius: `${dockConfig.borderRadius}px`,
+            border: dockBorder,
+            boxShadow: dockBoxShadow,
+            cursor: dockCursor,
+          }}
+        >
+          {/* Dock Panoramic / Shared Background Layer */}
+          {dockConfig.dockBgType === 'image' && dockConfig.dockBgImage && (
             <div
-              key={btnId}
               style={{
-                position: 'relative',
-                zIndex: 1,
-                display: 'inline-flex',
+                position: 'absolute',
+                inset: 0,
+                backgroundImage: `url(${dockConfig.dockBgImage})`,
+                backgroundPosition: `${dockConfig.dockBgPosX ?? 50}% ${dockConfig.dockBgPosY ?? 50}%`,
+                backgroundSize: `${dockConfig.dockBgScale ?? 100}%`,
+                backgroundRepeat: 'no-repeat',
+                opacity: dockConfig.dockBgOpacity ?? 1,
+                pointerEvents: 'none',
+                zIndex: 0,
               }}
-            >
-              <button
-                ref={(el) => {
-                  buttonRefs.current[btnId] = el;
-                }}
-                type="button"
-                onClick={() => onButtonClick(btnId)}
-                className={`dock-segment ${isLaunch ? 'start-game' : ''} ${resolveStatusClass(
-                  isRunning,
-                  isLaunching,
-                )} ${effectClass}`}
+            />
+          )}
+          {dockConfig.dockBgType === 'video' && dockConfig.dockBgVideo && (
+            <video
+              src={dockConfig.dockBgVideo}
+              autoPlay
+              loop
+              muted
+              playsInline
+              style={{
+                position: 'absolute',
+                inset: 0,
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                objectPosition: `${dockConfig.dockBgPosX ?? 50}% ${dockConfig.dockBgPosY ?? 50}%`,
+                transform: `scale(${(dockConfig.dockBgScale ?? 100) / 100})`,
+                opacity: (dockConfig.dockBgOpacity ?? 1) * (dockConfig.dockBgVideoOpacity ?? 0.85),
+                pointerEvents: 'none',
+                zIndex: 0,
+              }}
+            />
+          )}
+          {activeButtons.map((btnId, idx) => {
+            const isLaunch = btnId === 'launch';
+            const btnCustom = dockConfig.buttonCustomizations?.[btnId];
+            const customBtnColor = getButtonCustomColor(btnId);
+            const isLast = idx === activeButtons.length - 1 && activeModuleButtons.length === 0;
+            const borderRightStyle = isLast ? 'none' : '1px solid rgba(255, 255, 255, 0.06)';
+
+            const defaultBtnW = isLaunch ? startSegmentWidth : segmentWidth;
+            const defaultBtnH = segmentHeight;
+            const btnW = defaultBtnW;
+            const btnH = defaultBtnH;
+            const scale = btnCustom?.scale ?? 1;
+            const effectClass = getEffectClassName(btnCustom?.specialEffect);
+
+            return (
+              <div
+                key={btnId}
                 style={{
-                  width: btnW,
-                  height: btnH,
-                  borderRight: borderRightStyle,
-                  borderRadius: radius,
-                  transform:
-                    scale !== 1 || rotation !== 0
-                      ? `scale(${scale}) rotate(${rotation}deg)`
-                      : undefined,
-                  transformOrigin: 'center center',
-                  background: resolveButtonBg({
-                    btnCustom,
-                    isLaunch,
-                    isRunning,
-                    isLaunching,
-                    startHoverBg,
-                    startSubtleBg,
-                    customBtnColor,
-                    fallbackBg: 'transparent',
-                  }),
-                  color: (() => {
-                    if (btnCustom?.contentColor) return btnCustom.contentColor;
-                    return isLaunch ? startColor : (customBtnColor ?? '#cbd5e1');
-                  })(),
-                  cursor: isEditingHud && draggingTarget === 'dock' ? 'grabbing' : 'pointer',
                   position: 'relative',
-                  overflow: 'hidden',
+                  zIndex: 1,
+                  display: 'inline-flex',
                 }}
               >
-                {btnCustom?.bgType === 'video' && btnCustom.bgVideo && (
-                  <video
-                    src={btnCustom.bgVideo}
-                    autoPlay
-                    loop
-                    muted
-                    playsInline
-                    className="dock-button-video-bg"
-                    style={{ opacity: btnCustom.bgVideoOpacity ?? 0.85 }}
-                  />
-                )}
-
-                {isEditingHud && (
-                  <div className="dock-edit-badge">
-                    <Sparkles size={8} />
-                    <span>Editar</span>
-                  </div>
-                )}
-
-                <div
+                <button
+                  ref={(el) => {
+                    buttonRefs.current[btnId] = el;
+                  }}
+                  type="button"
+                  onClick={(e) => onButtonClick(btnId, e)}
+                  onDoubleClick={(e) => onButtonDoubleClick?.(btnId, e)}
+                  onContextMenu={(e) => onButtonContextMenu?.(btnId, e)}
+                  onMouseEnter={() => {
+                    if (isLaunch) onLaunchHover?.(true);
+                  }}
+                  onMouseLeave={() => {
+                    if (isLaunch) onLaunchHover?.(false);
+                  }}
+                  title={isLaunch && isRunning ? t.dock.runningTooltip : undefined}
+                  className={`dock-segment ${isLaunch ? 'start-game' : ''} ${resolveStatusClass(
+                    isRunning,
+                    isLaunching,
+                  )} ${effectClass}`}
                   style={{
+                    width: btnW,
+                    height: btnH,
+                    borderRight: borderRightStyle,
+                    transform: scale !== 1 ? `scale(${scale})` : undefined,
+                    transformOrigin: 'center center',
+                    background: resolveButtonBg({
+                      btnCustom,
+                      isLaunch,
+                      isRunning,
+                      isLaunching,
+                      startHoverBg:
+                        isRunning && isLaunchHovered ? 'rgba(239, 68, 68, 0.25)' : startHoverBg,
+                      startSubtleBg,
+                      customBtnColor,
+                      fallbackBg: 'transparent',
+                    }),
+                    color: (() => {
+                      if (btnCustom?.contentColor) return btnCustom.contentColor;
+                      if (isLaunch && isRunning && isLaunchHovered) return '#ef4444';
+                      return isLaunch ? startColor : (customBtnColor ?? '#cbd5e1');
+                    })(),
+                    cursor: isEditingHud && draggingTarget === 'dock' ? 'grabbing' : 'pointer',
                     position: 'relative',
-                    zIndex: 2,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    gap: '4px',
-                    width: '100%',
-                    pointerEvents: isEditingHud ? 'auto' : 'none',
+                    overflow: 'hidden',
                   }}
                 >
-                  {renderButtonContent(btnId)}
-                </div>
-              </button>
+                  {btnCustom?.bgType === 'video' && btnCustom.bgVideo && (
+                    <video
+                      src={btnCustom.bgVideo}
+                      autoPlay
+                      loop
+                      muted
+                      playsInline
+                      className="dock-button-video-bg"
+                      style={{ opacity: btnCustom.bgVideoOpacity ?? 0.85 }}
+                    />
+                  )}
 
-              {renderResizeHandles(btnId)}
-            </div>
-          );
-        })}
-
-        {/* Dynamic Plugin / Module Dock Buttons */}
-        {activeModuleButtons.map(({ module: mod, slot }, idx) => {
-          const modCustomColor =
-            dockConfig.customButtonColors?.[`mod:${mod.id}` as unknown as DockButtonId] ||
-            slot.defaultColor ||
-            accentColor;
-          const isLast = idx === activeModuleButtons.length - 1;
-
-          return (
-            <button
-              key={mod.id}
-              type="button"
-              onClick={() => {
-                if (isEditingHud) {
-                  launcherActions.setSelectedDockButtonId(`mod:${mod.id}` as DockButtonId);
-                  setInspectorTab('bg');
-                  return;
-                }
-                slot.onClick(getModuleContext(mod.id));
-              }}
-              title={slot.tooltip || slot.label}
-              className="dock-segment"
-              style={{
-                width: segmentWidth,
-                height: segmentHeight,
-                borderRight: isLast ? 'none' : '1px solid rgba(255, 255, 255, 0.06)',
-                background: `${modCustomColor}14`,
-                color: modCustomColor,
-                cursor: isEditingHud ? 'pointer' : 'pointer',
-              }}
-            >
-              <div className="dock-icon-wrapper" style={{ color: modCustomColor }}>
-                {slot.icon}
+                  <div
+                    style={{
+                      position: 'relative',
+                      zIndex: 2,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '4px',
+                      width: '100%',
+                      height: '100%',
+                      pointerEvents: isEditingHud ? 'auto' : 'none',
+                    }}
+                  >
+                    {renderButtonContent(btnId)}
+                  </div>
+                </button>
               </div>
-              {showLabels && (
-                <span
-                  className="dock-label"
-                  style={{
-                    fontSize: labelFontSize,
-                    color: modCustomColor,
-                  }}
-                >
-                  {slot.label}
-                </span>
-              )}
-            </button>
-          );
-        })}
+            );
+          })}
+
+          {/* Dynamic Plugin / Module Dock Buttons */}
+          {activeModuleButtons.map(({ module: mod, slot }, idx) => {
+            const modCustomColor =
+              dockConfig.customButtonColors?.[`mod:${mod.id}` as unknown as DockButtonId] ||
+              slot.defaultColor ||
+              accentColor;
+            const isLast = idx === activeModuleButtons.length - 1;
+
+            return (
+              <button
+                key={mod.id}
+                type="button"
+                onClick={(e) => {
+                  if (isEditingHud) {
+                    onButtonClick(`mod:${mod.id}` as DockButtonId, e);
+                    return;
+                  }
+                  slot.onClick(getModuleContext(mod.id));
+                }}
+                onDoubleClick={(e) => {
+                  if (isEditingHud) {
+                    onButtonDoubleClick?.(`mod:${mod.id}` as DockButtonId, e);
+                  }
+                }}
+                onContextMenu={(e) => {
+                  onButtonContextMenu?.(`mod:${mod.id}` as DockButtonId, e);
+                }}
+                title={slot.tooltip || slot.label}
+                className="dock-segment"
+                style={{
+                  width: segmentWidth,
+                  height: segmentHeight,
+                  borderRight: isLast ? 'none' : '1px solid rgba(255, 255, 255, 0.06)',
+                  background: `${modCustomColor}14`,
+                  color: modCustomColor,
+                  cursor: isEditingHud ? 'pointer' : 'pointer',
+                }}
+              >
+                <div className="dock-icon-wrapper" style={{ color: modCustomColor }}>
+                  {slot.icon}
+                </div>
+                {(isButtonLabelVisible
+                  ? isButtonLabelVisible(`mod:${mod.id}` as unknown as DockButtonId)
+                  : showLabels) && (
+                  <span
+                    className="dock-label"
+                    style={{
+                      fontSize: labelFontSize,
+                      color: modCustomColor,
+                    }}
+                  >
+                    {slot.label}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Unified Dock Bar Handles */}
+        {renderDockResizeHandles()}
       </div>
     </section>
   );
@@ -866,6 +963,7 @@ export const HomeDock: React.FC = () => {
   const isEditingHud = useLauncherStore((s: LauncherState) => s.isEditingHud);
   const hudManualSide = useLauncherStore((s: LauncherState) => s.hudManualSide);
   const selectedDockButtonId = useLauncherStore((s: LauncherState) => s.selectedDockButtonId);
+  const isButtonInspectorOpen = useLauncherStore((s: LauncherState) => s.isButtonInspectorOpen);
   const t = useT();
   const effectiveHudSide = getEffectiveHudSide(dockConfig, hudManualSide);
 
@@ -882,14 +980,23 @@ export const HomeDock: React.FC = () => {
       }));
   }, [modules, enabledModuleIds]);
 
+  const visibleButtonsSet = useMemo(
+    () => new Set(dockConfig.visibleButtons),
+    [dockConfig.visibleButtons],
+  );
+  const activeButtons = useMemo(
+    () => dockConfig.buttonOrder.filter((id) => visibleButtonsSet.has(id)),
+    [dockConfig.buttonOrder, visibleButtonsSet],
+  );
+
   const [draggingTarget, setDraggingTarget] = useState<'dock' | DockButtonId | null>(null);
   const [tempPos, setTempPos] = useState<{ x: number; y: number } | null>(null);
   const [isColliding, setIsColliding] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
 
-  // In-canvas button resize state (WYSIWYG corner dragging)
+  // In-canvas button & dock resize state (WYSIWYG corner dragging)
   const [resizing, setResizing] = useState<{
-    btnId: DockButtonId;
+    btnId: DockButtonId | 'dock';
     startX: number;
     startY: number;
     startWidth: number;
@@ -900,6 +1007,7 @@ export const HomeDock: React.FC = () => {
     null,
   );
   const [inspectorTab, setInspectorTab] = useState<'bg' | 'icon' | 'fx' | 'shape'>('bg');
+  const [isLaunchHovered, setIsLaunchHovered] = useState(false);
 
   const dockRef = useRef<HTMLDivElement>(null);
   const buttonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
@@ -910,6 +1018,7 @@ export const HomeDock: React.FC = () => {
     grabOffsetY: number;
     hasMoved: boolean;
   } | null>(null);
+  const justDraggedRef = useRef(false);
 
   const activeAccount = accounts.find((a: UserAccount) => a.id === activeAccountId);
   const activeInstance = instances.find((i) => i.id === activeInstanceId) || instances[0];
@@ -974,8 +1083,8 @@ export const HomeDock: React.FC = () => {
       // If user simply clicked without intentional dragging, NEVER displace the element!
       if (!dragInfo?.hasMoved) {
         if (isEditingHud && draggingTarget && draggingTarget !== 'dock') {
-          launcherActions.setSelectedDockButtonId(draggingTarget);
-          setInspectorTab('bg');
+          const isInspectorOpen = useLauncherStore.getState().isButtonInspectorOpen;
+          launcherActions.setSelectedDockButtonId(draggingTarget, isInspectorOpen);
         }
         setDraggingTarget(null);
         setTempPos(null);
@@ -1025,6 +1134,12 @@ export const HomeDock: React.FC = () => {
         launcherActions.setButtonPosition(draggingTarget, { x: resolved.x, y: resolved.y });
       }
 
+      // Marcar arrastre completado para absorber el evento click subsiguiente y no cerrar el inspector
+      justDraggedRef.current = true;
+      setTimeout(() => {
+        justDraggedRef.current = false;
+      }, 100);
+
       setDraggingTarget(null);
       setTempPos(null);
       setIsColliding(false);
@@ -1042,28 +1157,95 @@ export const HomeDock: React.FC = () => {
   useEffect(() => {
     if (!resizing) return;
 
+    let currentDims = { width: resizing.startWidth, height: resizing.startHeight };
+
     const handleMouseMove = (e: MouseEvent) => {
       const deltaX = e.clientX - resizing.startX;
       const deltaY = e.clientY - resizing.startY;
+
+      const isDock = resizing.btnId === 'dock';
+      const winW = typeof window !== 'undefined' ? window.innerWidth : 1280;
+      const isCompact = dockConfig.scale === 'compact';
+      const showLabels = dockConfig.showLabels;
+      const buttonCount = Math.max(1, activeButtons.length + activeModuleButtons.length);
+      const hasLaunch = activeButtons.includes('launch');
+      const divisor = hasLaunch ? buttonCount - 1 + 1.15 : buttonCount;
+
+      // Límites permitidos por botón en el dock unificado
+      const minSegmentW = !showLabels ? 46 : isCompact ? 70 : 80;
+      const maxSegmentW = !showLabels ? 80 : isCompact ? 130 : 180;
+      const minDockH = !showLabels ? 46 : isCompact ? 60 : 70;
+      const maxDockH = !showLabels ? 80 : isCompact ? 96 : 130;
+
+      // Límites totales de la barra completa acotados por botones y ancho de ventana
+      const minW = isDock ? Math.round(minSegmentW * divisor) : 50;
+      const maxW = isDock ? Math.min(winW - 64, Math.round(maxSegmentW * divisor)) : 320;
+      const minH = isDock ? minDockH : 46;
+      const maxH = isDock ? maxDockH : 200;
 
       let newW = resizing.startWidth;
       let newH = resizing.startHeight;
 
       if (resizing.direction === 'se' || resizing.direction === 'e') {
-        newW = Math.max(50, Math.min(420, Math.round(resizing.startWidth + deltaX)));
+        newW = Math.max(minW, Math.min(maxW, Math.round(resizing.startWidth + deltaX)));
       }
       if (resizing.direction === 'se' || resizing.direction === 's') {
-        newH = Math.max(46, Math.min(280, Math.round(resizing.startHeight + deltaY)));
+        newH = Math.max(minH, Math.min(maxH, Math.round(resizing.startHeight + deltaY)));
       }
 
-      setLiveResizeDims({ width: newW, height: newH });
-      launcherActions.setDockButtonCustomization(resizing.btnId, {
-        customWidth: newW,
-        customHeight: newH,
-      });
+      currentDims = { width: newW, height: newH };
+      setLiveResizeDims(currentDims);
     };
 
     const handleMouseUp = () => {
+      const finalW = currentDims.width;
+      const finalH = currentDims.height;
+
+      if (resizing.btnId === 'dock') {
+        const isCompact = dockConfig.scale === 'compact';
+        const showLabels = dockConfig.showLabels;
+        const minSegmentW = !showLabels ? 46 : isCompact ? 70 : 80;
+        const maxSegmentW = !showLabels ? 80 : isCompact ? 130 : 180;
+        const minDockH = !showLabels ? 46 : isCompact ? 60 : 70;
+        const maxDockH = !showLabels ? 80 : isCompact ? 96 : 130;
+
+        const buttonCount = Math.max(1, activeButtons.length + activeModuleButtons.length);
+        const hasLaunch = activeButtons.includes('launch');
+        const divisor = hasLaunch ? buttonCount - 1 + 1.15 : buttonCount;
+        const finalBtnW = Math.max(
+          minSegmentW,
+          Math.min(maxSegmentW, Math.round(finalW / divisor)),
+        );
+        const finalDockH = Math.max(minDockH, Math.min(maxDockH, finalH));
+
+        launcherActions.setDockConfig({
+          customDockHeight: finalDockH,
+          customSegmentWidth: finalBtnW,
+        });
+
+        justDraggedRef.current = true;
+        setTimeout(() => {
+          justDraggedRef.current = false;
+        }, 100);
+        setResizing(null);
+        setLiveResizeDims(null);
+        return;
+      }
+
+      const autoHide = finalH < 62 || finalW < 70;
+      const currentConfig = useLauncherStore.getState().dockConfig;
+      const currentBtnCustom = currentConfig.buttonCustomizations?.[resizing.btnId];
+
+      launcherActions.setDockButtonCustomization(resizing.btnId, {
+        customWidth: finalW,
+        customHeight: finalH,
+        ...(currentBtnCustom?.hideLabel !== autoHide ? { hideLabel: autoHide } : {}),
+      });
+
+      justDraggedRef.current = true;
+      setTimeout(() => {
+        justDraggedRef.current = false;
+      }, 100);
       setResizing(null);
       setLiveResizeDims(null);
     };
@@ -1074,7 +1256,13 @@ export const HomeDock: React.FC = () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [resizing]);
+  }, [
+    resizing,
+    activeButtons,
+    activeModuleButtons.length,
+    dockConfig.scale,
+    dockConfig.showLabels,
+  ]);
 
   // Window resize listener to recalculate limits and bounds
   useEffect(() => {
@@ -1154,20 +1342,28 @@ export const HomeDock: React.FC = () => {
 
   const handleStartResize = (
     e: React.MouseEvent,
-    btnId: DockButtonId,
+    targetId: DockButtonId | 'dock',
     direction: 'se' | 's' | 'e',
   ) => {
     e.stopPropagation();
     e.preventDefault();
-    const btnEl = buttonRefs.current[btnId];
-    const rect = btnEl?.getBoundingClientRect();
-    const curW = rect ? rect.width : (dockConfig.buttonCustomizations?.[btnId]?.customWidth ?? 120);
-    const curH = rect
-      ? rect.height
-      : (dockConfig.buttonCustomizations?.[btnId]?.customHeight ?? 80);
+
+    let curW = 0;
+    let curH = 0;
+
+    if (targetId === 'dock') {
+      const dockBox = dockRef.current?.getBoundingClientRect();
+      curW = dockBox ? dockBox.width : 600;
+      curH = dockBox ? dockBox.height : 80;
+    } else {
+      const btnEl = buttonRefs.current[targetId];
+      const rect = btnEl?.getBoundingClientRect();
+      curW = rect ? rect.width : (dockConfig.buttonCustomizations?.[targetId]?.customWidth ?? 120);
+      curH = rect ? rect.height : (dockConfig.buttonCustomizations?.[targetId]?.customHeight ?? 80);
+    }
 
     setResizing({
-      btnId,
+      btnId: targetId,
       startX: e.clientX,
       startY: e.clientY,
       startWidth: curW,
@@ -1181,16 +1377,58 @@ export const HomeDock: React.FC = () => {
   const isCompact = dockConfig.scale === 'compact';
   const showLabels = dockConfig.showLabels;
 
-  let segmentWidth = isCompact ? '96px' : '136px';
-  let segmentHeight = isCompact ? '74px' : '108px';
-  let startSegmentWidth = isCompact ? '114px' : '152px';
-  const iconSize = isCompact ? 20 : 24;
-  const labelFontSize = isCompact ? '12px' : '13.5px';
+  const minSegmentW = !showLabels ? 46 : isCompact ? 70 : 80;
+  const maxSegmentW = !showLabels ? 80 : isCompact ? 130 : 180;
+  const minDockH = !showLabels ? 46 : isCompact ? 60 : 70;
+  const maxDockH = !showLabels ? 80 : isCompact ? 96 : 130;
+
+  const isDockResizing = resizing?.btnId === 'dock';
+  const liveDockDims = isDockResizing && liveResizeDims ? liveResizeDims : null;
+
+  const rawBaseSegmentWidth = dockConfig.customSegmentWidth ?? (isCompact ? 96 : 136);
+  const rawBaseSegmentHeight = dockConfig.customDockHeight ?? (isCompact ? 74 : 108);
+
+  const baseSegmentWidth = Math.max(minSegmentW, Math.min(maxSegmentW, rawBaseSegmentWidth));
+  const baseSegmentHeight = Math.max(minDockH, Math.min(maxDockH, rawBaseSegmentHeight));
+
+  let effectiveSegmentWidthPx = baseSegmentWidth;
+  let effectiveSegmentHeightPx = baseSegmentHeight;
+
+  if (liveDockDims) {
+    effectiveSegmentHeightPx = Math.max(minDockH, Math.min(maxDockH, liveDockDims.height));
+    const buttonCount = Math.max(1, activeButtons.length + activeModuleButtons.length);
+    const hasLaunch = activeButtons.includes('launch');
+    const divisor = hasLaunch ? buttonCount - 1 + 1.15 : buttonCount;
+    effectiveSegmentWidthPx = Math.max(
+      minSegmentW,
+      Math.min(maxSegmentW, Math.round(liveDockDims.width / divisor)),
+    );
+  }
+
+  let segmentWidth = `${effectiveSegmentWidthPx}px`;
+  let segmentHeight = `${effectiveSegmentHeightPx}px`;
+  let startSegmentWidth = `${Math.round(effectiveSegmentWidthPx * 1.15)}px`;
+  const iconSize = isCompact || effectiveSegmentHeightPx < 65 ? 20 : 24;
+  const labelFontSize = isCompact || effectiveSegmentHeightPx < 65 ? '12px' : '13.5px';
 
   if (!showLabels) {
-    segmentWidth = isCompact ? '52px' : '62px';
-    segmentHeight = isCompact ? '52px' : '62px';
-    startSegmentWidth = isCompact ? '58px' : '68px';
+    const rawCompactW = dockConfig.customSegmentWidth ?? (isCompact ? 52 : 62);
+    const rawCompactH = dockConfig.customDockHeight ?? (isCompact ? 52 : 62);
+    let effectiveCompactW = Math.max(minSegmentW, Math.min(maxSegmentW, rawCompactW));
+    let effectiveCompactH = Math.max(minDockH, Math.min(maxDockH, rawCompactH));
+    if (liveDockDims) {
+      effectiveCompactH = Math.max(minDockH, Math.min(maxDockH, liveDockDims.height));
+      const buttonCount = Math.max(1, activeButtons.length + activeModuleButtons.length);
+      const hasLaunch = activeButtons.includes('launch');
+      const divisor = hasLaunch ? buttonCount - 1 + 1.12 : buttonCount;
+      effectiveCompactW = Math.max(
+        minSegmentW,
+        Math.min(maxSegmentW, Math.round(liveDockDims.width / divisor)),
+      );
+    }
+    segmentWidth = `${effectiveCompactW}px`;
+    segmentHeight = `${effectiveCompactH}px`;
+    startSegmentWidth = `${Math.round(effectiveCompactW * 1.12)}px`;
   }
 
   // Helper to get custom button color if configured
@@ -1223,145 +1461,73 @@ export const HomeDock: React.FC = () => {
   const startSubtleBg = `rgba(${r}, ${g}, ${b}, 0.16)`;
   const startHoverBg = `rgba(${r}, ${g}, ${b}, 0.28)`;
 
-  const visibleButtonsSet = new Set(dockConfig.visibleButtons);
-  const activeButtons = dockConfig.buttonOrder.filter((id) => visibleButtonsSet.has(id));
-
   const renderCustomSvgIcon = (
     sanitized: string,
     effectiveSize: number,
     effectiveColor?: string,
-    onClick?: (e: React.MouseEvent) => void,
   ) => {
-    const style: React.CSSProperties = {
-      width: `${effectiveSize}px`,
-      height: `${effectiveSize}px`,
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      color: effectiveColor,
-      cursor: isEditingHud ? 'pointer' : undefined,
-      pointerEvents: isEditingHud ? 'auto' : undefined,
-      background: 'transparent',
-      border: 'none',
-      padding: 0,
-    };
-    if (onClick) {
-      return (
-        <span
-          role="button"
-          tabIndex={0}
-          onClick={onClick}
-          onKeyDown={(e) => {
-            if ((e.key === 'Enter' || e.key === ' ') && onClick) {
-              e.preventDefault();
-              e.stopPropagation();
-              onClick(e as unknown as React.MouseEvent);
-            }
-          }}
-          className="dock-icon-wrapper dock-custom-svg"
-          aria-label="Icono personalizado"
-          style={style}
-          dangerouslySetInnerHTML={{ __html: sanitized }}
-        />
-      );
-    }
     return (
       <div
         className="dock-icon-wrapper dock-custom-svg"
-        style={style}
+        data-dock-icon="true"
+        style={{
+          width: `${effectiveSize}px`,
+          height: `${effectiveSize}px`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: effectiveColor,
+          background: 'transparent',
+          border: 'none',
+          padding: 0,
+        }}
         dangerouslySetInnerHTML={{ __html: sanitized }}
       />
     );
   };
 
-  const renderCustomImageIcon = (
-    url: string,
-    effectiveSize: number,
-    onClick?: (e: React.MouseEvent) => void,
-  ) => {
-    const style: React.CSSProperties = {
-      cursor: isEditingHud ? 'pointer' : undefined,
-      pointerEvents: isEditingHud ? 'auto' : undefined,
-      background: 'transparent',
-      border: 'none',
-      padding: 0,
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-    };
-    const imgEl = (
-      <img
-        src={url}
-        alt=""
-        style={{ width: `${effectiveSize}px`, height: `${effectiveSize}px`, objectFit: 'contain' }}
-      />
-    );
-    if (onClick) {
-      return (
-        <span
-          role="button"
-          tabIndex={0}
-          onClick={onClick}
-          onKeyDown={(e) => {
-            if ((e.key === 'Enter' || e.key === ' ') && onClick) {
-              e.preventDefault();
-              e.stopPropagation();
-              onClick(e as unknown as React.MouseEvent);
-            }
-          }}
-          className="dock-icon-wrapper"
-          aria-label="Icono personalizado"
-          style={style}
-        >
-          {imgEl}
-        </span>
-      );
-    }
+  const renderCustomImageIcon = (url: string, effectiveSize: number) => {
     return (
-      <div className="dock-icon-wrapper" style={style}>
-        {imgEl}
+      <div
+        className="dock-icon-wrapper"
+        data-dock-icon="true"
+        style={{
+          background: 'transparent',
+          border: 'none',
+          padding: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <img
+          src={url}
+          alt=""
+          style={{
+            width: `${effectiveSize}px`,
+            height: `${effectiveSize}px`,
+            objectFit: 'contain',
+          }}
+        />
       </div>
     );
   };
 
-  const renderDefaultIconWrapper = (
-    icon: React.ReactNode,
-    scale: number,
-    onClick?: (e: React.MouseEvent) => void,
-  ) => {
-    const style: React.CSSProperties = {
-      transform: scale !== 1 ? `scale(${scale})` : undefined,
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      cursor: isEditingHud ? 'pointer' : undefined,
-      pointerEvents: isEditingHud ? 'auto' : undefined,
-      background: 'transparent',
-      border: 'none',
-      padding: 0,
-    };
-    if (onClick) {
-      return (
-        <span
-          role="button"
-          tabIndex={0}
-          onClick={onClick}
-          onKeyDown={(e) => {
-            if ((e.key === 'Enter' || e.key === ' ') && onClick) {
-              e.preventDefault();
-              e.stopPropagation();
-              onClick(e as unknown as React.MouseEvent);
-            }
-          }}
-          className="dock-icon-wrapper"
-          style={style}
-        >
-          {icon}
-        </span>
-      );
-    }
+  const renderDefaultIconWrapper = (icon: React.ReactNode, scale: number) => {
     return (
-      <div className="dock-icon-wrapper" style={style}>
+      <div
+        className="dock-icon-wrapper"
+        data-dock-icon="true"
+        style={{
+          transform: scale !== 1 ? `scale(${scale})` : undefined,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'transparent',
+          border: 'none',
+          padding: 0,
+        }}
+      >
         {icon}
       </div>
     );
@@ -1380,24 +1546,33 @@ export const HomeDock: React.FC = () => {
     const scale = btnCustom?.iconScale ?? 1;
     const effectiveSize = Math.round(iconSize * scale);
 
-    const handleIconLayerClick = isEditingHud
-      ? (e: React.MouseEvent) => {
-          e.stopPropagation();
-          launcherActions.setSelectedDockButtonId(btnId);
-          setInspectorTab('icon');
-        }
-      : undefined;
-
     if (btnCustom?.iconType === 'custom_svg' && btnCustom.customSvg) {
       const sanitized = DOMPurify.sanitize(btnCustom.customSvg, {
         USE_PROFILES: { svg: true, svgFilters: true },
       });
-      return renderCustomSvgIcon(sanitized, effectiveSize, effectiveColor, handleIconLayerClick);
+      return renderCustomSvgIcon(sanitized, effectiveSize, effectiveColor);
     }
     if (btnCustom?.iconType === 'custom_image' && btnCustom.customIconUrl) {
-      return renderCustomImageIcon(btnCustom.customIconUrl, effectiveSize, handleIconLayerClick);
+      return renderCustomImageIcon(btnCustom.customIconUrl, effectiveSize);
     }
-    return renderDefaultIconWrapper(defaultIcon, scale, handleIconLayerClick);
+    return renderDefaultIconWrapper(defaultIcon, scale);
+  };
+
+  const isButtonLabelVisible = (btnId: DockButtonId) => {
+    if (!showLabels) return false;
+    const btnCustom = dockConfig.buttonCustomizations?.[btnId];
+    if (btnCustom?.hideLabel) return false;
+    const isCurrentResizing = resizing?.btnId === btnId;
+    const currentW =
+      isCurrentResizing && liveResizeDims ? liveResizeDims.width : btnCustom?.customWidth;
+    const currentH =
+      isCurrentResizing && liveResizeDims ? liveResizeDims.height : btnCustom?.customHeight;
+    if (currentH !== undefined && currentH < 62) return false;
+    if (currentW !== undefined && currentW < 70) return false;
+    if (dockConfig.layoutMode === 'dock') {
+      if (effectiveSegmentHeightPx < 62 || effectiveSegmentWidthPx < 70) return false;
+    }
+    return true;
   };
 
   // Helper to render interactive corner resize handles and selection frame
@@ -1406,6 +1581,7 @@ export const HomeDock: React.FC = () => {
 
     const isCurrentResizing = resizing?.btnId === btnId;
     const currentDims = isCurrentResizing && liveResizeDims ? liveResizeDims : null;
+    const handleColor = accentColor || '#16A085';
 
     return (
       <>
@@ -1414,11 +1590,11 @@ export const HomeDock: React.FC = () => {
           style={{
             position: 'absolute',
             inset: '-3px',
-            border: '2px solid #00e5ff',
+            border: `2px solid ${handleColor}`,
             borderRadius: 'inherit',
-            boxShadow: '0 0 14px rgba(0, 229, 255, 0.5)',
+            boxShadow: `0 0 14px ${handleColor}80`,
             pointerEvents: 'none',
-            zIndex: 40,
+            zIndex: 1100,
           }}
         />
 
@@ -1431,19 +1607,22 @@ export const HomeDock: React.FC = () => {
               left: '50%',
               transform: 'translateX(-50%)',
               background: 'rgba(10, 14, 23, 0.95)',
-              border: '1px solid #00e5ff',
+              border: `1px solid ${handleColor}`,
               borderRadius: '6px',
               padding: '2px 8px',
               fontSize: '11px',
               fontWeight: 800,
-              color: '#00e5ff',
+              color: handleColor,
               whiteSpace: 'nowrap',
               boxShadow: '0 4px 15px rgba(0, 0, 0, 0.85)',
               pointerEvents: 'none',
-              zIndex: 60,
+              zIndex: 1200,
             }}
           >
             {currentDims.width} × {currentDims.height} px
+            {(currentDims.height < 62 || currentDims.width < 70) && (
+              <span style={{ opacity: 0.8, fontWeight: 500 }}> • Sin texto</span>
+            )}
           </div>
         )}
 
@@ -1453,21 +1632,19 @@ export const HomeDock: React.FC = () => {
           aria-label="Pescar esquina: arrastra para cambiar ancho y alto libremente"
           title="Pescar esquina: arrastra para cambiar ancho y alto libremente"
           onMouseDown={(e) => handleStartResize(e, btnId, 'se')}
+          className="dock-resize-handle dock-resize-handle-se"
           style={{
             position: 'absolute',
             right: '-6px',
             bottom: '-6px',
             width: '14px',
             height: '14px',
-            background: '#00e5ff',
-            border: '2px solid #0a0f18',
-            borderRadius: '3px',
             cursor: 'nwse-resize',
-            zIndex: 50,
-            boxShadow: '0 0 8px #00e5ff',
-            padding: 0,
+            zIndex: 1150,
           }}
-        />
+        >
+          <div className="dock-resize-handle-notch" style={{ width: '4px', height: '4px' }} />
+        </button>
 
         {/* Edge Handle: Right (E) */}
         <button
@@ -1475,6 +1652,7 @@ export const HomeDock: React.FC = () => {
           aria-label="Arrastra para cambiar ancho"
           title="Arrastra para cambiar ancho"
           onMouseDown={(e) => handleStartResize(e, btnId, 'e')}
+          className="dock-resize-handle dock-resize-handle-e"
           style={{
             position: 'absolute',
             right: '-5px',
@@ -1482,14 +1660,12 @@ export const HomeDock: React.FC = () => {
             transform: 'translateY(-50%)',
             width: '10px',
             height: '22px',
-            background: 'rgba(0, 229, 255, 0.9)',
-            border: '2px solid #0a0f18',
-            borderRadius: '3px',
             cursor: 'ew-resize',
-            zIndex: 49,
-            padding: 0,
+            zIndex: 1140,
           }}
-        />
+        >
+          <div className="dock-resize-handle-notch" style={{ width: '2px', height: '10px' }} />
+        </button>
 
         {/* Edge Handle: Bottom (S) */}
         <button
@@ -1497,6 +1673,7 @@ export const HomeDock: React.FC = () => {
           aria-label="Arrastra para cambiar alto"
           title="Arrastra para cambiar alto"
           onMouseDown={(e) => handleStartResize(e, btnId, 's')}
+          className="dock-resize-handle dock-resize-handle-s"
           style={{
             position: 'absolute',
             bottom: '-5px',
@@ -1504,21 +1681,132 @@ export const HomeDock: React.FC = () => {
             transform: 'translateX(-50%)',
             width: '22px',
             height: '10px',
-            background: 'rgba(0, 229, 255, 0.9)',
-            border: '2px solid #0a0f18',
-            borderRadius: '3px',
             cursor: 'ns-resize',
-            zIndex: 49,
-            padding: 0,
+            zIndex: 1140,
+          }}
+        >
+          <div className="dock-resize-handle-notch" style={{ width: '10px', height: '2px' }} />
+        </button>
+      </>
+    );
+  };
+
+  // Helper to render interactive handles for the whole Unified Dock bar
+  const renderDockResizeHandles = () => {
+    if (!isEditingHud) return null;
+
+    const isCurrentResizing = resizing?.btnId === 'dock';
+    const currentDims = isCurrentResizing && liveResizeDims ? liveResizeDims : null;
+    const handleColor = accentColor || '#16A085';
+
+    return (
+      <>
+        {/* Dock Selection Bounding Frame */}
+        <div
+          style={{
+            position: 'absolute',
+            inset: '-3px',
+            border: `2px solid ${handleColor}`,
+            borderRadius: `${(dockConfig.borderRadius ?? 14) + 3}px`,
+            boxShadow: `0 0 16px ${handleColor}80`,
+            pointerEvents: 'none',
+            zIndex: 1100,
           }}
         />
+
+        {/* Live Size Pill Tooltip while dragging dock */}
+        {currentDims && (
+          <div
+            style={{
+              position: 'absolute',
+              bottom: '-32px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              background: 'rgba(10, 14, 23, 0.95)',
+              border: `1px solid ${handleColor}`,
+              borderRadius: '6px',
+              padding: '2px 8px',
+              fontSize: '11px',
+              fontWeight: 800,
+              color: handleColor,
+              whiteSpace: 'nowrap',
+              boxShadow: '0 4px 15px rgba(0, 0, 0, 0.85)',
+              pointerEvents: 'none',
+              zIndex: 1200,
+            }}
+          >
+            {currentDims.width} × {currentDims.height} px • Barra Dock
+          </div>
+        )}
+
+        {/* Corner Handle: Bottom-Right (SE) */}
+        <button
+          type="button"
+          aria-label="Arrastra para cambiar ancho y alto de la barra"
+          title="Arrastra para cambiar ancho y alto de la barra"
+          onMouseDown={(e) => handleStartResize(e, 'dock', 'se')}
+          className="dock-resize-handle dock-resize-handle-se"
+          style={{
+            position: 'absolute',
+            right: '-6px',
+            bottom: '-6px',
+            width: '14px',
+            height: '14px',
+            cursor: 'nwse-resize',
+            zIndex: 1150,
+          }}
+        >
+          <div className="dock-resize-handle-notch" style={{ width: '4px', height: '4px' }} />
+        </button>
+
+        {/* Edge Handle: Right (E) */}
+        <button
+          type="button"
+          aria-label="Arrastra para cambiar ancho de la barra"
+          title="Arrastra para cambiar ancho de la barra"
+          onMouseDown={(e) => handleStartResize(e, 'dock', 'e')}
+          className="dock-resize-handle dock-resize-handle-e"
+          style={{
+            position: 'absolute',
+            right: '-5px',
+            top: '50%',
+            transform: 'translateY(-50%)',
+            width: '10px',
+            height: '24px',
+            cursor: 'ew-resize',
+            zIndex: 1140,
+          }}
+        >
+          <div className="dock-resize-handle-notch" style={{ width: '2px', height: '10px' }} />
+        </button>
+
+        {/* Edge Handle: Bottom (S) */}
+        <button
+          type="button"
+          aria-label="Arrastra para cambiar alto de la barra"
+          title="Arrastra para cambiar alto de la barra"
+          onMouseDown={(e) => handleStartResize(e, 'dock', 's')}
+          className="dock-resize-handle dock-resize-handle-s"
+          style={{
+            position: 'absolute',
+            bottom: '-5px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            width: '24px',
+            height: '10px',
+            cursor: 'ns-resize',
+            zIndex: 1140,
+          }}
+        >
+          <div className="dock-resize-handle-notch" style={{ width: '10px', height: '2px' }} />
+        </button>
       </>
     );
   };
 
   const renderInstancesButton = (customColor?: string | null) => {
     const iconColor = customColor ?? (activeInstance?.isOfficial ? accentColor : '#22c55e');
-    const shouldShowLabel = showLabels && !dockConfig.buttonCustomizations?.instances?.hideLabel;
+    const shouldShowLabel = isButtonLabelVisible('instances');
 
     const defaultIcon = activeInstance?.loaderType ? (
       <LoaderLogo
@@ -1560,7 +1848,7 @@ export const HomeDock: React.FC = () => {
   };
 
   const renderAboutButton = (customColor?: string | null) => {
-    const shouldShowLabel = showLabels && !dockConfig.buttonCustomizations?.about?.hideLabel;
+    const shouldShowLabel = isButtonLabelVisible('about');
     return (
       <>
         {renderIconWithCustomization(
@@ -1591,7 +1879,7 @@ export const HomeDock: React.FC = () => {
 
   const renderAccountsButton = (customColor?: string | null) => {
     const avatarSrc = resolveAccountAvatarSrc(activeAccount);
-    const shouldShowLabel = showLabels && !dockConfig.buttonCustomizations?.accounts?.hideLabel;
+    const shouldShowLabel = isButtonLabelVisible('accounts');
     const accountsCustom = dockConfig.buttonCustomizations?.accounts;
     const hasCustomIcon =
       accountsCustom?.iconType === 'custom_svg' ||
@@ -1637,7 +1925,7 @@ export const HomeDock: React.FC = () => {
   };
 
   const renderSettingsButton = (customColor?: string | null) => {
-    const shouldShowLabel = showLabels && !dockConfig.buttonCustomizations?.settings?.hideLabel;
+    const shouldShowLabel = isButtonLabelVisible('settings');
     return (
       <>
         {renderIconWithCustomization(
@@ -1668,6 +1956,9 @@ export const HomeDock: React.FC = () => {
 
   const getLaunchIcon = () => {
     if (isRunning) {
+      if (isLaunchHovered) {
+        return <Square size={iconSize - 2} fill="currentColor" />;
+      }
       return <CheckCircle2 size={iconSize + 2} />;
     }
     if (isLaunching) {
@@ -1677,28 +1968,43 @@ export const HomeDock: React.FC = () => {
   };
 
   const getLaunchLabel = () => {
-    if (isRunning) return t.dock.running;
+    if (isRunning) {
+      return isLaunchHovered ? t.dock.stopGame : t.dock.running;
+    }
     if (isLaunching) return `${launch.progress}%`;
     return t.dock.launch;
   };
 
   const renderLaunchButton = (customColor?: string | null) => {
-    const launchIconColor = customColor ?? startColor;
-    const shouldShowLabel = showLabels && !dockConfig.buttonCustomizations?.launch?.hideLabel;
+    const isStopping = isRunning && isLaunchHovered;
+    const launchIconColor = isStopping ? '#ef4444' : (customColor ?? startColor);
+    const launchLabelColor = isStopping ? '#ef4444' : startColor;
+    const shouldShowLabel = isButtonLabelVisible('launch');
     return (
       <>
         {renderIconWithCustomization(
           'launch',
-          <div style={{ color: launchIconColor }}>{getLaunchIcon()}</div>,
+          <div
+            style={{
+              color: launchIconColor,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'color 0.15s ease',
+            }}
+          >
+            {getLaunchIcon()}
+          </div>,
           launchIconColor,
         )}
         {shouldShowLabel && (
           <span
             className="dock-label"
             style={{
-              color: startColor,
+              color: launchLabelColor,
               fontSize: labelFontSize,
               fontWeight: 800,
+              transition: 'color 0.15s ease',
             }}
           >
             {getLaunchLabel()}
@@ -1711,7 +2017,7 @@ export const HomeDock: React.FC = () => {
               className="dock-launch-fill"
               style={{
                 width: `${launch.progress}%`,
-                background: `linear-gradient(to right, ${startColor}, #38bdf8)`,
+                background: `linear-gradient(to right, ${startColor}, ${accentColor})`,
               }}
             />
           </div>
@@ -1737,10 +2043,14 @@ export const HomeDock: React.FC = () => {
         const { slot } = modItem;
         const modCustomColor =
           customColor || dockConfig.customButtonColors?.[btnId] || slot.defaultColor || accentColor;
-        const shouldShowLabel = showLabels && !dockConfig.buttonCustomizations?.[btnId]?.hideLabel;
+        const shouldShowLabel = isButtonLabelVisible(btnId);
         return (
           <>
-            <div className="dock-icon-wrapper" style={{ color: modCustomColor }}>
+            <div
+              className="dock-icon-wrapper"
+              data-dock-icon="true"
+              style={{ color: modCustomColor }}
+            >
               {slot.icon}
             </div>
             {shouldShowLabel && (
@@ -1762,9 +2072,13 @@ export const HomeDock: React.FC = () => {
   };
 
   const handleButtonClick = (btnId: DockButtonId) => {
+    if (justDraggedRef.current) {
+      justDraggedRef.current = false;
+      return;
+    }
     if (isEditingHud) {
-      launcherActions.setSelectedDockButtonId(btnId);
-      setInspectorTab('bg');
+      const isInspectorOpen = useLauncherStore.getState().isButtonInspectorOpen;
+      launcherActions.setSelectedDockButtonId(btnId, isInspectorOpen);
       return;
     }
     if (btnId === 'instances') launcherActions.openModal('instances');
@@ -1781,6 +2095,29 @@ export const HomeDock: React.FC = () => {
         modItem.slot.onClick(getModuleContext(modItem.module.id));
       }
     }
+  };
+
+  const handleButtonDoubleClick = (btnId: DockButtonId, e?: React.MouseEvent) => {
+    if (isEditingHud) {
+      e?.preventDefault();
+      const targetEl = e?.target as HTMLElement | null;
+      const isIconClick = Boolean(
+        targetEl?.closest?.('[data-dock-icon="true"], .dock-icon-wrapper'),
+      );
+      setInspectorTab(isIconClick ? 'icon' : 'bg');
+      launcherActions.setSelectedDockButtonId(btnId, true);
+    }
+  };
+
+  const handleButtonContextMenu = (btnId: DockButtonId, e?: React.MouseEvent) => {
+    e?.preventDefault();
+    const targetEl = e?.target as HTMLElement | null;
+    const isIconClick = Boolean(targetEl?.closest?.('[data-dock-icon="true"], .dock-icon-wrapper'));
+    setInspectorTab(isIconClick ? 'icon' : 'bg');
+    if (!isEditingHud) {
+      launcherActions.setEditingHud(true);
+    }
+    launcherActions.setSelectedDockButtonId(btnId, true);
   };
 
   // ═════════════════════════════════════════════
@@ -1800,6 +2137,8 @@ export const HomeDock: React.FC = () => {
         t={t}
         buttonRefs={buttonRefs}
         onButtonClick={handleButtonClick}
+        onButtonDoubleClick={handleButtonDoubleClick}
+        onButtonContextMenu={handleButtonContextMenu}
         onButtonMouseDown={(e, btnId) => {
           if (isEditingHud) {
             e.preventDefault();
@@ -1819,6 +2158,10 @@ export const HomeDock: React.FC = () => {
         renderButtonContent={renderButtonContent}
         renderResizeHandles={renderResizeHandles}
         selectedDockButtonId={selectedDockButtonId}
+        isInspectorOpen={isButtonInspectorOpen}
+        isResizing={Boolean(resizing)}
+        resizing={resizing}
+        liveResizeDims={liveResizeDims}
         inspectorTab={inspectorTab}
         onCloseInspector={() => launcherActions.setSelectedDockButtonId(null)}
         isRunning={isRunning}
@@ -1830,6 +2173,9 @@ export const HomeDock: React.FC = () => {
         startSubtleBg={startSubtleBg}
         startColor={startColor}
         getButtonCustomColor={getButtonCustomColor}
+        accentColor={accentColor}
+        isLaunchHovered={isLaunchHovered}
+        onLaunchHover={setIsLaunchHovered}
       />
     );
   }
@@ -1874,16 +2220,18 @@ export const HomeDock: React.FC = () => {
         }
       }}
       selectedDockButtonId={selectedDockButtonId}
+      isInspectorOpen={isButtonInspectorOpen}
       inspectorTab={inspectorTab}
-      setInspectorTab={setInspectorTab}
       onCloseInspector={() => launcherActions.setSelectedDockButtonId(null)}
       t={t}
       activeButtons={activeButtons}
       activeModuleButtons={activeModuleButtons}
       buttonRefs={buttonRefs}
       onButtonClick={handleButtonClick}
+      onButtonDoubleClick={handleButtonDoubleClick}
+      onButtonContextMenu={handleButtonContextMenu}
       renderButtonContent={renderButtonContent}
-      renderResizeHandles={renderResizeHandles}
+      renderDockResizeHandles={renderDockResizeHandles}
       isRunning={isRunning}
       isLaunching={isLaunching}
       startSegmentWidth={startSegmentWidth}
@@ -1896,6 +2244,9 @@ export const HomeDock: React.FC = () => {
       accentColor={accentColor}
       showLabels={showLabels}
       labelFontSize={labelFontSize}
+      isButtonLabelVisible={isButtonLabelVisible}
+      isLaunchHovered={isLaunchHovered}
+      onLaunchHover={setIsLaunchHovered}
     />
   );
 };

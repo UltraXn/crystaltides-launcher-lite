@@ -41,11 +41,108 @@ pub struct AccountRecord {
 static DB_CONN: OnceLock<Mutex<Connection>> = OnceLock::new();
 
 fn get_db_path() -> PathBuf {
+    if let Some(custom) = std::env::var_os("CRYSTALTIDES_HOME") {
+        let base_dir = PathBuf::from(custom);
+        let _ = fs::create_dir_all(&base_dir);
+        return base_dir.join("crystaltides.db");
+    }
     let base_dir = dirs::home_dir()
         .map(|h| h.join(".crystaltides"))
         .unwrap_or_else(|| PathBuf::from(".crystaltides"));
     let _ = fs::create_dir_all(&base_dir);
     base_dir.join("crystaltides.db")
+}
+
+pub fn lock_or_recover<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(|e| {
+        crate::logger::log(
+            "WARN",
+            "DB",
+            &format!("Mutex envenenado, recuperando lock... {}", e),
+        );
+        e.into_inner()
+    })
+}
+
+pub fn init_db(conn: &Connection) -> Result<(), String> {
+    conn.execute_batch(
+        "PRAGMA journal_mode = WAL;
+         PRAGMA busy_timeout = 5000;
+         PRAGMA synchronous = NORMAL;
+         PRAGMA foreign_keys = ON;",
+    )
+    .map_err(|e| {
+        format!(
+            "Error configurando pragmas SQLite (WAL / busy_timeout): {}",
+            e
+        )
+    })?;
+
+    let version: i32 = conn
+        .query_row("PRAGMA user_version;", [], |row| row.get(0))
+        .unwrap_or(0);
+
+    if version < 1 {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS profiles (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                mc_version TEXT NOT NULL,
+                loader_type TEXT NOT NULL,
+                loader_version TEXT,
+                min_ram INTEGER DEFAULT 1024,
+                max_ram INTEGER DEFAULT 4096,
+                jvm_args TEXT,
+                game_dir TEXT,
+                resolution_width INTEGER,
+                resolution_height INTEGER,
+                fullscreen INTEGER DEFAULT 0,
+                pre_launch_command TEXT,
+                wrapper_command TEXT,
+                post_exit_command TEXT,
+                environment_variables TEXT,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS accounts (
+                id TEXT PRIMARY KEY,
+                username TEXT NOT NULL,
+                uuid TEXT NOT NULL,
+                account_type TEXT NOT NULL,
+                access_token TEXT,
+                skin_url TEXT,
+                is_active INTEGER DEFAULT 0,
+                created_at INTEGER NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS game_cache (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+
+            PRAGMA user_version = 1;",
+        )
+        .map_err(|e| format!("Error ejecutando migraciones DDL v1: {}", e))?;
+    }
+
+    Ok(())
+}
+
+#[allow(dead_code)]
+pub struct DbState(pub &'static Mutex<Connection>);
+
+#[allow(dead_code)]
+impl DbState {
+    pub fn connection(&self) -> &'static Mutex<Connection> {
+        self.0
+    }
+}
+
+pub fn init_managed_db() -> Result<DbState, String> {
+    let conn = get_connection()?;
+    Ok(DbState(conn))
 }
 
 pub fn get_connection() -> Result<&'static Mutex<Connection>, String> {
@@ -54,79 +151,22 @@ pub fn get_connection() -> Result<&'static Mutex<Connection>, String> {
     }
 
     let db_path = get_db_path();
-    let conn = Connection::open(&db_path)
-        .map_err(|e| format!("Error abriendo base de datos SQLite en {:?}: {}", db_path, e))?;
+    let conn = Connection::open(&db_path).map_err(|e| {
+        format!(
+            "Error abriendo base de datos SQLite en {:?}: {}",
+            db_path, e
+        )
+    })?;
 
-    // Configuración estricta de concurrencia y tolerancia a fallos:
-    // Obligatorio: WAL mode y busy_timeout >= 30s para evitar bloqueos SQLite_Locked_Concurrency_OperationalError
-    conn.execute_batch(
-        "PRAGMA journal_mode = WAL;
-         PRAGMA busy_timeout = 30000;
-         PRAGMA synchronous = NORMAL;
-         PRAGMA foreign_keys = ON;",
-    )
-    .map_err(|e| format!("Error configurando pragmas SQLite (WAL / busy_timeout): {}", e))?;
-
-    // Migraciones automáticas del esquema relacional
-    conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS profiles (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            mc_version TEXT NOT NULL,
-            loader_type TEXT NOT NULL,
-            loader_version TEXT,
-            min_ram INTEGER DEFAULT 1024,
-            max_ram INTEGER DEFAULT 4096,
-            jvm_args TEXT,
-            game_dir TEXT,
-            resolution_width INTEGER,
-            resolution_height INTEGER,
-            fullscreen INTEGER DEFAULT 0,
-            pre_launch_command TEXT,
-            wrapper_command TEXT,
-            post_exit_command TEXT,
-            environment_variables TEXT,
-            created_at INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS accounts (
-            id TEXT PRIMARY KEY,
-            username TEXT NOT NULL,
-            uuid TEXT NOT NULL,
-            account_type TEXT NOT NULL,
-            access_token TEXT,
-            skin_url TEXT,
-            is_active INTEGER DEFAULT 0,
-            created_at INTEGER NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS game_cache (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL,
-            updated_at INTEGER NOT NULL
-        );",
-    )
-    .map_err(|e| format!("Error ejecutando migraciones DDL: {}", e))?;
-
-    // Migraciones idempotentes para bases de datos existentes
-    let _ = conn.execute("ALTER TABLE profiles ADD COLUMN resolution_width INTEGER;", []);
-    let _ = conn.execute("ALTER TABLE profiles ADD COLUMN resolution_height INTEGER;", []);
-    let _ = conn.execute("ALTER TABLE profiles ADD COLUMN fullscreen INTEGER DEFAULT 0;", []);
-    let _ = conn.execute("ALTER TABLE profiles ADD COLUMN pre_launch_command TEXT;", []);
-    let _ = conn.execute("ALTER TABLE profiles ADD COLUMN wrapper_command TEXT;", []);
-    let _ = conn.execute("ALTER TABLE profiles ADD COLUMN post_exit_command TEXT;", []);
-    let _ = conn.execute("ALTER TABLE profiles ADD COLUMN environment_variables TEXT;", []);
+    init_db(&conn)?;
 
     let _ = DB_CONN.set(Mutex::new(conn));
-    Ok(DB_CONN.get().expect("Database connection must be initialized"))
+    DB_CONN
+        .get()
+        .ok_or_else(|| "Error: Database connection not initialized".to_string())
 }
 
-#[tauri::command]
-pub fn db_get_profiles() -> Result<Vec<ProfileRecord>, String> {
-    let mutex = get_connection()?;
-    let conn = mutex.lock().unwrap_or_else(|e| { crate::logger::log("WARN", "DB", &format!("Mutex envenenado, recuperando lock... {}", e)); e.into_inner() });
-
+pub fn get_profiles(conn: &Connection) -> Result<Vec<ProfileRecord>, String> {
     let mut stmt = conn
         .prepare("SELECT id, name, mc_version, loader_type, loader_version, min_ram, max_ram, jvm_args, game_dir, resolution_width, resolution_height, fullscreen, pre_launch_command, wrapper_command, post_exit_command, environment_variables, created_at, updated_at FROM profiles ORDER BY updated_at DESC")
         .map_err(|e| e.to_string())?;
@@ -158,17 +198,35 @@ pub fn db_get_profiles() -> Result<Vec<ProfileRecord>, String> {
         .map_err(|e| e.to_string())?;
 
     let mut profiles = Vec::new();
-    for p in rows.flatten() {
+    for r in rows {
+        let p = r.map_err(|e| format!("Error deserializando fila de perfil: {}", e))?;
         profiles.push(p);
     }
     Ok(profiles)
 }
 
-#[tauri::command]
-pub fn db_save_profile(profile: ProfileRecord) -> Result<(), String> {
+pub fn get_profiles_sync() -> Result<Vec<ProfileRecord>, String> {
     let mutex = get_connection()?;
-    let conn = mutex.lock().unwrap_or_else(|e| { crate::logger::log("WARN", "DB", &format!("Mutex envenenado, recuperando lock... {}", e)); e.into_inner() });
+    let conn = lock_or_recover(mutex);
+    get_profiles(&conn)
+}
 
+#[tauri::command]
+pub async fn db_get_profiles() -> Result<Vec<ProfileRecord>, String> {
+    tokio::task::spawn_blocking(move || {
+        let mutex = get_connection()?;
+        let conn = lock_or_recover(mutex);
+        get_profiles(&conn)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+pub fn save_profile(conn: &Connection, profile: &ProfileRecord) -> Result<(), String> {
+    // game_dir pasa a ser raíz autorizada de disco (paths::get_authorized_file_roots)
+    if let Some(gd) = profile.game_dir.as_deref().filter(|s| !s.trim().is_empty()) {
+        crate::paths::validate_profile_game_dir(gd)?;
+    }
     conn.execute(
         "INSERT INTO profiles (id, name, mc_version, loader_type, loader_version, min_ram, max_ram, jvm_args, game_dir, resolution_width, resolution_height, fullscreen, pre_launch_command, wrapper_command, post_exit_command, environment_variables, created_at, updated_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
@@ -216,21 +274,34 @@ pub fn db_save_profile(profile: ProfileRecord) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn db_delete_profile(id: String) -> Result<(), String> {
-    let mutex = get_connection()?;
-    let conn = mutex.lock().unwrap_or_else(|e| { crate::logger::log("WARN", "DB", &format!("Mutex envenenado, recuperando lock... {}", e)); e.into_inner() });
+pub async fn db_save_profile(profile: ProfileRecord) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        let mutex = get_connection()?;
+        let conn = lock_or_recover(mutex);
+        save_profile(&conn, &profile)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
 
+pub fn delete_profile(conn: &Connection, id: &str) -> Result<(), String> {
     conn.execute("DELETE FROM profiles WHERE id = ?1", params![id])
         .map_err(|e| format!("Error eliminando perfil: {}", e))?;
-
     Ok(())
 }
 
 #[tauri::command]
-pub fn db_get_accounts() -> Result<Vec<AccountRecord>, String> {
-    let mutex = get_connection()?;
-    let conn = mutex.lock().unwrap_or_else(|e| { crate::logger::log("WARN", "DB", &format!("Mutex envenenado, recuperando lock... {}", e)); e.into_inner() });
+pub async fn db_delete_profile(id: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        let mutex = get_connection()?;
+        let conn = lock_or_recover(mutex);
+        delete_profile(&conn, &id)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
 
+pub fn get_accounts(conn: &Connection) -> Result<Vec<AccountRecord>, String> {
     let mut stmt = conn
         .prepare("SELECT id, username, uuid, account_type, access_token, skin_url, is_active, created_at FROM accounts ORDER BY is_active DESC, created_at DESC")
         .map_err(|e| e.to_string())?;
@@ -252,22 +323,45 @@ pub fn db_get_accounts() -> Result<Vec<AccountRecord>, String> {
         .map_err(|e| e.to_string())?;
 
     let mut accounts = Vec::new();
-    for a in rows.flatten() {
+    for r in rows {
+        let mut a = r.map_err(|e| format!("Error deserializando cuenta de SQLite: {}", e))?;
+        if a.access_token.is_none() || a.access_token.as_deref() == Some("") {
+            if let Some(secret) = crate::keyring_store::get_secret(&a.id) {
+                a.access_token = Some(secret);
+            }
+        }
         accounts.push(a);
     }
     Ok(accounts)
 }
 
 #[tauri::command]
-pub fn db_save_account(account: AccountRecord) -> Result<(), String> {
-    let mutex = get_connection()?;
-    let conn = mutex.lock().unwrap_or_else(|e| { crate::logger::log("WARN", "DB", &format!("Mutex envenenado, recuperando lock... {}", e)); e.into_inner() });
+pub async fn db_get_accounts() -> Result<Vec<AccountRecord>, String> {
+    tokio::task::spawn_blocking(move || {
+        let mutex = get_connection()?;
+        let conn = lock_or_recover(mutex);
+        get_accounts(&conn)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+pub fn save_account(conn: &Connection, account: &AccountRecord) -> Result<(), String> {
+    let mut account_to_save = account.clone();
+    if let Some(ref token) = account.access_token {
+        if !token.is_empty()
+            && crate::keyring_store::set_secret(&account.id, token).is_ok()
+            && crate::keyring_store::is_keyring_enabled()
+        {
+            account_to_save.access_token = None;
+        }
+    }
 
     let tx = conn
         .unchecked_transaction()
         .map_err(|e| format!("Error iniciando transacción: {}", e))?;
 
-    if account.is_active {
+    if account_to_save.is_active {
         tx.execute("UPDATE accounts SET is_active = 0", [])
             .map_err(|e| format!("Error desactivando cuentas previas: {}", e))?;
     }
@@ -283,14 +377,14 @@ pub fn db_save_account(account: AccountRecord) -> Result<(), String> {
             skin_url = excluded.skin_url,
             is_active = excluded.is_active;",
         params![
-            account.id,
-            account.username,
-            account.uuid,
-            account.account_type,
-            account.access_token,
-            account.skin_url,
-            if account.is_active { 1 } else { 0 },
-            account.created_at,
+            account_to_save.id,
+            account_to_save.username,
+            account_to_save.uuid,
+            account_to_save.account_type,
+            account_to_save.access_token,
+            account_to_save.skin_url,
+            if account_to_save.is_active { 1 } else { 0 },
+            account_to_save.created_at,
         ],
     )
     .map_err(|e| format!("Error guardando cuenta en SQLite: {}", e))?;
@@ -302,28 +396,52 @@ pub fn db_save_account(account: AccountRecord) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn db_delete_account(id: String) -> Result<(), String> {
-    let mutex = get_connection()?;
-    let conn = mutex.lock().unwrap_or_else(|e| { crate::logger::log("WARN", "DB", &format!("Mutex envenenado, recuperando lock... {}", e)); e.into_inner() });
+pub async fn db_save_account(account: AccountRecord) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        let mutex = get_connection()?;
+        let conn = lock_or_recover(mutex);
+        save_account(&conn, &account)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
 
+pub fn delete_account(conn: &Connection, id: &str) -> Result<(), String> {
+    let _ = crate::keyring_store::delete_secret(id);
     conn.execute("DELETE FROM accounts WHERE id = ?1", params![id])
         .map_err(|e| format!("Error eliminando cuenta: {}", e))?;
-
     Ok(())
 }
 
 #[tauri::command]
-pub fn db_set_active_account(id: String) -> Result<(), String> {
-    let mutex = get_connection()?;
-    let conn = mutex.lock().unwrap_or_else(|e| { crate::logger::log("WARN", "DB", &format!("Mutex envenenado, recuperando lock... {}", e)); e.into_inner() });
+pub async fn db_delete_account(id: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        let mutex = get_connection()?;
+        let conn = lock_or_recover(mutex);
+        delete_account(&conn, &id)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
 
+pub fn set_active_account(conn: &Connection, id: &str) -> Result<(), String> {
     conn.execute(
         "UPDATE accounts SET is_active = CASE WHEN id = ?1 THEN 1 ELSE 0 END",
         params![id],
     )
     .map_err(|e| format!("Error marcando cuenta activa: {}", e))?;
-
     Ok(())
+}
+
+#[tauri::command]
+pub async fn db_set_active_account(id: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        let mutex = get_connection()?;
+        let conn = lock_or_recover(mutex);
+        set_active_account(&conn, &id)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[cfg(test)]
@@ -333,66 +451,146 @@ mod tests {
     #[test]
     fn test_db_set_active_account_single_active_logic() {
         let conn = Connection::open_in_memory().unwrap();
-        conn.execute_batch(
-            "CREATE TABLE accounts (
-                id TEXT PRIMARY KEY,
-                username TEXT NOT NULL,
-                uuid TEXT NOT NULL,
-                account_type TEXT NOT NULL,
-                access_token TEXT,
-                skin_url TEXT,
-                is_active INTEGER DEFAULT 0,
-                created_at INTEGER NOT NULL
-            );",
-        ).unwrap();
+        init_db(&conn).unwrap();
 
-        conn.execute("INSERT INTO accounts (id, username, uuid, account_type, is_active, created_at) VALUES ('acc-1', 'User1', 'u1', 'offline', 1, 100)", []).unwrap();
-        conn.execute("INSERT INTO accounts (id, username, uuid, account_type, is_active, created_at) VALUES ('acc-2', 'User2', 'u2', 'offline', 0, 200)", []).unwrap();
+        let acc1 = AccountRecord {
+            id: "acc-1".to_string(),
+            username: "User1".to_string(),
+            uuid: "u1".to_string(),
+            account_type: "offline".to_string(),
+            access_token: None,
+            skin_url: None,
+            is_active: true,
+            created_at: 100,
+        };
+        let acc2 = AccountRecord {
+            id: "acc-2".to_string(),
+            username: "User2".to_string(),
+            uuid: "u2".to_string(),
+            account_type: "offline".to_string(),
+            access_token: None,
+            skin_url: None,
+            is_active: false,
+            created_at: 200,
+        };
 
-        conn.execute(
-            "UPDATE accounts SET is_active = CASE WHEN id = ?1 THEN 1 ELSE 0 END",
-            params!["acc-2"],
-        ).unwrap();
+        save_account(&conn, &acc1).unwrap();
+        save_account(&conn, &acc2).unwrap();
 
-        let active_count: i64 = conn.query_row("SELECT count(*) FROM accounts WHERE is_active = 1", [], |r| r.get(0)).unwrap();
-        assert_eq!(active_count, 1);
+        set_active_account(&conn, "acc-2").unwrap();
 
-        let active_id: String = conn.query_row("SELECT id FROM accounts WHERE is_active = 1", [], |r| r.get(0)).unwrap();
-        assert_eq!(active_id, "acc-2");
+        let accounts = get_accounts(&conn).unwrap();
+        let active: Vec<_> = accounts.into_iter().filter(|a| a.is_active).collect();
+        assert_eq!(active.len(), 1);
+        assert_eq!(active[0].id, "acc-2");
     }
 
     #[test]
     fn test_db_save_account_resets_previous_active() {
         let conn = Connection::open_in_memory().unwrap();
-        conn.execute_batch(
-            "CREATE TABLE accounts (
-                id TEXT PRIMARY KEY,
-                username TEXT NOT NULL,
-                uuid TEXT NOT NULL,
-                account_type TEXT NOT NULL,
-                access_token TEXT,
-                skin_url TEXT,
-                is_active INTEGER DEFAULT 0,
-                created_at INTEGER NOT NULL
-            );",
-        ).unwrap();
+        init_db(&conn).unwrap();
 
-        conn.execute("INSERT INTO accounts (id, username, uuid, account_type, is_active, created_at) VALUES ('acc-1', 'User1', 'u1', 'offline', 1, 100)", []).unwrap();
+        let acc1 = AccountRecord {
+            id: "acc-1".to_string(),
+            username: "User1".to_string(),
+            uuid: "u1".to_string(),
+            account_type: "offline".to_string(),
+            access_token: None,
+            skin_url: None,
+            is_active: true,
+            created_at: 100,
+        };
+        save_account(&conn, &acc1).unwrap();
 
-        let new_account_active = true;
-        if new_account_active {
-            let _ = conn.execute("UPDATE accounts SET is_active = 0", []);
-        }
-        conn.execute(
-            "INSERT INTO accounts (id, username, uuid, account_type, is_active, created_at) VALUES ('acc-2', 'User2', 'u2', 'offline', 1, 200)",
-            [],
-        ).unwrap();
+        let acc2 = AccountRecord {
+            id: "acc-2".to_string(),
+            username: "User2".to_string(),
+            uuid: "u2".to_string(),
+            account_type: "offline".to_string(),
+            access_token: None,
+            skin_url: None,
+            is_active: true,
+            created_at: 200,
+        };
+        save_account(&conn, &acc2).unwrap();
 
-        let active_count: i64 = conn.query_row("SELECT count(*) FROM accounts WHERE is_active = 1", [], |r| r.get(0)).unwrap();
-        assert_eq!(active_count, 1);
+        let accounts = get_accounts(&conn).unwrap();
+        let active: Vec<_> = accounts.into_iter().filter(|a| a.is_active).collect();
+        assert_eq!(active.len(), 1);
+        assert_eq!(active[0].id, "acc-2");
+    }
 
-        let active_id: String = conn.query_row("SELECT id FROM accounts WHERE is_active = 1", [], |r| r.get(0)).unwrap();
-        assert_eq!(active_id, "acc-2");
+    #[test]
+    fn test_db_save_and_delete_profile() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_db(&conn).unwrap();
+
+        let profile = ProfileRecord {
+            id: "prof-test".to_string(),
+            name: "Test Profile".to_string(),
+            mc_version: "1.21.1".to_string(),
+            loader_type: "fabric".to_string(),
+            loader_version: Some("0.16.0".to_string()),
+            min_ram: 1024,
+            max_ram: 4096,
+            jvm_args: None,
+            game_dir: None,
+            resolution_width: Some(1920),
+            resolution_height: Some(1080),
+            fullscreen: Some(true),
+            pre_launch_command: None,
+            wrapper_command: None,
+            post_exit_command: None,
+            environment_variables: None,
+            created_at: 1000,
+            updated_at: 1000,
+        };
+
+        save_profile(&conn, &profile).unwrap();
+        let profiles = get_profiles(&conn).unwrap();
+        assert_eq!(profiles.len(), 1);
+        assert_eq!(profiles[0].id, "prof-test");
+        assert_eq!(profiles[0].fullscreen, Some(true));
+
+        delete_profile(&conn, "prof-test").unwrap();
+        let profiles_after = get_profiles(&conn).unwrap();
+        assert!(profiles_after.is_empty());
+    }
+
+    #[test]
+    fn test_db_save_profile_rechaza_game_dir_demasiado_amplio() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_db(&conn).unwrap();
+        let temp = tempfile::tempdir().unwrap();
+
+        let mut profile = ProfileRecord {
+            id: "prof-dir".to_string(),
+            name: "Dir".to_string(),
+            mc_version: "1.21.1".to_string(),
+            loader_type: "fabric".to_string(),
+            loader_version: None,
+            min_ram: 1024,
+            max_ram: 4096,
+            jvm_args: None,
+            game_dir: Some(temp.path().join("instancia").to_string_lossy().to_string()),
+            resolution_width: None,
+            resolution_height: None,
+            fullscreen: None,
+            pre_launch_command: None,
+            wrapper_command: None,
+            post_exit_command: None,
+            environment_variables: None,
+            created_at: 1000,
+            updated_at: 1000,
+        };
+        save_profile(&conn, &profile).unwrap();
+
+        let home = dirs::home_dir().unwrap();
+        profile.game_dir = Some(home.to_string_lossy().to_string());
+        assert!(save_profile(&conn, &profile).is_err());
+
+        // El perfil guardado no se modificó
+        let saved = get_profiles(&conn).unwrap();
+        assert!(saved[0].game_dir.as_deref().unwrap().ends_with("instancia"));
     }
 }
-

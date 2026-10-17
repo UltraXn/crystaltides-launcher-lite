@@ -32,7 +32,7 @@ export const resolveActiveBtnColor = (
     if (startBtnColorMode === 'accent' && fallbackAccent) return fallbackAccent;
     return '#22c55e';
   }
-  return fallbackAccent ?? '#00e5ff';
+  return fallbackAccent ?? '#16A085';
 };
 
 export const extractCleanMinecraftVersion = (raw: string): string => {
@@ -63,3 +63,32 @@ export const extractCleanMinecraftVersion = (raw: string): string => {
   }
   return clean;
 };
+
+export const extractLoaderVersionFromCompound = (
+  raw: string,
+  _loaderType?: string,
+): string | undefined => {
+  if (!raw) return undefined;
+  const clean = raw.trim().replace(/\s*\([^)]*\)\s*$/, '').trim();
+
+  // Pattern: quilt-loader-<loaderVersion>-<mcVersion> or fabric-loader-<loaderVersion>-<mcVersion>
+  const loaderMatch = clean.match(/^(?:quilt|fabric)-loader-(.+)-([^-]+)$/i);
+  if (loaderMatch) {
+    return loaderMatch[1];
+  }
+
+  // Pattern: <mcVersion>-forge-<loaderVersion>
+  const forgeMatch = clean.match(/^[^-]+-forge-(.+)$/i);
+  if (forgeMatch) {
+    return forgeMatch[1];
+  }
+
+  // Pattern: neoforge-<loaderVersion>
+  const neoforgeMatch = clean.match(/^neoforge-(.+)$/i);
+  if (neoforgeMatch) {
+    return neoforgeMatch[1];
+  }
+
+  return undefined;
+};
+

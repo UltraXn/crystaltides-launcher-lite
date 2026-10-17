@@ -79,6 +79,8 @@ if %ERRORLEVEL% neq 0 (
 )
 
 if exist ct_agent.obj del ct_agent.obj
+if exist ct_agent.exp del ct_agent.exp
+if exist ct_agent.lib del ct_agent.lib
 if exist ct-agent.exp del ct-agent.exp
 if exist ct-agent.lib del ct-agent.lib
 

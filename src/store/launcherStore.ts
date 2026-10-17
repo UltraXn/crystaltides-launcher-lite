@@ -1,5 +1,7 @@
 import { useSyncExternalStore } from 'react';
+import { decodeJwt } from 'jose';
 import { loadSecureItem, saveSecureItem } from '../services/secureVault';
+import { logFrontend } from '../services/logger';
 import {
   GameInstance,
   getSavedInstances,
@@ -31,6 +33,7 @@ import {
   getEffectiveActiveButtons,
 } from '../utils/collisionSystem';
 import { isVideoSource, clearDockPanorama, clearButtonMedia } from '../utils/wallpaperStorage';
+import { extractLoaderVersionFromCompound } from '../utils/settingsUtils';
 import { Language, getTranslation, TranslationDictionary } from '../i18n';
 
 export type { Language };
@@ -47,6 +50,7 @@ export interface UserAccount {
   accessToken?: string;
   refreshToken?: string;
   lastUsed: number;
+  requiresReauth?: boolean;
 }
 
 export type LoaderType = 'vanilla' | 'neoforge' | 'forge' | 'fabric' | 'quilt';
@@ -96,13 +100,13 @@ export const WALLPAPERS: WallpaperOption[] = [
   {
     id: 'ct_night',
     name: 'Santuario Nocturno',
-    url: '/wallpapers/crystaltides_night.png',
+    url: '/wallpapers/crystaltides_night.webp',
     accent: '#16A085',
   },
   {
     id: 'ct_day',
     name: 'Costa de Cerezos (Día)',
-    url: '/wallpapers/crystaltides_day.png',
+    url: '/wallpapers/crystaltides_day.webp',
     accent: '#22c55e',
   },
   {
@@ -272,6 +276,8 @@ export interface DockConfig {
   buttonPositions: Record<string, { x: number; y: number }>;
   widgetPositions: WidgetPositions;
   scale: 'normal' | 'compact';
+  customDockHeight?: number;
+  customSegmentWidth?: number;
   showLabels: boolean;
   bgOpacity: number;
   borderRadius: number;
@@ -352,6 +358,7 @@ export interface LauncherState {
   activeModal: ModalType;
   customizingButtonId: DockButtonId | null;
   selectedDockButtonId: DockButtonId | null;
+  isButtonInspectorOpen: boolean;
   instances: GameInstance[];
   activeInstanceId: string;
   launch: LaunchProgress;
@@ -361,6 +368,8 @@ export interface LauncherState {
     maxPlayers: number;
     ping: number;
   };
+  modSyncPrompt: { error: string } | null;
+  accountPersistenceError: string | null;
 }
 
 const SETTINGS_STORAGE_KEY = 'crystaltides_lite_settings_v1';
@@ -583,7 +592,7 @@ let state: LauncherState = {
   })(),
   language: (localStorage.getItem(LANGUAGE_STORAGE_KEY) as Language) ?? 'es',
   accentColor: (() => {
-    const saved = localStorage.getItem(ACCENT_STORAGE_KEY) ?? '#00e5ff';
+    const saved = localStorage.getItem(ACCENT_STORAGE_KEY) ?? '#16A085';
     applyAccentColorToDom(saved);
     return saved;
   })(),
@@ -595,7 +604,7 @@ let state: LauncherState = {
     } catch {
       // fallback
     }
-    const accent = localStorage.getItem(ACCENT_STORAGE_KEY) ?? '#00e5ff';
+    const accent = localStorage.getItem(ACCENT_STORAGE_KEY) ?? '#16A085';
     applyGuiThemeToDom(theme, accent);
     return theme;
   })(),
@@ -605,6 +614,7 @@ let state: LauncherState = {
   activeModal: 'none',
   customizingButtonId: null,
   selectedDockButtonId: null,
+  isButtonInspectorOpen: false,
   instances: getSavedInstances(),
   activeInstanceId: getActiveInstanceId(),
   launch: {
@@ -618,6 +628,8 @@ let state: LauncherState = {
     maxPlayers: 150,
     ping: 28,
   },
+  modSyncPrompt: null,
+  accountPersistenceError: null,
 };
 
 const listeners = new Set<() => void>();
@@ -657,7 +669,11 @@ const resolveActiveAccount = (): UserAccount => {
   return DEFAULT_FALLBACK_ACCOUNT;
 };
 
-const syncInstanceAssets = async (activeInst: GameInstance, effectiveGameDir: string) => {
+const syncInstanceAssets = async (
+  activeInst: GameInstance,
+  effectiveGameDir: string,
+  skipModSync?: boolean,
+): Promise<{ halted?: boolean }> => {
   const { invoke } = await import('@tauri-apps/api/core');
 
   try {
@@ -668,25 +684,60 @@ const syncInstanceAssets = async (activeInst: GameInstance, effectiveGameDir: st
 
   let officialSyncEntries: SyncModEntry[] | undefined;
   if (activeInst.isOfficial && (activeInst.loaderType === 'neoforge' || !activeInst.loaderType)) {
-    try {
-      officialSyncEntries = await syncOfficialModsForInstance(
-        effectiveGameDir,
-        (message, progress) => {
+    if (skipModSync) {
+      setStoreState(() => ({
+        launch: {
+          status: 'DOWNLOADING',
+          progress: 20,
+          message: 'Omitiendo verificación de mods oficiales...',
+        },
+      }));
+    } else {
+      try {
+        const syncResult = await syncOfficialModsForInstance(
+          effectiveGameDir,
+          (message, progress) => {
+            setStoreState(() => ({
+              launch: {
+                status: 'DOWNLOADING',
+                progress: Math.min(40, Math.round(progress * 0.4)),
+                message,
+              },
+            }));
+          },
+        );
+
+        if (!syncResult.ok) {
           setStoreState(() => ({
+            modSyncPrompt: { error: syncResult.error },
             launch: {
               status: 'DOWNLOADING',
-              progress: Math.min(40, Math.round(progress * 0.4)),
-              message,
+              progress: 20,
+              message: `Aviso: Fallo al verificar mods (${syncResult.error})`,
             },
           }));
-        },
-      );
-    } catch (modErr) {
-      console.warn('Official mod sync error, proceeding with local files:', modErr);
+          return { halted: true };
+        }
+
+        officialSyncEntries = syncResult.entries;
+      } catch (modErr) {
+        const errorMsg = modErr instanceof Error ? modErr.message : String(modErr);
+        console.warn('Official mod sync error, proceeding with prompt:', errorMsg);
+        setStoreState(() => ({
+          modSyncPrompt: { error: errorMsg },
+          launch: {
+            status: 'DOWNLOADING',
+            progress: 20,
+            message: `Aviso: Fallo al verificar mods (${errorMsg})`,
+          },
+        }));
+        return { halted: true };
+      }
     }
   }
 
-  if (state.settings.useOptimization && activeInst.loaderType && !activeInst.isOfficial) {
+  const isPerfDisabled = Boolean(activeInst.disableOptimization);
+  if (state.settings.useOptimization && !isPerfDisabled && activeInst.loaderType && !activeInst.isOfficial) {
     try {
       await syncPerformanceStackForInstance(
         effectiveGameDir,
@@ -702,17 +753,33 @@ const syncInstanceAssets = async (activeInst: GameInstance, effectiveGameDir: st
           }));
         },
         officialSyncEntries,
+        isPerfDisabled,
       );
     } catch (perfErr) {
       console.warn('[Launcher] Error sincronizando stack de rendimiento:', perfErr);
     }
 
-    if (['fabric', 'quilt', 'neoforge', 'forge'].includes(activeInst.loaderType)) {
+    if (BOOST_ENABLED && shouldDeployBoost(activeInst.loaderType, activeInst.mcVersion)) {
       try {
-        await invoke('deploy_crystaltides_boost', { gameDir: effectiveGameDir });
+        await invoke('deploy_crystaltides_boost', {
+          gameDir: effectiveGameDir,
+          loaderType: activeInst.loaderType,
+        });
       } catch (boostErr) {
         console.warn('[Launcher] Error inyectando crystaltides-boost:', boostErr);
       }
+    } else {
+      try {
+        await invoke('remove_crystaltides_boost', { gameDir: effectiveGameDir });
+      } catch (cleanErr) {
+        console.warn('[Launcher] Error limpiando crystaltides-boost:', cleanErr);
+      }
+    }
+  } else {
+    try {
+      await invoke('remove_crystaltides_boost', { gameDir: effectiveGameDir });
+    } catch {
+      // Ignorar fallo de limpieza en instancias que no usan optimización
     }
   }
 
@@ -727,6 +794,21 @@ const syncInstanceAssets = async (activeInst: GameInstance, effectiveGameDir: st
       console.warn('Discord RPC error:', rpcErr);
     }
   }
+
+  return { halted: false };
+};
+
+// Flag maestro para habilitar/deshabilitar el despliegue automático de crystaltides-boost
+export const BOOST_ENABLED = true;
+
+export const shouldDeployBoost = (loaderType?: string, mcVersion?: string): boolean => {
+  if (!loaderType || !mcVersion) {
+    return false;
+  }
+  const normalizedLoader = loaderType.toLowerCase().trim();
+  const normalizedVersion = mcVersion.trim();
+  const allowedLoaders = ['fabric', 'quilt', 'neoforge'];
+  return allowedLoaders.includes(normalizedLoader) && normalizedVersion === '1.21.1';
 };
 
 export const resolveEffectiveResolution = (activeInst: GameInstance): string => {
@@ -747,6 +829,13 @@ export const resolveEffectiveLoaderVersion = (
     return undefined;
   }
   const trimmed = rawVersion ? rawVersion.trim() : '';
+
+  // Si mcVersion es un identificador compuesto (ej: quilt-loader-0.31.0-beta.4-26.2), extraer la versión real del loader
+  const compoundLoaderVer = extractLoaderVersionFromCompound(mcVersion, loaderType);
+  if (compoundLoaderVer) {
+    return compoundLoaderVer;
+  }
+
   if (loaderType === 'neoforge') {
     if (!trimmed || trimmed === '21.1.65') {
       return '21.1.252';
@@ -757,7 +846,7 @@ export const resolveEffectiveLoaderVersion = (
     return trimmed || '0.16.10';
   }
   if (loaderType === 'quilt') {
-    return trimmed || '0.30.2';
+    return trimmed || '0.31.0-beta.4';
   }
   if (loaderType === 'forge') {
     if (trimmed) return trimmed;
@@ -809,6 +898,7 @@ export const buildLaunchOptions = (
     useOptimization: state.settings.useOptimization ?? true,
     resolution: effectiveRes,
     fullscreen: effectiveFullscreen,
+    profileId: activeInst.id,
     preLaunchCommand: getCmd(activeInst.preLaunchCommand, state.settings.preLaunchCommand),
     wrapperCommand: getCmd(activeInst.wrapperCommand, state.settings.wrapperCommand),
     postExitCommand: getCmd(activeInst.postExitCommand, state.settings.postExitCommand),
@@ -849,8 +939,15 @@ export const launcherActions = {
     setStoreState(() => ({ currentView: view }));
   },
 
-  setSelectedDockButtonId: (id: DockButtonId | null) => {
-    setStoreState(() => ({ selectedDockButtonId: id }));
+  setSelectedDockButtonId: (id: DockButtonId | null, openInspector = false) => {
+    setStoreState(() => ({
+      selectedDockButtonId: id,
+      isButtonInspectorOpen: id !== null ? openInspector : false,
+    }));
+  },
+
+  setButtonInspectorOpen: (open: boolean) => {
+    setStoreState(() => ({ isButtonInspectorOpen: open }));
   },
 
   setEditingHud: (editing: boolean) => {
@@ -865,6 +962,7 @@ export const launcherActions = {
       return {
         isEditingHud: editing,
         selectedDockButtonId: null,
+        isButtonInspectorOpen: false,
         customizingButtonId: null,
         activeModal: 'none',
         dockConfig: nextDockConfig,
@@ -948,6 +1046,7 @@ export const launcherActions = {
         customCoordinates: { x: 50, y: 50 },
         buttonPositions: calculatedPositions,
         widgetPositions: { ...DEFAULT_DOCK_CONFIG.widgetPositions },
+        buttonOrder: ['instances', 'about', 'accounts', 'settings', 'launch'],
       };
 
       const sanitized = sanitizeAllPositions(nextConfig);
@@ -972,8 +1071,29 @@ export const launcherActions = {
   },
 
   resetDockConfig: () => {
+    const freshDefault: DockConfig = {
+      ...DEFAULT_DOCK_CONFIG,
+      positionPreset: 'center',
+      customCoordinates: { x: 50, y: 50 },
+      buttonOrder: ['instances', 'about', 'accounts', 'settings', 'launch'],
+      visibleButtons: ['instances', 'about', 'accounts', 'settings', 'launch'],
+      buttonPositions: {
+        instances: { x: 26, y: 50 },
+        about: { x: 38, y: 50 },
+        accounts: { x: 50, y: 50 },
+        settings: { x: 62, y: 50 },
+        launch: { x: 74, y: 50 },
+      },
+      widgetPositions: {
+        userPill: { x: 8, y: 93 },
+        socials: { x: 50, y: 93 },
+        serverStatus: { x: 92, y: 93 },
+      },
+      customButtonColors: {},
+      buttonCustomizations: {},
+    };
     try {
-      localStorage.removeItem(DOCK_CONFIG_STORAGE_KEY);
+      localStorage.setItem(DOCK_CONFIG_STORAGE_KEY, JSON.stringify(freshDefault));
     } catch {}
     const currentConfig = state.dockConfig;
     clearDockPanorama().catch(() => {});
@@ -991,7 +1111,7 @@ export const launcherActions = {
       clearButtonMedia(btnId, false).catch(() => {});
       clearButtonMedia(btnId, true).catch(() => {});
     }
-    setStoreState(() => ({ dockConfig: DEFAULT_DOCK_CONFIG }));
+    setStoreState(() => ({ dockConfig: freshDefault, hudManualSide: 'auto' }));
   },
 
   toggleDockButton: (id: DockButtonId) => {
@@ -1191,12 +1311,19 @@ export const launcherActions = {
   },
 
   clearDockBackground: () => {
+    clearDockPanorama().catch(() => {});
     setStoreState((prev) => {
       const nextDockConfig: DockConfig = {
         ...prev.dockConfig,
         dockBgType: 'default',
         dockBgImage: undefined,
         dockBgVideo: undefined,
+        dockBgPosX: 50,
+        dockBgPosY: 50,
+        dockBgScale: 100,
+        dockBgOpacity: 1,
+        dockBgBlur: 0,
+        dockBgFit: 'cover',
       };
       try {
         localStorage.setItem(DOCK_CONFIG_STORAGE_KEY, JSON.stringify(nextDockConfig));
@@ -1475,12 +1602,19 @@ export const launcherActions = {
 
   loadAccountsFromVault: async () => {
     try {
+      const rawVaultData = localStorage.getItem(ACCOUNTS_VAULT_KEY);
+      const vaultHadData = Boolean(rawVaultData && rawVaultData.trim().length > 0);
+
       // 1. Prospección en SQLite nativo (crystaltides.db) y carga de bóveda cifrada
       const dbAccounts = await getDatabaseAccounts();
       const decrypted = await loadSecureItem<UserAccount[]>(
         ACCOUNTS_VAULT_KEY,
-        (data) => Array.isArray(data)
+        (data) => Array.isArray(data),
       );
+
+      const vaultDecryptionFailed =
+        vaultHadData && (!decrypted || !Array.isArray(decrypted) || decrypted.length === 0);
+
       const vaultMap = new Map<string, UserAccount>();
       if (decrypted && Array.isArray(decrypted)) {
         for (const va of decrypted) {
@@ -1491,6 +1625,10 @@ export const launcherActions = {
       if (dbAccounts && dbAccounts.length > 0) {
         const mapped: UserAccount[] = dbAccounts.map((a) => {
           const vaultAcc = vaultMap.get(a.id);
+          const hasMissingRefreshToken =
+            a.account_type === 'microsoft' && (!vaultAcc || !vaultAcc.refreshToken);
+          const needsReauth = vaultDecryptionFailed || hasMissingRefreshToken;
+
           return {
             id: a.id,
             username: a.username,
@@ -1503,6 +1641,7 @@ export const launcherActions = {
             email: vaultAcc?.email,
             capeUrl: vaultAcc?.capeUrl,
             lastUsed: a.created_at,
+            requiresReauth: needsReauth,
           };
         });
         const active = dbAccounts.find((a) => a.is_active)?.id ?? mapped[0].id;
@@ -1537,11 +1676,27 @@ export const launcherActions = {
                 skin_url: acc.skinUrl,
                 is_active: acc.id === sorted[0].id,
                 created_at: acc.lastUsed || Date.now(),
-              }).catch((e) => console.warn('[Store] Error migrando cuenta a SQLite:', e)),
+              }).catch((e) => {
+                logFrontend('WARN', `[Store] Error migrando cuenta a SQLite: ${String(e)}`);
+                setStoreState(() => ({
+                  accountPersistenceError: 'Error migrando cuenta a base de datos local',
+                }));
+              }),
             ),
           );
+          return;
         }
       }
+
+      // 3. Si la bóveda tenía datos pero nada descifró, NO sobrescribir con vacío
+      if (vaultDecryptionFailed) {
+        logFrontend(
+          'WARN',
+          '[Store] No se pudo descifrar la bóveda de cuentas. Se conservan los datos cifrados sin sobrescribir.',
+        );
+      }
+
+      setStoreState(() => ({ accounts: [], activeAccountId: null }));
     } catch {
       setStoreState(() => ({ accounts: [], activeAccountId: null }));
     }
@@ -1568,7 +1723,12 @@ export const launcherActions = {
         created_at: account.lastUsed || Date.now(),
       })
         .then(() => setActiveDatabaseAccount(account.id))
-        .catch((err) => console.warn('[Store] Error guardando cuenta en SQLite:', err));
+        .catch((err) => {
+          logFrontend('ERROR', `[Store] Error guardando cuenta en SQLite: ${String(err)}`);
+          setStoreState(() => ({
+            accountPersistenceError: 'Error al guardar cuenta en base de datos local',
+          }));
+        });
     }
   },
 
@@ -1589,7 +1749,12 @@ export const launcherActions = {
         skin_url: target.skinUrl,
         is_active: target.id === state.activeAccountId,
         created_at: target.lastUsed || Date.now(),
-      }).catch((err) => console.warn('[Store] Error actualizando cuenta en SQLite:', err));
+      }).catch((err) => {
+        logFrontend('ERROR', `[Store] Error actualizando cuenta en SQLite: ${String(err)}`);
+        setStoreState(() => ({
+          accountPersistenceError: 'Error al actualizar cuenta en base de datos local',
+        }));
+      });
     }
   },
 
@@ -1599,9 +1764,12 @@ export const launcherActions = {
     );
     setStoreState(() => ({ accounts: updated, activeAccountId: id, currentView: 'home' }));
     await saveSecureItem(ACCOUNTS_VAULT_KEY, updated);
-    setActiveDatabaseAccount(id).catch((err) =>
-      console.warn('[Store] Error marcando cuenta activa en SQLite:', err),
-    );
+    setActiveDatabaseAccount(id).catch((err) => {
+      logFrontend('WARN', `[Store] Error marcando cuenta activa en SQLite: ${String(err)}`);
+      setStoreState(() => ({
+        accountPersistenceError: 'Error al marcar cuenta activa en base de datos local',
+      }));
+    });
   },
 
   removeAccount: async (id: string) => {
@@ -1615,13 +1783,22 @@ export const launcherActions = {
       currentView: nextView,
     }));
     await saveSecureItem(ACCOUNTS_VAULT_KEY, updated);
-    deleteDatabaseAccount(id).catch((err) =>
-      console.warn('[Store] Error eliminando cuenta de SQLite:', err),
-    );
+    deleteDatabaseAccount(id).catch((err) => {
+      logFrontend('ERROR', `[Store] Error eliminando cuenta de SQLite: ${String(err)}`);
+      setStoreState(() => ({
+        accountPersistenceError: 'Error al eliminar cuenta en base de datos local',
+      }));
+    });
     if (wasActive && nextActive) {
-      setActiveDatabaseAccount(nextActive).catch((err) =>
-        console.warn('[Store] Error marcando nueva cuenta activa en SQLite tras eliminar:', err),
-      );
+      setActiveDatabaseAccount(nextActive).catch((err) => {
+        logFrontend(
+          'WARN',
+          `[Store] Error marcando nueva cuenta activa en SQLite tras eliminar: ${String(err)}`,
+        );
+        setStoreState(() => ({
+          accountPersistenceError: 'Error al actualizar cuenta activa en base de datos local',
+        }));
+      });
     }
   },
 
@@ -1630,13 +1807,13 @@ export const launcherActions = {
       const currentAccounts = state.accounts;
       await Promise.all(
         currentAccounts.map((acc) =>
-          deleteDatabaseAccount(acc.id).catch((err) =>
-            console.warn('[Store] Error eliminando cuenta en logout:', err),
-          ),
+          deleteDatabaseAccount(acc.id).catch((err) => {
+            logFrontend('WARN', `[Store] Error eliminando cuenta en logout: ${String(err)}`);
+          }),
         ),
       );
     } catch (e) {
-      console.warn('[Store] Error limpiando cuentas de SQLite en logout:', e);
+      logFrontend('ERROR', `[Store] Error limpiando cuentas de SQLite en logout: ${String(e)}`);
     }
     localStorage.removeItem(ACCOUNTS_VAULT_KEY);
     setStoreState(() => ({
@@ -1833,6 +2010,16 @@ export const launcherActions = {
           console.error('[Minecraft Log]', event.payload.line);
         }
       });
+
+      await registerListener<{ lines: Array<{ line: string; level?: string }> }>('game-log-batch', (event) => {
+        if (Array.isArray(event.payload?.lines)) {
+          for (const item of event.payload.lines) {
+            if (item?.line && item.level === 'ERROR') {
+              console.error('[Minecraft Log]', item.line);
+            }
+          }
+        }
+      });
     } catch {
       // Browser preview mode fallback
     }
@@ -1843,35 +2030,77 @@ export const launcherActions = {
     };
   },
 
-  startLaunchFlow: async () => {
-    if (state.launch.status !== 'IDLE') return;
+  startLaunchFlow: async (launchOpts?: { skipModSync?: boolean }) => {
+    if (state.launch.status !== 'IDLE' && !state.modSyncPrompt) return;
 
     const attemptId = ++currentLaunchAttemptId;
     gameStoppedDuringLaunch = false;
+    setStoreState(() => ({ modSyncPrompt: null }));
 
     let activeAcc = resolveActiveAccount();
 
     if (activeAcc.type === 'microsoft' && activeAcc.refreshToken) {
-      try {
-        setStoreState(() => ({
-          launch: { status: 'VERIFYING', progress: 5, message: 'Validando sesión de Microsoft...' },
-        }));
-        const { refreshMicrosoftSession } = await import('../services/microsoftAuthService');
-        const refreshed = await refreshMicrosoftSession(activeAcc.refreshToken);
-        if (refreshed?.accessToken) {
-          const updatedAcc: UserAccount = {
-            ...activeAcc,
-            accessToken: refreshed.accessToken,
-            refreshToken: refreshed.refreshToken ?? activeAcc.refreshToken,
-            username: refreshed.username || activeAcc.username,
-            uuid: refreshed.uuid || activeAcc.uuid,
-            lastUsed: Date.now(),
-          };
-          activeAcc = updatedAcc;
-          await launcherActions.updateAccount(updatedAcc.id, updatedAcc);
+      // 1.3: Renovar solo si el token de Minecraft caduca en menos de 1 hora
+      const needsTokenRefresh = (() => {
+        if (!activeAcc.accessToken) return true;
+        try {
+          const payload = decodeJwt(activeAcc.accessToken);
+          if (!payload.exp) return true;
+          const nowSec = Math.floor(Date.now() / 1000);
+          return payload.exp - nowSec < 3600;
+        } catch {
+          return true;
         }
-      } catch (authErr) {
-        console.warn('[Launcher Store] Error refrescando sesión previa de Microsoft:', authErr);
+      })();
+
+      if (needsTokenRefresh) {
+        try {
+          setStoreState(() => ({
+            launch: { status: 'VERIFYING', progress: 5, message: 'Validando sesión de Microsoft...' },
+          }));
+          const { refreshMicrosoftSession } = await import('../services/microsoftAuthService');
+          const refreshed = await refreshMicrosoftSession(activeAcc.refreshToken);
+          if (refreshed?.accessToken) {
+            const updatedAcc: UserAccount = {
+              ...activeAcc,
+              accessToken: refreshed.accessToken,
+              refreshToken: refreshed.refreshToken ?? activeAcc.refreshToken,
+              username: refreshed.username || activeAcc.username,
+              uuid: refreshed.uuid || activeAcc.uuid,
+              lastUsed: Date.now(),
+              requiresReauth: false,
+            };
+            activeAcc = updatedAcc;
+            await launcherActions.updateAccount(updatedAcc.id, updatedAcc);
+          }
+        } catch (authErr) {
+          const errString = String(authErr);
+          logFrontend('WARN', `[Launcher Store] Error refrescando sesión previa de Microsoft: ${errString}`);
+
+          const errorCode =
+            authErr && typeof authErr === 'object' && 'code' in authErr
+              ? String((authErr as { code: unknown }).code)
+              : undefined;
+
+          if (errorCode === 'invalid_grant' || /invalid_grant/i.test(errString)) {
+            // Si la renovación falla con invalid_grant, no lanzar con el token viejo: pedir volver a iniciar sesión
+            await launcherActions.updateAccount(activeAcc.id, { requiresReauth: true });
+            setStoreState(() => ({
+              launch: {
+                status: 'IDLE',
+                progress: 0,
+                message:
+                  'La sesión de Microsoft ha expirado (invalid_grant). Por favor, vuelve a iniciar sesión en Gestión de Cuentas.',
+              },
+            }));
+            return;
+          }
+        }
+      } else {
+        logFrontend(
+          'INFO',
+          '[Launcher Store] Token de Minecraft vigente (expira en >1h), omitiendo renovación previa.',
+        );
       }
     }
 
@@ -1892,10 +2121,12 @@ export const launcherActions = {
         DEFAULT_OFFICIAL_INSTANCE;
 
       const effectiveGameDir = await resolveInstanceGameDir(activeInst);
-      if (currentLaunchAttemptId !== attemptId) return;
-
-      await syncInstanceAssets(activeInst, effectiveGameDir);
-      if (currentLaunchAttemptId !== attemptId) return;
+      const syncResult = await syncInstanceAssets(
+        activeInst,
+        effectiveGameDir,
+        launchOpts?.skipModSync,
+      );
+      if (syncResult?.halted || currentLaunchAttemptId !== attemptId) return;
 
       const options = buildLaunchOptions(activeAcc, activeInst, effectiveGameDir);
 
@@ -1974,6 +2205,9 @@ export const launcherActions = {
     } finally {
       if (currentLaunchAttemptId === attemptId) {
         setStoreState((prev) => {
+          if (prev.modSyncPrompt) {
+            return {};
+          }
           if (prev.launch.status !== 'RUNNING' && prev.launch.status !== 'IDLE') {
             return {
               launch: {
@@ -2006,8 +2240,19 @@ export const launcherActions = {
   cancelLaunchFlow: () => {
     ++currentLaunchAttemptId;
     setStoreState(() => ({
+      modSyncPrompt: null,
       launch: { status: 'IDLE', progress: 0, message: 'Listo para jugar' },
     }));
+  },
+
+  retryModSyncAndLaunch: () => {
+    setStoreState(() => ({ modSyncPrompt: null }));
+    void launcherActions.startLaunchFlow();
+  },
+
+  proceedLaunchWithoutModSync: () => {
+    setStoreState(() => ({ modSyncPrompt: null }));
+    void launcherActions.startLaunchFlow({ skipModSync: true });
   },
 };
 

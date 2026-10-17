@@ -11,13 +11,25 @@ if (!fs.existsSync(OUTPUT_DIR)) {
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 }
 
+const IGNORED_DIRS = new Set([
+  'node_modules',
+  'dist',
+  'target',
+  '.git',
+  '.turbo',
+  'coverage',
+  'dumps',
+  '.scannerwork',
+  'dist-package',
+]);
+
 function walk(dir, fileList = []) {
   if (!fs.existsSync(dir)) return fileList;
   const entries = fs.readdirSync(dir, { withFileTypes: true });
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      if (['node_modules', 'dist', 'target', '.git', '.turbo', 'coverage', 'dumps', '.scannerwork', 'dist-package'].includes(entry.name)) {
+      if (IGNORED_DIRS.has(entry.name)) {
         continue;
       }
       walk(fullPath, fileList);

@@ -71,8 +71,14 @@ export const resolveButtonCursor = (isEditingHud: boolean, isDraggingThis: boole
   return isDraggingThis ? 'grabbing' : 'grab';
 };
 
-export const resolveButtonZIndex = (isDraggingThis: boolean, isEditingHud: boolean): number => {
-  if (isDraggingThis) return 960;
+export const resolveButtonZIndex = (
+  isDraggingThis: boolean,
+  isEditingHud: boolean,
+  isSelected = false,
+  isResizing = false,
+): number => {
+  if (isDraggingThis || isResizing) return 990;
+  if (isSelected) return 980;
   if (isEditingHud) return 940;
   return 25;
 };
@@ -132,9 +138,11 @@ export const resolveFreeButtonBorder = (
   btnCustom: DockButtonCustomization | null | undefined,
   customBtnColor: string | null | undefined,
   dockBorderColorMode?: string,
+  accentColor?: string,
 ): string => {
   if (isEditingHud) {
-    return isDraggingThis && isColliding ? '2px dashed #ef4444' : '2px dashed #38bdf8';
+    const editColor = accentColor || '#38bdf8';
+    return isDraggingThis && isColliding ? '2px dashed #ef4444' : `2px dashed ${editColor}`;
   }
   return resolveButtonBorder(btnCustom, customBtnColor, dockBorderColorMode);
 };
@@ -144,11 +152,14 @@ export const resolveFreeButtonShadow = (
   isDraggingThis: boolean,
   isColliding: boolean,
   customBtnColor: string | null | undefined,
+  accentColor?: string,
 ): string => {
   if (isEditingHud) {
     return isDraggingThis && isColliding
       ? '0 0 20px rgba(239, 68, 68, 0.65)'
-      : '0 0 16px rgba(56, 189, 248, 0.4)';
+      : accentColor
+        ? `0 0 16px ${accentColor}66`
+        : '0 0 16px rgba(56, 189, 248, 0.4)';
   }
   if (customBtnColor) {
     return `0 20px 50px rgba(0, 0, 0, 0.8), 0 0 20px ${customBtnColor}33`;

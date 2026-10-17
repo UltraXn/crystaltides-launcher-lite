@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   Monitor,
   ChevronDown,
@@ -96,7 +96,9 @@ export const InstancesCreateTab: React.FC<InstancesCreateTabProps> = ({
     ),
   );
 
-  useEffect(() => {
+  const [prevInitialInstance, setPrevInitialInstance] = useState(initialInstance);
+  if (initialInstance !== prevInitialInstance) {
+    setPrevInitialInstance(initialInstance);
     if (initialInstance) {
       setFormName(initialInstance.name);
       setFormMcVersion(initialInstance.mcVersion);
@@ -128,7 +130,7 @@ export const InstancesCreateTab: React.FC<InstancesCreateTabProps> = ({
         setShowAdvancedHooks(true);
       }
     }
-  }, [initialInstance]);
+  }
 
   const handleVersionChange = (val: string) => {
     setFormMcVersion(val);
@@ -599,7 +601,8 @@ export const InstancesCreateTab: React.FC<InstancesCreateTabProps> = ({
         {showAdvancedHooks && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '8px' }}>
             <div>
-              <span
+              <label
+                htmlFor="form-pre-launch-cmd"
                 style={{
                   display: 'block',
                   fontSize: '11px',
@@ -608,8 +611,9 @@ export const InstancesCreateTab: React.FC<InstancesCreateTabProps> = ({
                 }}
               >
                 {t.instances.preLaunchCmd}
-              </span>
+              </label>
               <input
+                id="form-pre-launch-cmd"
                 type="text"
                 placeholder="ej. echo 'Iniciando instancia...'"
                 value={formPreLaunch}
@@ -628,7 +632,8 @@ export const InstancesCreateTab: React.FC<InstancesCreateTabProps> = ({
             </div>
 
             <div>
-              <span
+              <label
+                htmlFor="form-wrapper-cmd"
                 style={{
                   display: 'block',
                   fontSize: '11px',
@@ -637,8 +642,9 @@ export const InstancesCreateTab: React.FC<InstancesCreateTabProps> = ({
                 }}
               >
                 {t.instances.wrapperCmd}
-              </span>
+              </label>
               <input
+                id="form-wrapper-cmd"
                 type="text"
                 placeholder="ej. mangohud o optirun"
                 value={formWrapper}
@@ -657,7 +663,8 @@ export const InstancesCreateTab: React.FC<InstancesCreateTabProps> = ({
             </div>
 
             <div>
-              <span
+              <label
+                htmlFor="form-post-exit-cmd"
                 style={{
                   display: 'block',
                   fontSize: '11px',
@@ -666,8 +673,9 @@ export const InstancesCreateTab: React.FC<InstancesCreateTabProps> = ({
                 }}
               >
                 {t.instances.postExitCmd}
-              </span>
+              </label>
               <input
+                id="form-post-exit-cmd"
                 type="text"
                 placeholder="ej. sync_backup.bat"
                 value={formPostExit}
@@ -686,7 +694,8 @@ export const InstancesCreateTab: React.FC<InstancesCreateTabProps> = ({
             </div>
 
             <div>
-              <span
+              <label
+                htmlFor="form-env-vars"
                 style={{
                   display: 'block',
                   fontSize: '11px',
@@ -695,8 +704,9 @@ export const InstancesCreateTab: React.FC<InstancesCreateTabProps> = ({
                 }}
               >
                 {t.instances.envVars}
-              </span>
+              </label>
               <input
+                id="form-env-vars"
                 type="text"
                 placeholder='KEY=VAL o { "KEY": "VAL" }'
                 value={formEnvVars}
@@ -715,7 +725,8 @@ export const InstancesCreateTab: React.FC<InstancesCreateTabProps> = ({
             </div>
 
             <div>
-              <span
+              <label
+                htmlFor="form-max-ram"
                 style={{
                   display: 'block',
                   fontSize: '11px',
@@ -724,8 +735,9 @@ export const InstancesCreateTab: React.FC<InstancesCreateTabProps> = ({
                 }}
               >
                 {t.instances.maxRamLabel}
-              </span>
+              </label>
               <input
+                id="form-max-ram"
                 type="number"
                 min="1"
                 max="64"

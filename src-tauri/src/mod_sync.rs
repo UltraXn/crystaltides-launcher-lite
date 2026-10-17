@@ -18,9 +18,8 @@ mod tests {
 
     #[test]
     fn test_sync_mods_empty() {
-        // Just verify it doesn't panic on an empty list
-        let temp = std::env::temp_dir().join("mod_sync_empty_test");
-        let result = sync_mods(temp.to_string_lossy().to_string(), "[]".to_string());
+        let temp = tempfile::tempdir().expect("tempdir");
+        let result = sync_mods_sync(&temp.path().to_string_lossy(), "[]");
         assert!(result.is_ok());
     }
 }
@@ -48,7 +47,9 @@ fn validate_filename(filename: &str) -> Result<(), String> {
         || filename.contains('/')
         || filename.contains('\\')
     {
-        return Err(format!("Nombre de archivo inválido o peligroso: {filename}"));
+        return Err(format!(
+            "Nombre de archivo inválido o peligroso: {filename}"
+        ));
     }
     Ok(())
 }
@@ -70,52 +71,6 @@ fn write_manifest(target_dir: &Path, files: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// Descarga archivos en paralelo hacia una carpeta destino (Virtual Library)
-async fn is_cached_file_valid(file_path: &Path, expected_sha1: &str) -> bool {
-    if !file_path.exists() {
-        return false;
-    }
-    if let Ok(bytes) = tokio::fs::read(file_path).await {
-        use sha1::{Digest, Sha1};
-        let mut hasher = Sha1::new();
-        hasher.update(&bytes);
-        let local_hash = hex::encode(hasher.finalize());
-        return local_hash.eq_ignore_ascii_case(expected_sha1);
-    }
-    false
-}
-
-async fn fetch_and_verify_mod(
-    client: &reqwest::Client,
-    mod_item: &ModDownloadItem,
-) -> Result<Vec<u8>, String> {
-    let res = client
-        .get(&mod_item.url)
-        .send()
-        .await
-        .map_err(|e| format!("Error solicitando {}: {}", mod_item.name, e))?;
-
-    if !res.status().is_success() {
-        return Err(format!("Error HTTP {} al descargar {}", res.status(), mod_item.name));
-    }
-
-    let bytes = res.bytes().await.map_err(|e| e.to_string())?.to_vec();
-
-    use sha1::{Digest, Sha1};
-    let mut hasher = Sha1::new();
-    hasher.update(&bytes);
-    let computed_hash = hex::encode(hasher.finalize());
-
-    if !computed_hash.eq_ignore_ascii_case(&mod_item.sha1) {
-        return Err(format!(
-            "SHA-1 inválido para {}: esperado {}, obtenido {}",
-            mod_item.name, mod_item.sha1, computed_hash
-        ));
-    }
-
-    Ok(bytes)
-}
-
 async fn process_mod_download(
     app: &tauri::AppHandle,
     client: &reqwest::Client,
@@ -126,15 +81,14 @@ async fn process_mod_download(
     validate_filename(&mod_item.name)?;
     let file_path = Path::new(target_dir).join(&mod_item.name);
 
-    if is_cached_file_valid(&file_path, &mod_item.sha1).await {
-        let _ = app.emit("mod-download-progress", idx);
-        return Ok(());
-    }
+    let expected_hash = if !mod_item.sha1.trim().is_empty() {
+        crate::downloader::ExpectedHash::Sha1(mod_item.sha1.trim().to_string())
+    } else {
+        crate::downloader::ExpectedHash::None
+    };
 
-    let bytes = fetch_and_verify_mod(client, &mod_item).await?;
-    tokio::fs::write(&file_path, &bytes)
-        .await
-        .map_err(|e| format!("Error guardando {}: {}", mod_item.name, e))?;
+    crate::downloader::download_verified(client, &mod_item.url, &file_path, &expected_hash, true)
+        .await?;
 
     let _ = app.emit("mod-download-progress", idx);
     Ok(())
@@ -154,10 +108,7 @@ pub async fn download_mods_parallel(
         fs::create_dir_all(&out_path).map_err(|e| e.to_string())?;
     }
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(60))
-        .build()
-        .map_err(|e| e.to_string())?;
+    let client = crate::get_shared_http_client().clone();
 
     let concurrency = max_concurrent.unwrap_or(4).clamp(1, 8) as usize;
     let semaphore = Arc::new(Semaphore::new(concurrency));
@@ -226,17 +177,16 @@ fn cleanup_stale_mods(mods_dir: &Path, intended_files: &[String]) {
 }
 
 /// Sincroniza mods en el directorio mods/ de la instancia mediante hardlinks/copias
-/// Limpieza no destructiva: solo elimina mods antiguos que pertenecían al manifiesto anterior
-#[tauri::command]
-pub fn sync_mods(target_dir: String, mod_list_json: String) -> Result<(), String> {
-    crate::agent::validate_game_dir(&target_dir)?;
-    let mods_dir = Path::new(&target_dir);
+/// Limpieza no destructiva: solo elimina mods antiguos que pertenecían al manifiesto anterior (versión síncrona interna)
+pub fn sync_mods_sync(target_dir: &str, mod_list_json: &str) -> Result<(), String> {
+    crate::agent::validate_game_dir(target_dir)?;
+    let mods_dir = Path::new(target_dir);
     if !mods_dir.exists() {
         fs::create_dir_all(mods_dir).map_err(|e| e.to_string())?;
     }
 
     let entries: Vec<ModSyncEntry> =
-        serde_json::from_str(&mod_list_json).map_err(|e| format!("JSON corrupto: {e}"))?;
+        serde_json::from_str(mod_list_json).map_err(|e| format!("JSON corrupto: {e}"))?;
 
     let mut intended_files = Vec::new();
     for entry in &entries {
@@ -249,11 +199,18 @@ pub fn sync_mods(target_dir: String, mod_list_json: String) -> Result<(), String
     Ok(())
 }
 
-/// Lista los mods presentes en una instancia
+/// Sincroniza mods en el directorio mods/ de la instancia mediante hardlinks/copias
 #[tauri::command]
-pub fn list_instance_mods(target_dir: String) -> Result<Vec<LocalModItem>, String> {
-    crate::agent::validate_game_dir(&target_dir)?;
-    let mods_dir = Path::new(&target_dir);
+pub async fn sync_mods(target_dir: String, mod_list_json: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || sync_mods_sync(&target_dir, &mod_list_json))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Lista los mods presentes en una instancia (versión síncrona interna)
+pub fn list_instance_mods_sync(target_dir: &str) -> Result<Vec<LocalModItem>, String> {
+    crate::agent::validate_game_dir(target_dir)?;
+    let mods_dir = Path::new(target_dir);
     let mut items = Vec::new();
 
     if !mods_dir.exists() {
@@ -295,13 +252,24 @@ pub fn list_instance_mods(target_dir: String) -> Result<Vec<LocalModItem>, Strin
     Ok(items)
 }
 
-/// Activa o desactiva un mod (.jar <-> .jar.disabled)
+/// Lista los mods presentes en una instancia
 #[tauri::command]
-pub fn toggle_instance_mod(target_dir: String, filename: String, enable: bool) -> Result<(), String> {
-    crate::agent::validate_game_dir(&target_dir)?;
-    validate_filename(&filename)?;
-    let mods_dir = Path::new(&target_dir);
-    let from_path = mods_dir.join(&filename);
+pub async fn list_instance_mods(target_dir: String) -> Result<Vec<LocalModItem>, String> {
+    tokio::task::spawn_blocking(move || list_instance_mods_sync(&target_dir))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Activa o desactiva un mod (.jar <-> .jar.disabled) (versión síncrona interna)
+pub fn toggle_instance_mod_sync(
+    target_dir: &str,
+    filename: &str,
+    enable: bool,
+) -> Result<(), String> {
+    crate::agent::validate_game_dir(target_dir)?;
+    validate_filename(filename)?;
+    let mods_dir = Path::new(target_dir);
+    let from_path = mods_dir.join(filename);
 
     if !from_path.exists() {
         return Err(format!("El archivo no existe: {filename}"));
@@ -323,63 +291,58 @@ pub fn toggle_instance_mod(target_dir: String, filename: String, enable: bool) -
     Ok(())
 }
 
-/// Elimina un archivo de mod
+/// Activa o desactiva un mod (.jar <-> .jar.disabled)
 #[tauri::command]
-pub fn delete_instance_mod(target_dir: String, filename: String) -> Result<(), String> {
-    crate::agent::validate_game_dir(&target_dir)?;
-    validate_filename(&filename)?;
-    let path = Path::new(&target_dir).join(&filename);
+pub async fn toggle_instance_mod(
+    target_dir: String,
+    filename: String,
+    enable: bool,
+) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || toggle_instance_mod_sync(&target_dir, &filename, enable))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Elimina un archivo de mod (versión síncrona interna)
+pub fn delete_instance_mod_sync(target_dir: &str, filename: &str) -> Result<(), String> {
+    crate::agent::validate_game_dir(target_dir)?;
+    validate_filename(filename)?;
+    let path = Path::new(target_dir).join(filename);
     if path.exists() {
         fs::remove_file(&path).map_err(|e| e.to_string())?;
     }
     Ok(())
 }
 
-/// Abre una carpeta en el Explorador de archivos del sistema operativo
+/// Elimina un archivo de mod
 #[tauri::command]
-pub fn open_folder(path: String) -> Result<(), String> {
-    #[cfg(target_os = "windows")]
-    let clean_path = path.replace('/', "\\");
-    #[cfg(not(target_os = "windows"))]
-    let clean_path = path;
-
-    let p = PathBuf::from(&clean_path);
-    if !p.exists() {
-        let _ = fs::create_dir_all(&p);
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        std::process::Command::new("explorer")
-            .arg(&clean_path)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        std::process::Command::new("open")
-            .arg(&clean_path)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
-
-    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
-    {
-        std::process::Command::new("xdg-open")
-            .arg(&clean_path)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
-
-    Ok(())
+pub async fn delete_instance_mod(target_dir: String, filename: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || delete_instance_mod_sync(&target_dir, &filename))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
-/// Asegura que el archivo servers.dat de Minecraft contenga play.crystaltides.net
+/// Abre una carpeta en el Explorador de archivos del sistema operativo usando tauri-plugin-opener
 #[tauri::command]
-pub fn ensure_servers_dat(game_dir: String) -> Result<(), String> {
-    crate::agent::validate_game_dir(&game_dir)?;
-    let p = Path::new(&game_dir);
+pub async fn open_folder(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let safe_path = crate::paths::validate_safe_file_path(&path)?;
+    if !safe_path.exists() {
+        let _ = fs::create_dir_all(&safe_path);
+    }
+    if !safe_path.is_dir() {
+        return Err("Ruta no válida: debe ser un directorio.".to_string());
+    }
+    let path_str = safe_path.to_string_lossy().to_string();
+    app.opener()
+        .open_path(path_str, None::<&str>)
+        .map_err(|e| format!("Error abriendo directorio: {e}"))
+}
+
+/// Asegura que el archivo servers.dat de Minecraft contenga play.crystaltides.net (versión síncrona interna)
+pub fn ensure_servers_dat_sync(game_dir: &str) -> Result<(), String> {
+    crate::agent::validate_game_dir(game_dir)?;
+    let p = Path::new(game_dir);
     if !p.exists() {
         let _ = std::fs::create_dir_all(p);
     }
@@ -391,8 +354,16 @@ pub fn ensure_servers_dat(game_dir: String) -> Result<(), String> {
             icon: None,
             accept_textures: None,
         };
-        crate::nbt_manager::save_servers_dat(game_dir, vec![default_entry])?;
+        crate::nbt_manager::save_servers_dat_sync(game_dir, vec![default_entry])?;
     }
 
     Ok(())
+}
+
+/// Asegura que el archivo servers.dat de Minecraft contenga play.crystaltides.net
+#[tauri::command]
+pub async fn ensure_servers_dat(game_dir: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || ensure_servers_dat_sync(&game_dir))
+        .await
+        .map_err(|e| e.to_string())?
 }

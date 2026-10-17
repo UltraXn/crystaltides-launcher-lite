@@ -22,17 +22,23 @@ jobs:
   build-release:
     name: Build & Publish Standalone Windows Launcher
     runs-on: windows-latest
-    timeout-minutes: 30
+    # Release con LTO fat + codegen-units=1: ~9 min en local desde cero, más en runners de CI
+    timeout-minutes: 45
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js 22
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - name: Setup Node.js 24
         uses: actions/setup-node@v4
         with:
-          node-version: 22
-          cache: 'npm'
+          node-version: 24
+          cache: 'pnpm'
 
       - name: Setup Rust toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -41,16 +47,66 @@ jobs:
           cache: true
 
       - name: Install dependencies
-        run: npm install
+        run: pnpm install --frozen-lockfile
 
-      - name: Build Frontend Assets (Vite)
-        run: npm run build
+      - name: Verify Supabase Environment Variables
+        shell: pwsh
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || vars.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          if (-not $env:VITE_SUPABASE_URL -or -not $env:VITE_SUPABASE_ANON_KEY) {
+            Write-Error "CRITICAL: VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY son requeridas en secrets o vars de GitHub Actions para el build de producción."
+            exit 1
+          }
+          Write-Host "✓ Supabase environment variables verified."
 
-      - name: Build Standalone Launcher (Tauri CLI)
-        run: npx tauri build --no-bundle --ignore-version-mismatches
+      # Falla antes del build release (LTO, varios minutos) si no se va a poder firmar el updater.
+      - name: Verify Updater Signing Key
+        shell: pwsh
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if (-not $env:TAURI_SIGNING_PRIVATE_KEY) {
+            Write-Error "CRITICAL: TAURI_SIGNING_PRIVATE_KEY es requerida en los Secrets para firmar el AutoUpdater y generar latest.json."
+            exit 1
+          }
+          Write-Host "✓ Updater signing key present."
+
+      - name: Verify release tag matches app version
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.ref_name != '' && github.ref_name || inputs.tag_name }}
+        run: |
+          # El updater compara la versión compilada (tauri.conf.json) con latest.json (tag).
+          # Si difieren, la app instalada vería siempre una actualización (o nunca ninguna).
+          $tag = $env:RELEASE_TAG
+          if (-not $tag -or $tag -notmatch '^v\d+\.\d+\.\d+') {
+            Write-Error "Tag de release inválido o ausente: '$tag' (se espera vX.Y.Z)"
+            exit 1
+          }
+          $tagVersion = $tag -replace '^v', ''
+          $confVersion = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          $cargoVersion = (Select-String -Path src-tauri/Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"' | Select-Object -First 1).Matches.Groups[1].Value
+          if ($tagVersion -ne $confVersion -or $tagVersion -ne $cargoVersion) {
+            Write-Error "Versión desalineada: tag=$tagVersion tauri.conf.json=$confVersion Cargo.toml=$cargoVersion"
+            exit 1
+          }
+          Write-Host "✓ Versión $tagVersion alineada (tag, tauri.conf.json, Cargo.toml)"
+
+      # El build de Tauri no acepta --locked directamente: se comprueba antes que Cargo.lock está
+      # sincronizado, para que el release use exactamente las dependencias versionadas.
+      - name: Verify Cargo.lock is in sync
+        run: cargo metadata --locked --format-version 1 --manifest-path src-tauri/Cargo.toml > $null
+
+      - name: Build Self-Installing Launcher (Tauri CLI, no bundle)
+        # bundle.active=false: el propio ejecutable es el instalador (BootMode::Install).
+        # El frontend (tsc + vite) lo compila beforeBuildCommand con estas mismas variables.
+        # Perfil release (LTO, strip, panic=abort) en .cargo/config.toml.
+        run: pnpm tauri build --no-bundle
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || vars.VITE_SUPABASE_ANON_KEY }}
 
       - name: Prepare Release Artifacts & Sign Updater
         shell: pwsh
@@ -61,59 +117,66 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path release-artifacts | Out-Null
           
-          # 1. Localizar binario generado
-          $exeSource = Get-ChildItem -Path "src-tauri/target/release", "target/release" -Filter "*.exe" -Recurse -ErrorAction SilentlyContinue |
-            Where-Object { $_.Name -like "*launcher*" -and $_.Name -notlike "*.build*" -and $_.Name -notlike "*deps*" } |
+          # 1. Localizar el binario release. El mismo ejecutable es instalador y launcher:
+          #    - CrystalTides-Setup.exe   ("setup" en el nombre -> asistente propio de instalación)
+          #    - CrystalTides-Portable.exe ("portable" en el nombre -> sin instalar)
+          $exeSource = @("src-tauri/target/release/launcher-lite-tauri.exe", "target/release/launcher-lite-tauri.exe") |
+            Where-Object { Test-Path $_ } |
             Select-Object -First 1
 
           if (-not $exeSource) {
-            Write-Error "No se encontró el ejecutable en target/release!"
+            Write-Error "No se encontró launcher-lite-tauri.exe en target/release!"
             exit 1
           }
 
-          Write-Host "✓ Binario localizado: $($exeSource.FullName) ($($exeSource.Length) bytes)"
-          Copy-Item -Path $exeSource.FullName -Destination "release-artifacts/CrystalTidesLauncher.exe" -Force
-          Copy-Item -Path $exeSource.FullName -Destination "release-artifacts/CrystalTides-Setup.exe" -Force
+          Write-Host "✓ Binario localizado: $exeSource ($((Get-Item $exeSource).Length) bytes)"
+          Copy-Item -Path $exeSource -Destination "release-artifacts/CrystalTides-Setup.exe" -Force
+          Copy-Item -Path $exeSource -Destination "release-artifacts/CrystalTides-Portable.exe" -Force
 
-          # 2. Generar archivo .zip para el AutoUpdater
-          $zipPath = "release-artifacts/CrystalTidesLauncher-windows-x86_64.zip"
-          Write-Host "📦 Creando paquete de actualización: $zipPath"
-          Compress-Archive -Path $exeSource.FullName -DestinationPath $zipPath -Force
-
-          # 3. Firmar paquete de actualización y generar latest.json
-          if ($env:TAURI_SIGNING_PRIVATE_KEY) {
-            Write-Host "🔐 Firmando archivo para AutoUpdater con Tauri Signer..."
-            npx tauri signer sign -k "$env:TAURI_SIGNING_PRIVATE_KEY" -p "$($env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD)" $zipPath
-
-            $sigFile = "$zipPath.sig"
-            if (Test-Path $sigFile) {
-              $sigContent = (Get-Content -Path $sigFile -Raw).Trim()
-              $tag = if ($env:RELEASE_TAG) { $env:RELEASE_TAG } else { "v0.1.0" }
-              $cleanVersion = $tag -replace '^v', ''
-              $pubDate = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-
-              $latestManifest = @{
-                version = $cleanVersion
-                notes = "Actualización de CrystalTides Launcher ($tag)"
-                pub_date = $pubDate
-                platforms = @{
-                  "windows-x86_64" = @{
-                    signature = $sigContent
-                    url = "https://github.com/UltraXn/crystaltides-launcher-lite/releases/download/$tag/CrystalTidesLauncher-windows-x86_64.zip"
-                  }
-                }
-              }
-
-              $manifestJson = $latestManifest | ConvertTo-Json -Depth 5
-              $manifestJson | Set-Content -Path "release-artifacts/latest.json" -Encoding utf8
-              Write-Host "✓ latest.json generado con éxito:"
-              Write-Host $manifestJson
-            } else {
-              Write-Warning "No se pudo encontrar el archivo de firma $sigFile"
-            }
-          } else {
-            Write-Warning "⚠️ TAURI_SIGNING_PRIVATE_KEY no está configurado en los Secrets. Se omitió la firma y latest.json."
+          # 2. Firmar el instalador para el AutoUpdater y generar latest.json.
+          #    tauri-plugin-updater lo ejecuta con /P /UPDATE; self_update.rs reemplaza bin/ y relanza.
+          #    Sin firma o sin latest.json no se publica: los usuarios de esa versión
+          #    quedarían sin auto-actualización para siempre.
+          $updaterTarget = "release-artifacts/CrystalTides-Setup.exe"
+          if (-not $env:TAURI_SIGNING_PRIVATE_KEY) {
+            Write-Error "CRITICAL: TAURI_SIGNING_PRIVATE_KEY no está configurado en los Secrets. No se puede firmar ni generar latest.json."
+            exit 1
           }
+
+          Write-Host "🔐 Firmando instalador para AutoUpdater con Tauri Signer..."
+          pnpm tauri signer sign -k "$env:TAURI_SIGNING_PRIVATE_KEY" -p "$($env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD)" $updaterTarget
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "CRITICAL: tauri signer sign falló (exit $LASTEXITCODE). ¿Clave o contraseña incorrectas?"
+            exit 1
+          }
+
+          $sigFile = "$updaterTarget.sig"
+          if (-not (Test-Path $sigFile)) {
+            Write-Error "CRITICAL: No se generó el archivo de firma $sigFile"
+            exit 1
+          }
+
+          $sigContent = (Get-Content -Path $sigFile -Raw).Trim()
+          $tag = $env:RELEASE_TAG
+          $cleanVersion = $tag -replace '^v', ''
+          $pubDate = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+
+          $latestManifest = @{
+            version = $cleanVersion
+            notes = "Actualización de CrystalTides Launcher ($tag)"
+            pub_date = $pubDate
+            platforms = @{
+              "windows-x86_64" = @{
+                signature = $sigContent
+                url = "https://github.com/UltraXn/crystaltides-launcher-lite/releases/download/$tag/CrystalTides-Setup.exe"
+              }
+            }
+          }
+
+          $manifestJson = $latestManifest | ConvertTo-Json -Depth 5
+          $manifestJson | Set-Content -Path "release-artifacts/latest.json" -Encoding utf8
+          Write-Host "✓ latest.json generado con éxito:"
+          Write-Host $manifestJson
 
           # 4. Generar Checksums SHA256
           Get-ChildItem -Path release-artifacts -File | ForEach-Object {

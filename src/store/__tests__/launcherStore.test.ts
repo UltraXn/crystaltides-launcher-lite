@@ -6,6 +6,7 @@ import {
   sanitizeLauncherSettings,
   launcherActions,
   getLauncherState,
+  shouldDeployBoost,
   useLauncherStore,
 } from '../launcherStore';
 import type { GameInstance } from '../../services/instanceService';
@@ -39,6 +40,27 @@ vi.mock('../../services/databaseService', () => ({
   deleteDatabaseAccount: vi.fn().mockResolvedValue(true),
   setActiveDatabaseAccount: vi.fn().mockResolvedValue(true),
 }));
+
+vi.mock('../../services/microsoftAuthService', () => {
+  class MockMicrosoftAuthError extends Error {
+    code: string;
+    constructor(message: string, code: string) {
+      super(message);
+      this.name = 'MicrosoftAuthError';
+      this.code = code;
+    }
+  }
+
+  return {
+    MicrosoftAuthError: MockMicrosoftAuthError,
+    refreshMicrosoftSession: vi.fn().mockResolvedValue({
+      accessToken: 'refreshed-mc-token',
+      refreshToken: 'new-refresh-token',
+      username: 'RefreshedUser',
+      uuid: 'refreshed-uuid',
+    }),
+  };
+});
 
 vi.mock('../../services/instanceService', () => ({
   resolveInstanceGameDir: vi.fn().mockResolvedValue('C:\\fake\\instances\\default-ct'),
@@ -139,6 +161,18 @@ describe('launcherStore helpers & actions', () => {
       expect(resolveEffectiveLoaderVersion('neoforge', '21.1.100')).toBe('21.1.100');
       expect(resolveEffectiveLoaderVersion('fabric', '0.15.11')).toBe('0.15.11');
     });
+
+    it('extracts compound beta loader version from mcVersion when rawVersion is empty', () => {
+      expect(
+        resolveEffectiveLoaderVersion('quilt', '', 'quilt-loader-0.31.0-beta.4-26.2'),
+      ).toBe('0.31.0-beta.4');
+      expect(
+        resolveEffectiveLoaderVersion('quilt', '', 'quilt-loader-0.31.0-beta.4-26.2 (quilt)'),
+      ).toBe('0.31.0-beta.4');
+      expect(
+        resolveEffectiveLoaderVersion('fabric', '', 'fabric-loader-0.16.10-1.21.1'),
+      ).toBe('0.16.10');
+    });
   });
 
   describe('buildLaunchOptions', () => {
@@ -234,6 +268,41 @@ describe('launcherStore helpers & actions', () => {
       const state = getLauncherState();
       expect(state.launch.status).toBe('RUNNING');
       expect(state.launch.progress).toBe(100);
+    });
+
+    it('detecta invalid_grant por code al renovar sesión y marca requiresReauth', async () => {
+      const msAccount: UserAccount = {
+        id: 'acc-ms-test',
+        username: 'TestMS',
+        uuid: '11111111-2222-3333-4444-555555555555',
+        type: 'microsoft',
+        accessToken: '', // Vacío para forzar renovación de token
+        refreshToken: 'stale-refresh-token',
+        lastUsed: Date.now(),
+      };
+
+      useLauncherStore.setState({
+        accounts: [msAccount],
+        activeAccountId: 'acc-ms-test',
+        launch: { status: 'IDLE', progress: 0, message: '' },
+      });
+
+      const { refreshMicrosoftSession, MicrosoftAuthError } =
+        await import('../../services/microsoftAuthService');
+      vi.mocked(refreshMicrosoftSession).mockRejectedValueOnce(
+        new MicrosoftAuthError(
+          'The provided value for the input parameter is not valid.',
+          'invalid_grant',
+        ),
+      );
+
+      await launcherActions.startLaunchFlow();
+
+      const state = getLauncherState();
+      expect(state.launch.status).toBe('IDLE');
+      expect(state.launch.message).toContain('invalid_grant');
+      const updatedAccount = state.accounts.find((a) => a.id === 'acc-ms-test');
+      expect(updatedAccount?.requiresReauth).toBe(true);
     });
 
     it('ignora startLaunchFlow si el estado no es IDLE', async () => {
@@ -444,6 +513,41 @@ describe('launcherStore helpers & actions', () => {
       expect(opts.loaderVersion).toBeUndefined();
       expect(opts.uuid).toBe('00000000-0000-0000-0000-000000000000');
       expect(opts.accessToken).toBe('00000000-0000-0000-0000-000000000000');
+    });
+  });
+
+  describe('shouldDeployBoost', () => {
+    it('debe devolver true para fabric 1.21.1', () => {
+      expect(shouldDeployBoost('fabric', '1.21.1')).toBe(true);
+    });
+
+    it('debe devolver true para neoforge 1.21.1', () => {
+      expect(shouldDeployBoost('neoforge', '1.21.1')).toBe(true);
+    });
+
+    it('debe devolver true para quilt 1.21.1', () => {
+      expect(shouldDeployBoost('quilt', '1.21.1')).toBe(true);
+    });
+
+    it('debe devolver false para fabric 1.20.1', () => {
+      expect(shouldDeployBoost('fabric', '1.20.1')).toBe(false);
+    });
+
+    it('debe devolver false para forge 1.21.1', () => {
+      expect(shouldDeployBoost('forge', '1.21.1')).toBe(false);
+    });
+
+    it('debe devolver false para neoforge 1.21.4', () => {
+      expect(shouldDeployBoost('neoforge', '1.21.4')).toBe(false);
+    });
+
+    it('debe devolver false para cadenas vacías o undefined', () => {
+      expect(shouldDeployBoost('', '1.21.1')).toBe(false);
+      expect(shouldDeployBoost('fabric', '')).toBe(false);
+      expect(shouldDeployBoost('', '')).toBe(false);
+      expect(shouldDeployBoost(undefined, '1.21.1')).toBe(false);
+      expect(shouldDeployBoost('fabric', undefined)).toBe(false);
+      expect(shouldDeployBoost(undefined, undefined)).toBe(false);
     });
   });
 });

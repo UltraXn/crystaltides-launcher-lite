@@ -6,22 +6,10 @@ import { HudEditorHorizontalPanel } from '../HudEditorHorizontalPanel';
 import { HudEditorVerticalPanel } from '../HudEditorVerticalPanel';
 import { useLauncherStore } from '../../../store/launcherStore';
 
+import { getTranslation } from '../../../i18n';
+
 describe('HUD Panels Suite', () => {
-  const mockT = {
-    hudEditor: {
-      title: 'Editor HUD',
-      togglePosTitle: 'Cambiar orientación',
-      center: 'Centro',
-      bottom: 'Abajo',
-      top: 'Arriba',
-      reset: 'Restablecer',
-      done: 'Guardar y Salir',
-      scaleLabel: 'Escala',
-      radiusLabel: 'Radio',
-      gapLabel: 'Separación',
-      labelsToggle: 'Etiquetas',
-    },
-  };
+  const mockT = getTranslation('es');
 
   const dummyDockConfig = {
     layoutMode: 'dock',
@@ -91,6 +79,7 @@ describe('HUD Panels Suite', () => {
           t={mockT}
           dockConfig={dummyDockConfig}
           hudManualSide="left"
+          effectiveSide="left"
           accentColor="#38bdf8"
           cycleSide={cycleSide}
         />

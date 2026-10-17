@@ -12,15 +12,21 @@ import {
   Layers,
   Flame,
   Ban,
+  Trash2,
 } from 'lucide-react';
 import {
   launcherActions,
+  useT,
   type DockButtonId,
   type DockButtonEffect,
   type DockButtonCustomization,
   type LauncherState,
 } from '../../store/launcherStore';
-import { saveDockPanoramaFile, clearButtonMedia } from '../../utils/wallpaperStorage';
+import {
+  saveDockPanoramaFile,
+  clearButtonMedia,
+  clearDockPanorama,
+} from '../../utils/wallpaperStorage';
 import { DockBackgroundAdjuster } from '../hud/DockBackgroundAdjuster';
 
 export const COLOR_PRESETS = [
@@ -65,9 +71,11 @@ export const DockButtonInspectorBgTab: React.FC<BgTabProps> = ({
   dockBgInputRef,
   setUploadStatus,
 }) => {
+  const t = useT();
   const handleDockBgUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    e.target.value = '';
 
     try {
       setUploadStatus('Cargando fondo de barra...');
@@ -86,7 +94,7 @@ export const DockButtonInspectorBgTab: React.FC<BgTabProps> = ({
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', paddingBottom: '8px' }}>
       <input
         ref={dockBgInputRef}
         type="file"
@@ -212,11 +220,87 @@ export const DockButtonInspectorBgTab: React.FC<BgTabProps> = ({
               )}
             </button>
             <DockBackgroundAdjuster />
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: '6px',
+                marginTop: '4px',
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  if (dockBgInputRef.current) {
+                    dockBgInputRef.current.value = '';
+                    dockBgInputRef.current.click();
+                  }
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  padding: '7px 8px',
+                  borderRadius: '7px',
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid rgba(255, 255, 255, 0.12)',
+                  color: '#e2e8f0',
+                  fontSize: '10.5px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <Upload size={12} />
+                <span>Cambiar Fondo</span>
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    setUploadStatus('Eliminando fondo...');
+                    await clearDockPanorama();
+                    launcherActions.clearDockBackground();
+                    launcherActions.resetDockBackgroundTransform();
+                    setUploadStatus('¡Fondo eliminado!');
+                    setTimeout(() => setUploadStatus(null), 2000);
+                  } catch (err) {
+                    console.error('Error clearing dock panorama:', err);
+                    setUploadStatus('Error al eliminar');
+                    setTimeout(() => setUploadStatus(null), 3000);
+                  }
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  padding: '7px 8px',
+                  borderRadius: '7px',
+                  background: 'rgba(239, 68, 68, 0.12)',
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                  color: '#f87171',
+                  fontSize: '10.5px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <Trash2 size={12} />
+                <span>Quitar Fondo de Barra</span>
+              </button>
+            </div>
           </>
         ) : (
           <button
             type="button"
-            onClick={() => dockBgInputRef.current?.click()}
+            onClick={() => {
+              if (dockBgInputRef.current) {
+                dockBgInputRef.current.value = '';
+                dockBgInputRef.current.click();
+              }
+            }}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -296,7 +380,7 @@ export const DockButtonInspectorBgTab: React.FC<BgTabProps> = ({
             <input
               id={`dock-custom-color-${buttonId}`}
               type="color"
-              aria-label="Color personalizado de fondo"
+              aria-label={t.hudEditor.customBgColor}
               value={
                 /^#[0-9A-Fa-f]{6}$/.test(customization.bgColor ?? '')
                   ? customization.bgColor
@@ -338,6 +422,7 @@ export const DockButtonInspectorBgTab: React.FC<BgTabProps> = ({
           </div>
           <input
             type="range"
+            aria-label={t.hudEditor.videoOpacity}
             min="0.1"
             max="1"
             step="0.05"
@@ -377,6 +462,8 @@ export const DockButtonInspectorBgTab: React.FC<BgTabProps> = ({
             alignItems: 'center',
             justifyContent: 'center',
             gap: '6px',
+            flexShrink: 0,
+            width: '100%',
           }}
         >
           <RotateCcw size={12} />
@@ -400,7 +487,9 @@ export const DockButtonInspectorIconTab: React.FC<IconTabProps> = ({
   buttonId,
   customization,
   iconFileInputRef,
-}) => (
+}) => {
+  const t = useT();
+  return (
   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
     <button
       type="button"
@@ -502,6 +591,7 @@ export const DockButtonInspectorIconTab: React.FC<IconTabProps> = ({
       </div>
       <input
         type="range"
+        aria-label={t.hudEditor.iconScale}
         min="0.5"
         max="2"
         step="0.05"
@@ -515,7 +605,8 @@ export const DockButtonInspectorIconTab: React.FC<IconTabProps> = ({
       />
     </div>
   </div>
-);
+  );
+};
 
 // ─────────────────────────────────────────────────────────────
 // TAB 3: EFECTOS VISUALES FX
@@ -577,154 +668,397 @@ export const DockButtonInspectorShapeTab: React.FC<ShapeTabProps> = ({
   buttonId,
   dockConfig,
   customization,
-}) => (
-  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-    <div
-      style={{
-        background: 'rgba(255, 255, 255, 0.04)',
-        borderRadius: '8px',
-        padding: '6px 10px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-      }}
-    >
-      <span style={{ fontSize: '11px', color: '#94a3b8' }}>Tamaño Actual:</span>
-      <span style={{ fontWeight: 700, color: '#e2e8f0', fontSize: '11px' }}>
-        {customization.customWidth ? `${customization.customWidth}px` : 'Auto'} ×{' '}
-        {customization.customHeight ? `${customization.customHeight}px` : 'Auto'}
-      </span>
-    </div>
+}) => {
+  const t = useT();
+  const isUnifiedDock = dockConfig.layoutMode === 'dock';
 
-    <div
-      style={{
-        background: 'rgba(255, 255, 255, 0.04)',
-        borderRadius: '8px',
-        padding: '8px 10px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-      }}
-    >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-        <span style={{ fontSize: '11px', fontWeight: 600, color: '#e2e8f0' }}>
-          Etiqueta de Texto
-        </span>
-        <span style={{ fontSize: '9.5px', color: '#94a3b8' }}>
-          {customization.hideLabel || !dockConfig.showLabels
-            ? 'Oculto (permite tamaño ultra-compacto)'
-            : 'Visible (ancho protegido contra recortes)'}
-        </span>
+  if (isUnifiedDock) {
+    const isCompact = dockConfig.scale === 'compact';
+    const isNoLabels = !dockConfig.showLabels;
+    const defaultSegmentW = isNoLabels ? 56 : isCompact ? 96 : 136;
+    const defaultDockH = isNoLabels ? 56 : isCompact ? 74 : 108;
+    const currentSegmentW = dockConfig.customSegmentWidth ?? defaultSegmentW;
+    const currentDockH = dockConfig.customDockHeight ?? defaultDockH;
+    const buttonCount =
+      dockConfig.buttonOrder && dockConfig.buttonOrder.length > 0
+        ? dockConfig.buttonOrder.length
+        : 5;
+    const totalBarW = currentSegmentW * buttonCount;
+    const hasCustomBarSize = Boolean(
+      dockConfig.customSegmentWidth !== undefined || dockConfig.customDockHeight !== undefined
+    );
+    const currentRadius = dockConfig.borderRadius ?? 14;
+    const hasCustomRadius = dockConfig.borderRadius !== undefined && dockConfig.borderRadius !== 14;
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        {/* Banner Barra Unificada */}
+        <div
+          style={{
+            background: 'rgba(56, 189, 248, 0.08)',
+            border: '1px solid rgba(56, 189, 248, 0.25)',
+            borderRadius: '8px',
+            padding: '8px 10px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+          }}
+        >
+          <Columns size={14} style={{ color: '#38bdf8', flexShrink: 0 }} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            <span style={{ fontSize: '11px', fontWeight: 700, color: '#7dd3fc' }}>
+              Barra Unificada (Forma Compartida)
+            </span>
+            <span style={{ fontSize: '9.5px', color: 'rgba(255, 255, 255, 0.7)', lineHeight: 1.3 }}>
+              La forma, dimensiones y bordes aplican a la barra completa como un solo elemento.
+            </span>
+          </div>
+        </div>
+
+        {/* Dimensiones de la Barra */}
+        <div
+          style={{
+            background: 'rgba(255, 255, 255, 0.04)',
+            borderRadius: '8px',
+            padding: '6px 10px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <span style={{ fontSize: '11px', color: '#94a3b8' }}>Tamaño de Barra:</span>
+          <span style={{ fontWeight: 700, color: '#e2e8f0', fontSize: '11px' }}>
+            {totalBarW}px × {currentDockH}px{' '}
+            <span style={{ fontSize: '9.5px', color: '#94a3b8', fontWeight: 500 }}>
+              ({currentSegmentW}px / botón)
+            </span>
+          </span>
+        </div>
+
+        {/* Restablecer Tamaño de Barra si está personalizado */}
+        {hasCustomBarSize && (
+          <button
+            type="button"
+            onClick={() => {
+              launcherActions.setDockConfig({
+                customSegmentWidth: undefined,
+                customDockHeight: undefined,
+              });
+            }}
+            style={{
+              background: 'rgba(255, 255, 255, 0.06)',
+              border: '1px solid rgba(255, 255, 255, 0.14)',
+              color: '#e2e8f0',
+              borderRadius: '8px',
+              padding: '6px',
+              fontSize: '11px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+            }}
+          >
+            <RotateCcw size={12} />
+            <span>Restablecer Tamaño de Barra</span>
+          </button>
+        )}
+
+        {/* Etiqueta de Texto */}
+        <div
+          style={{
+            background: 'rgba(255, 255, 255, 0.04)',
+            borderRadius: '8px',
+            padding: '8px 10px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            <span style={{ fontSize: '11px', fontWeight: 600, color: '#e2e8f0' }}>
+              Etiqueta de Texto
+            </span>
+            <span style={{ fontSize: '9.5px', color: '#94a3b8' }}>
+              {customization.hideLabel || !dockConfig.showLabels
+                ? 'Oculto (permite tamaño ultra-compacto)'
+                : 'Visible (ancho protegido contra recortes)'}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              launcherActions.setDockButtonCustomization(buttonId, {
+                hideLabel: !customization.hideLabel,
+              });
+            }}
+            style={{
+              background: customization.hideLabel
+                ? 'rgba(255, 255, 255, 0.06)'
+                : 'rgba(22, 160, 133, 0.15)',
+              border: customization.hideLabel
+                ? '1px solid rgba(255, 255, 255, 0.14)'
+                : '1px solid rgba(22, 160, 133, 0.35)',
+              color: customization.hideLabel ? '#94a3b8' : 'var(--accent-primary, #16A085)',
+              borderRadius: '6px',
+              padding: '4px 8px',
+              fontSize: '10.5px',
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            {customization.hideLabel ? 'Mostrar' : 'Ocultar'}
+          </button>
+        </div>
+
+        {/* Borde Redondeado de la Barra */}
+        <div>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              fontSize: '11px',
+              color: '#94a3b8',
+              marginBottom: '4px',
+            }}
+          >
+            <span>Borde Redondeado de la Barra:</span>
+            <span>{currentRadius}px</span>
+          </div>
+          <input
+            type="range"
+            aria-label={t.hudEditor.borderRadius}
+            min="0"
+            max="40"
+            value={currentRadius}
+            onChange={(e) => {
+              launcherActions.setDockConfig({
+                borderRadius: Number.parseInt(e.target.value, 10),
+              });
+            }}
+            style={{ width: '100%', accentColor: '#cbd5e1' }}
+          />
+        </div>
+
+        {/* Rotación Bloqueada en Barra Unificada */}
+        <div
+          style={{
+            background: 'rgba(255, 255, 255, 0.02)',
+            border: '1px dashed rgba(255, 255, 255, 0.1)',
+            borderRadius: '8px',
+            padding: '7px 10px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            <span style={{ fontSize: '11px', color: '#94a3b8' }}>Rotación:</span>
+            <span style={{ fontSize: '9.5px', color: '#64748b' }}>
+              Fija a 0° en Barra Unificada (disponible en Botones Libres)
+            </span>
+          </div>
+          <span
+            style={{
+              fontSize: '10px',
+              padding: '2px 6px',
+              borderRadius: '4px',
+              background: 'rgba(255, 255, 255, 0.06)',
+              color: '#94a3b8',
+              fontWeight: 600,
+            }}
+          >
+            0° (Bloqueada)
+          </span>
+        </div>
+
+        {/* Restablecer Forma de la Barra si tiene cambios */}
+        {(hasCustomBarSize || hasCustomRadius) && (
+          <button
+            type="button"
+            onClick={() => {
+              launcherActions.setDockConfig({
+                borderRadius: 14,
+                customSegmentWidth: undefined,
+                customDockHeight: undefined,
+              });
+            }}
+            style={{
+              background: 'rgba(239, 68, 68, 0.08)',
+              border: '1px solid rgba(239, 68, 68, 0.2)',
+              color: '#f87171',
+              borderRadius: '8px',
+              padding: '6px',
+              fontSize: '10.5px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+            }}
+          >
+            <RotateCcw size={12} />
+            <span>Restablecer Forma de la Barra</span>
+          </button>
+        )}
       </div>
-      <button
-        type="button"
-        onClick={() => {
-          launcherActions.setDockButtonCustomization(buttonId, {
-            hideLabel: !customization.hideLabel,
-          });
-        }}
-        style={{
-          background: customization.hideLabel
-            ? 'rgba(255, 255, 255, 0.06)'
-            : 'rgba(56, 189, 248, 0.15)',
-          border: customization.hideLabel
-            ? '1px solid rgba(255, 255, 255, 0.14)'
-            : '1px solid rgba(56, 189, 248, 0.35)',
-          color: customization.hideLabel ? '#94a3b8' : '#38bdf8',
-          borderRadius: '6px',
-          padding: '4px 8px',
-          fontSize: '10.5px',
-          fontWeight: 600,
-          cursor: 'pointer',
-        }}
-      >
-        {customization.hideLabel ? 'Mostrar' : 'Ocultar'}
-      </button>
-    </div>
+    );
+  }
 
-    {(customization.customWidth || customization.customHeight) && (
-      <button
-        type="button"
-        onClick={() => {
-          launcherActions.setDockButtonCustomization(buttonId, {
-            customWidth: undefined,
-            customHeight: undefined,
-          });
-        }}
+  // MODO BOTONES LIBRES (comportamiento individual por botón)
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      <div
         style={{
-          background: 'rgba(255, 255, 255, 0.06)',
-          border: '1px solid rgba(255, 255, 255, 0.14)',
-          color: '#e2e8f0',
+          background: 'rgba(255, 255, 255, 0.04)',
           borderRadius: '8px',
-          padding: '6px',
-          fontSize: '11px',
-          fontWeight: 600,
-          cursor: 'pointer',
+          padding: '6px 10px',
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'center',
-          gap: '6px',
-        }}
-      >
-        <RotateCcw size={12} />
-        <span>Restablecer Tamaño Original</span>
-      </button>
-    )}
-
-    <div>
-      <div
-        style={{
-          display: 'flex',
           justifyContent: 'space-between',
-          fontSize: '11px',
-          color: '#94a3b8',
-          marginBottom: '4px',
         }}
       >
-        <span>Borde Redondeado:</span>
-        <span>
-          {customization.borderRadius !== undefined ? `${customization.borderRadius}px` : 'Auto'}
+        <span style={{ fontSize: '11px', color: '#94a3b8' }}>Tamaño Actual:</span>
+        <span style={{ fontWeight: 700, color: '#e2e8f0', fontSize: '11px' }}>
+          {customization.customWidth ? `${customization.customWidth}px` : 'Auto'} ×{' '}
+          {customization.customHeight ? `${customization.customHeight}px` : 'Auto'}
         </span>
       </div>
-      <input
-        type="range"
-        min="0"
-        max="40"
-        value={customization.borderRadius ?? 14}
-        onChange={(e) => {
-          launcherActions.setDockButtonCustomization(buttonId, {
-            borderRadius: Number.parseInt(e.target.value, 10),
-          });
-        }}
-        style={{ width: '100%', accentColor: '#cbd5e1' }}
-      />
-    </div>
 
-    <div>
       <div
         style={{
+          background: 'rgba(255, 255, 255, 0.04)',
+          borderRadius: '8px',
+          padding: '8px 10px',
           display: 'flex',
+          alignItems: 'center',
           justifyContent: 'space-between',
-          fontSize: '11px',
-          color: '#94a3b8',
-          marginBottom: '4px',
         }}
       >
-        <span>Rotación:</span>
-        <span>{customization.rotation ?? 0}°</span>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+          <span style={{ fontSize: '11px', fontWeight: 600, color: '#e2e8f0' }}>
+            Etiqueta de Texto
+          </span>
+          <span style={{ fontSize: '9.5px', color: '#94a3b8' }}>
+            {customization.hideLabel || !dockConfig.showLabels
+              ? 'Oculto (permite tamaño ultra-compacto)'
+              : 'Visible (ancho protegido contra recortes)'}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            launcherActions.setDockButtonCustomization(buttonId, {
+              hideLabel: !customization.hideLabel,
+            });
+          }}
+          style={{
+            background: customization.hideLabel
+              ? 'rgba(255, 255, 255, 0.06)'
+              : 'rgba(22, 160, 133, 0.15)',
+            border: customization.hideLabel
+              ? '1px solid rgba(255, 255, 255, 0.14)'
+              : '1px solid rgba(22, 160, 133, 0.35)',
+            color: customization.hideLabel ? '#94a3b8' : 'var(--accent-primary, #16A085)',
+            borderRadius: '6px',
+            padding: '4px 8px',
+            fontSize: '10.5px',
+            fontWeight: 600,
+            cursor: 'pointer',
+          }}
+        >
+          {customization.hideLabel ? 'Mostrar' : 'Ocultar'}
+        </button>
       </div>
-      <input
-        type="range"
-        min="-30"
-        max="30"
-        value={customization.rotation ?? 0}
-        onChange={(e) => {
-          launcherActions.setDockButtonCustomization(buttonId, {
-            rotation: Number.parseInt(e.target.value, 10),
-          });
-        }}
-        style={{ width: '100%', accentColor: '#cbd5e1' }}
-      />
+
+      {(customization.customWidth || customization.customHeight) && (
+        <button
+          type="button"
+          onClick={() => {
+            launcherActions.setDockButtonCustomization(buttonId, {
+              customWidth: undefined,
+              customHeight: undefined,
+            });
+          }}
+          style={{
+            background: 'rgba(255, 255, 255, 0.06)',
+            border: '1px solid rgba(255, 255, 255, 0.14)',
+            color: '#e2e8f0',
+            borderRadius: '8px',
+            padding: '6px',
+            fontSize: '11px',
+            fontWeight: 600,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '6px',
+          }}
+        >
+          <RotateCcw size={12} />
+          <span>Restablecer Tamaño Original</span>
+        </button>
+      )}
+
+      <div>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            fontSize: '11px',
+            color: '#94a3b8',
+            marginBottom: '4px',
+          }}
+        >
+          <span>Borde Redondeado:</span>
+          <span>
+            {customization.borderRadius !== undefined ? `${customization.borderRadius}px` : 'Auto'}
+          </span>
+        </div>
+        <input
+          type="range"
+          aria-label={t.hudEditor.borderRadius}
+          min="0"
+          max="40"
+          value={customization.borderRadius ?? 14}
+          onChange={(e) => {
+            launcherActions.setDockButtonCustomization(buttonId, {
+              borderRadius: Number.parseInt(e.target.value, 10),
+            });
+          }}
+          style={{ width: '100%', accentColor: '#cbd5e1' }}
+        />
+      </div>
+
+      <div>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            fontSize: '11px',
+            color: '#94a3b8',
+            marginBottom: '4px',
+          }}
+        >
+          <span>Rotación:</span>
+          <span>{customization.rotation ?? 0}°</span>
+        </div>
+        <input
+          type="range"
+          aria-label={t.hudEditor.rotation}
+          min="-30"
+          max="30"
+          value={customization.rotation ?? 0}
+          onChange={(e) => {
+            launcherActions.setDockButtonCustomization(buttonId, {
+              rotation: Number.parseInt(e.target.value, 10),
+            });
+          }}
+          style={{ width: '100%', accentColor: '#cbd5e1' }}
+        />
+      </div>
     </div>
-  </div>
-);
+  );
+};

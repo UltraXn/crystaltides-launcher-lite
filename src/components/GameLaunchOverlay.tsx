@@ -1,11 +1,16 @@
-import React, { useState, useEffect } from "react";
-import { Loader2, FileText, Minimize2 } from "lucide-react";
-import { useLauncherStore, LauncherState } from "../store/launcherStore";
-import { LogViewerModal } from "./modals/LogViewerModal";
-import logoImg from "../assets/logo.png";
+import React, { useState, useEffect, Suspense } from "react";
+import { Loader2, FileText, Minimize2, AlertTriangle } from "lucide-react";
+import { useLauncherStore, launcherActions, useT, LauncherState } from "../store/launcherStore";
+import logoImg from "../assets/logo.webp";
+
+const LogViewerModal = React.lazy(() =>
+  import("./modals/LogViewerModal").then((m) => ({ default: m.LogViewerModal }))
+);
 
 export const GameLaunchOverlay: React.FC = () => {
+  const t = useT();
   const launch = useLauncherStore((s: LauncherState) => s.launch);
+  const modSyncPrompt = useLauncherStore((s: LauncherState) => s.modSyncPrompt);
   const settings = useLauncherStore((s: LauncherState) => s.settings);
   const instances = useLauncherStore((s: LauncherState) => s.instances);
   const activeInstanceId = useLauncherStore((s: LauncherState) => s.activeInstanceId);
@@ -177,124 +182,215 @@ export const GameLaunchOverlay: React.FC = () => {
           {!isVanilla && targetLoaderVer ? ` (${targetLoaderVer})` : ""}
         </span>
 
-        {/* Progress bar container */}
-        <div style={{ width: "100%", marginBottom: "12px" }}>
+        {modSyncPrompt ? (
           <div
             style={{
               width: "100%",
-              height: "6px",
-              backgroundColor: "rgba(255, 255, 255, 0.08)",
-              borderRadius: "6px",
-              overflow: "hidden",
-              position: "relative",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              textAlign: "center",
             }}
           >
+            <AlertTriangle
+              size={36}
+              color="#f59e0b"
+              style={{ marginBottom: "12px", filter: "drop-shadow(0 0 10px rgba(245, 158, 11, 0.4))" }}
+            />
+            <h3 style={{ fontSize: "16px", fontWeight: 700, margin: "0 0 8px 0", color: "#F8FAFC" }}>
+              {t.modSync.errorTitle}
+            </h3>
+            <p
+              style={{
+                fontSize: "12px",
+                color: "rgba(248, 250, 252, 0.7)",
+                lineHeight: "1.5",
+                marginBottom: "20px",
+                padding: "8px 12px",
+                background: "rgba(245, 158, 11, 0.08)",
+                border: "1px solid rgba(245, 158, 11, 0.2)",
+                borderRadius: "8px",
+              }}
+            >
+              {t.modSync.errorMessage.replace("{error}", modSyncPrompt.error)}
+            </p>
+            <div style={{ display: "flex", gap: "10px", width: "100%", justifyContent: "center" }}>
+              <button
+                type="button"
+                onClick={launcherActions.retryModSyncAndLaunch}
+                style={{
+                  flex: 1,
+                  background: "#38bdf8",
+                  color: "#04070a",
+                  fontWeight: 700,
+                  fontSize: "12px",
+                  padding: "9px 14px",
+                  borderRadius: "8px",
+                  border: "none",
+                  cursor: "pointer",
+                }}
+              >
+                {t.modSync.retryBtn}
+              </button>
+              <button
+                type="button"
+                onClick={launcherActions.proceedLaunchWithoutModSync}
+                style={{
+                  flex: 1,
+                  background: "rgba(255, 255, 255, 0.08)",
+                  color: "#F8FAFC",
+                  fontWeight: 600,
+                  fontSize: "12px",
+                  padding: "9px 14px",
+                  borderRadius: "8px",
+                  border: "1px solid rgba(255, 255, 255, 0.2)",
+                  cursor: "pointer",
+                }}
+              >
+                {t.modSync.launchAnywayBtn}
+              </button>
+              <button
+                type="button"
+                onClick={launcherActions.cancelLaunchFlow}
+                style={{
+                  background: "transparent",
+                  color: "#94a3b8",
+                  fontWeight: 600,
+                  fontSize: "12px",
+                  padding: "9px 12px",
+                  borderRadius: "8px",
+                  border: "none",
+                  cursor: "pointer",
+                }}
+              >
+                {t.modSync.cancelBtn}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            {/* Progress bar container */}
+            <div style={{ width: "100%", marginBottom: "12px" }}>
+              <div
+                style={{
+                  width: "100%",
+                  height: "6px",
+                  backgroundColor: "rgba(255, 255, 255, 0.08)",
+                  borderRadius: "6px",
+                  overflow: "hidden",
+                  position: "relative",
+                }}
+              >
+                <div
+                  style={{
+                    height: "100%",
+                    width: `${launch.progress}%`,
+                    background: "linear-gradient(90deg, #2dd4bf 0%, #38bdf8 100%)",
+                    borderRadius: "6px",
+                    transition: "width 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+                    boxShadow: "0 0 14px rgba(56, 189, 248, 0.6)",
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Status text & Percentage */}
             <div
               style={{
-                height: "100%",
-                width: `${launch.progress}%`,
-                background: "linear-gradient(90deg, #2dd4bf 0%, #38bdf8 100%)",
-                borderRadius: "6px",
-                transition: "width 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-                boxShadow: "0 0 14px rgba(56, 189, 248, 0.6)",
+                width: "100%",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: "28px",
               }}
-            />
-          </div>
-        </div>
+            >
+              <span
+                style={{
+                  fontSize: "11.5px",
+                  color: "#38bdf8",
+                  fontWeight: 500,
+                  maxWidth: "80%",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {launch.message || "Procesando dependencias..."}
+              </span>
+              <span
+                style={{
+                  fontSize: "12px",
+                  fontWeight: 700,
+                  color: "#F8FAFC",
+                  fontFamily: "monospace",
+                }}
+              >
+                {launch.progress}%
+              </span>
+            </div>
 
-        {/* Status text & Percentage */}
-        <div
-          style={{
-            width: "100%",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: "28px",
-          }}
-        >
-          <span
-            style={{
-              fontSize: "11.5px",
-              color: "#38bdf8",
-              fontWeight: 500,
-              maxWidth: "80%",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {launch.message || "Procesando dependencias..."}
-          </span>
-          <span
-            style={{
-              fontSize: "12px",
-              fontWeight: 700,
-              color: "#F8FAFC",
-              fontFamily: "monospace",
-            }}
-          >
-            {launch.progress}%
-          </span>
-        </div>
+            {/* Action Controls */}
+            <div style={{ display: "flex", gap: "10px", width: "100%" }}>
+              <button
+                type="button"
+                onClick={() => setIsLogViewerOpen(true)}
+                style={{
+                  flex: 1,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "6px",
+                  background: "rgba(255, 255, 255, 0.06)",
+                  border: "1px solid rgba(255, 255, 255, 0.12)",
+                  borderRadius: "10px",
+                  color: "#F8FAFC",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  padding: "10px 14px",
+                  cursor: "pointer",
+                  transition: "all 0.15s ease",
+                }}
+              >
+                <FileText size={14} />
+                Ver Registros
+              </button>
 
-        {/* Action Controls */}
-        <div style={{ display: "flex", gap: "10px", width: "100%" }}>
-          <button
-            type="button"
-            onClick={() => setIsLogViewerOpen(true)}
-            style={{
-              flex: 1,
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: "6px",
-              background: "rgba(255, 255, 255, 0.06)",
-              border: "1px solid rgba(255, 255, 255, 0.12)",
-              borderRadius: "10px",
-              color: "#F8FAFC",
-              fontSize: "12px",
-              fontWeight: 600,
-              padding: "10px 14px",
-              cursor: "pointer",
-              transition: "all 0.15s ease",
-            }}
-          >
-            <FileText size={14} />
-            Ver Registros
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setIsMinimized(true)}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: "6px",
-              background: "rgba(56, 189, 248, 0.12)",
-              border: "1px solid rgba(56, 189, 248, 0.3)",
-              borderRadius: "10px",
-              color: "#38bdf8",
-              fontSize: "12px",
-              fontWeight: 600,
-              padding: "10px 16px",
-              cursor: "pointer",
-              transition: "all 0.15s ease",
-            }}
-          >
-            <Minimize2 size={14} />
-            Minimizar
-          </button>
-        </div>
+              <button
+                type="button"
+                onClick={() => setIsMinimized(true)}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "6px",
+                  background: "rgba(56, 189, 248, 0.12)",
+                  border: "1px solid rgba(56, 189, 248, 0.3)",
+                  borderRadius: "10px",
+                  color: "#38bdf8",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  padding: "10px 16px",
+                  cursor: "pointer",
+                  transition: "all 0.15s ease",
+                }}
+              >
+                <Minimize2 size={14} />
+                Minimizar
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
 
     {isLogViewerOpen && (
-      <LogViewerModal
-        isOpen={isLogViewerOpen}
-        onClose={() => setIsLogViewerOpen(false)}
-        defaultTab="launcher"
-      />
+      <Suspense fallback={null}>
+        <LogViewerModal
+          isOpen={isLogViewerOpen}
+          onClose={() => setIsLogViewerOpen(false)}
+          defaultTab="launcher"
+        />
+      </Suspense>
     )}
   </>
 );

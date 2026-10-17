@@ -149,7 +149,20 @@ pnpm package
 This compiles the release binary and produces the distribution artifacts in `dist-package/`:
 - `CrystalTides-Setup.exe`: Smart self-installing wizard with shortcut creation and desktop integration.
 - `CrystalTides-Portable.exe`: Zero-install, fully self-contained portable executable.
+- `CrystalTides-Setup.exe.sig` + `latest.json`: Signed AutoUpdater manifest (when `crystaltides.key` / `TAURI_SIGNING_PRIVATE_KEY` is available).
 - `SHA256SUMS.txt`: Cryptographic checksums for deployment verification.
+
+There is **no NSIS/MSI bundle** (`bundle.active: false`): the launcher binary is its own installer, Discord-style.
+Both `.exe` files are the same binary; the mode is chosen at startup:
+
+| Mode | Trigger | Behaviour |
+| :--- | :--- | :--- |
+| Install | File name contains `setup`/`install`, `--install`, or not installed yet | Custom installer UI → copies itself to `~/.crystaltides/bin/CrystalTidesLauncher.exe`, creates shortcuts, registers in *Installed apps* (per-user, no admin) |
+| Update | `/UPDATE` (passed by `tauri-plugin-updater`) or `--update` | Before any window is created, replaces `bin/CrystalTidesLauncher.exe` (staged copy + atomic rename, retried while the old process exits), bumps `.installed.json` and relaunches (`src-tauri/src/self_update.rs`) |
+| Portable | File name contains `portable` or `--portable` | Runs without installing |
+| Launcher | Running the installed binary | Normal launcher UI |
+
+**Releases:** push a `vX.Y.Z` tag. The workflow fails unless the tag matches `version` in both `tauri.conf.json` and `Cargo.toml`, because the updater compares the compiled version against `latest.json`.
 
 ---
 
@@ -169,6 +182,9 @@ CrystalTidesLauncher.exe --install    # (or -i)
 
 # Launch the clean uninstallation wizard
 CrystalTidesLauncher.exe --uninstall  # (or -u)
+
+# Replace the installed binary with this one and relaunch (used by the AutoUpdater as /UPDATE)
+CrystalTides-Setup.exe --update
 ```
 
 ---

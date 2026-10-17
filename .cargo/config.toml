@@ -1,0 +1,13 @@
+# Perfil de release del launcher, igual en el repo standalone (CI de release) y al compilar
+# desde esta carpeta dentro del monorepo. Va aquí y no en src-tauri/Cargo.toml porque en el
+# workspace del monorepo Cargo ignora los perfiles de los paquetes miembro; los perfiles de
+# config tienen prioridad sobre los del manifiesto en ambos casos.
+#
+# Medido (Windows x64): lto=false/codegen-units=16 -> 15.25 MB; lto=true/codegen-units=1 -> 13.93 MB
+# (-8.7%), a cambio de ~7 min más de compilación release desde cero.
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

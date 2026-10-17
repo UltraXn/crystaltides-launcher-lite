@@ -1,27 +1,43 @@
 /**
  * CrystalTides Secure Vault
- * AES-256-GCM Military-Grade Cryptographic Shield for Minecraft & Microsoft OAuth Tokens.
- * 
- * Invariants:
- * 1. Zero plaintext tokens or UUIDs in localStorage.
- * 2. Authenticated encryption (AES-256-GCM) with random 12-byte IV per write.
- * 3. Key derivation with PBKDF2-SHA256 (100,000 rounds) + hardware seed entropy.
+ * Almacenamiento local con cifrado autenticado AES-GCM (256 bits).
+ *
+ * NOTA DE SEGURIDAD Y ALCANCE:
+ * Proporciona protección local limitada frente a inspección pasiva del almacenamiento
+ * local (localStorage). No reemplaza un llavero seguro a nivel de sistema operativo
+ * (como Windows Credential Manager / DPAPI / SecretService).
+ * La integración definitiva con el llavero del sistema operativo es un pedido al backend Rust.
+ *
+ * Invariantes:
+ * 1. Clave AES-GCM de 256 bits no extraíble guardada en IndexedDB (independiente de navigator.userAgent).
+ * 2. Cifrado autenticado (AES-256-GCM) con vector de inicialización (IV) aleatorio de 12 bytes por escritura.
+ * 3. Migración transparente desde formatos legacy derivados de User-Agent.
  */
 
 interface EncryptedContainer {
-  v: number; // Vault version
+  v: number; // 2 para clave persistente IndexedDB, 1 para legacy
   iv: string; // Base64
-  salt: string; // Base64
+  salt?: string; // Base64 (requerido para descifrado legacy PBKDF2)
   ciphertext: string; // Base64
 }
 
-// Fixed device salt anchor + machine entropy
-const VAULT_PEPPER = "crystaltides_abyssal_vault_v1_secure_anchor_entropy_seed";
+export interface DecryptResult<T> {
+  data: T;
+  migratedCiphertext?: string;
+}
 
-// Helper: Convert ArrayBuffer to Base64
+const VAULT_PEPPER = 'crystaltides_abyssal_vault_v1_secure_anchor_entropy_seed';
+const VAULT_DB_NAME = 'crystaltides_vault_db';
+const VAULT_STORE_NAME = 'vault_keys';
+const MASTER_KEY_ID = 'aes_gcm_master_key';
+
+let memoryKeyCache: CryptoKey | null = null;
+let inFlightKeyPromise: Promise<CryptoKey> | null = null;
+
+// Helper: Convert ArrayBuffer / Uint8Array to Base64
 const bufferToBase64 = (buffer: ArrayBuffer | Uint8Array): string => {
   const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
-  let binary = "";
+  let binary = '';
   for (let i = 0; i < bytes.byteLength; i++) {
     binary += String.fromCharCode(bytes[i]);
   }
@@ -38,132 +54,276 @@ const base64ToBuffer = (base64: string): Uint8Array => {
   return bytes;
 };
 
-// Derive AES-256-GCM key using PBKDF2
-const deriveKey = async (salt: Uint8Array, legacy = false): Promise<CryptoKey> => {
+const openVaultDb = (): Promise<IDBDatabase> => {
+  return new Promise((resolve, reject) => {
+    if (typeof indexedDB === 'undefined') {
+      return reject(new Error('IndexedDB not supported in current environment'));
+    }
+    const request = indexedDB.open(VAULT_DB_NAME, 1);
+    request.addEventListener('upgradeneeded', (e) => {
+      const db = (e.target as IDBOpenDBRequest).result;
+      if (!db.objectStoreNames.contains(VAULT_STORE_NAME)) {
+        db.createObjectStore(VAULT_STORE_NAME);
+      }
+    });
+    request.addEventListener('success', () => resolve(request.result));
+    request.addEventListener('error', () =>
+      reject(request.error ?? new Error('Failed to open vault IndexedDB')),
+    );
+  });
+};
+
+/**
+ * Obtiene o crea la clave criptográfica persistente AES-GCM (256 bits, no extraíble)
+ * almacenada en IndexedDB.
+ */
+export const getOrCreateVaultKey = async (): Promise<CryptoKey> => {
+  if (memoryKeyCache) return memoryKeyCache;
+  if (inFlightKeyPromise) return inFlightKeyPromise;
+
+  inFlightKeyPromise = (async () => {
+    let db: IDBDatabase | null = null;
+    try {
+      db = await openVaultDb();
+      const storedKey = await new Promise<CryptoKey | null>((resolve, reject) => {
+        const tx = db!.transaction(VAULT_STORE_NAME, 'readonly');
+        const store = tx.objectStore(VAULT_STORE_NAME);
+        const req = store.get(MASTER_KEY_ID);
+        req.addEventListener('success', () => resolve((req.result as CryptoKey) || null));
+        req.addEventListener('error', () => reject(req.error));
+      });
+
+      if (storedKey) {
+        memoryKeyCache = storedKey;
+        return storedKey;
+      }
+
+      const newKey = await crypto.subtle.generateKey(
+        { name: 'AES-GCM', length: 256 },
+        false, // non-extractable
+        ['encrypt', 'decrypt'],
+      );
+
+      await new Promise<void>((resolve, reject) => {
+        const tx = db!.transaction(VAULT_STORE_NAME, 'readwrite');
+        const store = tx.objectStore(VAULT_STORE_NAME);
+        tx.addEventListener('complete', () => resolve());
+        tx.addEventListener('error', () => reject(tx.error ?? new Error('Failed to save vault key')));
+        tx.addEventListener('abort', () => reject(tx.error ?? new Error('Transaction aborted')));
+        store.put(newKey, MASTER_KEY_ID);
+      });
+
+      memoryKeyCache = newKey;
+      return newKey;
+    } finally {
+      if (db && typeof db.close === 'function') {
+        db.close();
+      }
+      inFlightKeyPromise = null;
+    }
+  })();
+
+  return inFlightKeyPromise;
+};
+
+export const _resetVaultKeyCacheForTesting = (): void => {
+  memoryKeyCache = null;
+  inFlightKeyPromise = null;
+};
+
+// Legacy key derivation con PBKDF2 sobre UserAgent
+const deriveLegacyKey = async (salt: Uint8Array, legacyResolution = false): Promise<CryptoKey> => {
   const enc = new TextEncoder();
-  // Mix platform entropy + user agent signature
-  const rawKeyMaterial = legacy
-    ? `${VAULT_PEPPER}_${navigator.userAgent}_${screen.width}x${screen.height}`
+  const screenStr =
+    typeof screen !== 'undefined' ? `${screen.width}x${screen.height}` : '1920x1080';
+  const rawKeyMaterial = legacyResolution
+    ? `${VAULT_PEPPER}_${navigator.userAgent}_${screenStr}`
     : `${VAULT_PEPPER}_${navigator.userAgent}`;
-  
+
   const keyMaterial = await crypto.subtle.importKey(
-    "raw",
+    'raw',
     enc.encode(rawKeyMaterial),
-    "PBKDF2",
+    'PBKDF2',
     false,
-    ["deriveKey"]
+    ['deriveKey'],
   );
 
   return crypto.subtle.deriveKey(
     {
-      name: "PBKDF2",
+      name: 'PBKDF2',
       salt: salt as BufferSource,
       iterations: 100000,
-      hash: "SHA-256",
+      hash: 'SHA-256',
     },
     keyMaterial,
-    { name: "AES-GCM", length: 256 },
+    { name: 'AES-GCM', length: 256 },
     false,
-    ["encrypt", "decrypt"]
+    ['encrypt', 'decrypt'],
   );
 };
 
 /**
- * Encrypt any object or string with AES-256-GCM
+ * Cifra un payload con AES-256-GCM utilizando la CryptoKey persistente no extraíble.
  */
 export const encryptPayload = async <T>(data: T): Promise<string> => {
   try {
-    const salt = crypto.getRandomValues(new Uint8Array(16));
-    const iv = crypto.getRandomValues(new Uint8Array(12)); // 96-bit IV recommended for GCM
-    const key = await deriveKey(salt);
+    const iv = crypto.getRandomValues(new Uint8Array(12)); // 96-bit IV para GCM
+    const key = await getOrCreateVaultKey();
 
     const enc = new TextEncoder();
     const encodedData = enc.encode(JSON.stringify(data));
 
     const encryptedContent = await crypto.subtle.encrypt(
       {
-        name: "AES-GCM",
-        iv: iv,
+        name: 'AES-GCM',
+        iv,
       },
       key,
-      encodedData
+      encodedData,
     );
 
     const container: EncryptedContainer = {
-      v: 1,
+      v: 2,
       iv: bufferToBase64(iv),
-      salt: bufferToBase64(salt),
       ciphertext: bufferToBase64(encryptedContent),
     };
 
     return JSON.stringify(container);
   } catch (error) {
-    console.error("[Secure Vault] Encryption failed:", error);
-    throw new Error("No se pudo cifrar los datos de forma segura.");
+    console.error('[Secure Vault] Encryption failed:', error);
+    throw new Error('No se pudo cifrar los datos de forma segura.');
   }
 };
 
 /**
- * Decrypt an AES-256-GCM container back into the typed payload
+ * Descifra un contenedor con cadena de fallback:
+ * 1. Clave nueva persistente de IndexedDB.
+ * 2. Clave derivada de User-Agent actual.
+ * 3. Clave legacy derivada de User-Agent + Resolución de pantalla.
+ *
+ * Si se descifra mediante una clave anterior, re-cifra el payload con la clave nueva.
  */
-export const decryptPayload = async <T>(
+export const decryptPayloadWithMetadata = async <T>(
   encryptedString: string,
   validator?: (data: unknown) => boolean,
-): Promise<T | null> => {
+): Promise<DecryptResult<T> | null> => {
   try {
     if (!encryptedString) return null;
     const container: EncryptedContainer = JSON.parse(encryptedString);
 
-    if (!container.iv || !container.salt || !container.ciphertext) {
+    if (!container.iv || !container.ciphertext) {
       return null;
     }
 
     const iv = base64ToBuffer(container.iv);
-    const salt = base64ToBuffer(container.salt);
     const ciphertext = base64ToBuffer(container.ciphertext);
+    const salt = container.salt ? base64ToBuffer(container.salt) : null;
 
-    let decryptedContent: ArrayBuffer;
+    let decryptedBuffer: ArrayBuffer | null = null;
+    let needsReencrypt = container.v !== 2;
+
+    // 1. Intento primario: clave persistente IndexedDB
     try {
-      const key = await deriveKey(salt);
-      decryptedContent = await crypto.subtle.decrypt(
+      const primaryKey = await getOrCreateVaultKey();
+      decryptedBuffer = await crypto.subtle.decrypt(
         {
-          name: "AES-GCM",
+          name: 'AES-GCM',
           iv: iv as BufferSource,
         },
-        key,
-        ciphertext as BufferSource
+        primaryKey,
+        ciphertext as BufferSource,
       );
     } catch {
-      // Fallback: try legacy key derivation with screen resolution
-      const legacyKey = await deriveKey(salt, true);
-      decryptedContent = await crypto.subtle.decrypt(
-        {
-          name: "AES-GCM",
-          iv: iv as BufferSource,
-        },
-        legacyKey,
-        ciphertext as BufferSource
-      );
+      decryptedBuffer = null;
+    }
+
+    // 2. Intento secundario: clave derivada de UserAgent actual
+    if (!decryptedBuffer && salt) {
+      try {
+        const uaKey = await deriveLegacyKey(salt, false);
+        decryptedBuffer = await crypto.subtle.decrypt(
+          {
+            name: 'AES-GCM',
+            iv: iv as BufferSource,
+          },
+          uaKey,
+          ciphertext as BufferSource,
+        );
+        needsReencrypt = true;
+      } catch {
+        decryptedBuffer = null;
+      }
+    }
+
+    // 3. Intento terciario: clave legacy UserAgent + Screen
+    if (!decryptedBuffer && salt) {
+      try {
+        const legacyKey = await deriveLegacyKey(salt, true);
+        decryptedBuffer = await crypto.subtle.decrypt(
+          {
+            name: 'AES-GCM',
+            iv: iv as BufferSource,
+          },
+          legacyKey,
+          ciphertext as BufferSource,
+        );
+        needsReencrypt = true;
+      } catch {
+        decryptedBuffer = null;
+      }
+    }
+
+    if (!decryptedBuffer) {
+      return null;
     }
 
     const dec = new TextDecoder();
-    const jsonString = dec.decode(decryptedContent);
+    const jsonString = dec.decode(decryptedBuffer);
     const parsed = JSON.parse(jsonString);
-    if (parsed === null || typeof parsed === "undefined") {
+
+    if (parsed === null || typeof parsed === 'undefined') {
       return null;
     }
+
     if (validator && !validator(parsed)) {
       return null;
     }
-    return parsed as T;
+
+    let migratedCiphertext: string | undefined;
+    if (needsReencrypt) {
+      try {
+        migratedCiphertext = await encryptPayload(parsed);
+      } catch (reencryptErr) {
+        console.warn(
+          '[Secure Vault] Error al re-cifrar con la nueva clave persistente:',
+          reencryptErr,
+        );
+      }
+    }
+
+    return {
+      data: parsed as T,
+      migratedCiphertext,
+    };
   } catch (error) {
-    console.warn("[Secure Vault] Decryption failed or invalid container:", error);
+    console.warn('[Secure Vault] Decryption failed or invalid container:', error);
     return null;
   }
 };
 
 /**
- * High-level helper to persist encrypted items to localStorage
+ * Descifra el contenedor y devuelve el payload tipado (compatibilidad directa).
+ */
+export const decryptPayload = async <T>(
+  encryptedString: string,
+  validator?: (data: unknown) => boolean,
+): Promise<T | null> => {
+  const result = await decryptPayloadWithMetadata<T>(encryptedString, validator);
+  return result ? result.data : null;
+};
+
+/**
+ * Guarda un elemento cifrado en localStorage con la clave persistente.
  */
 export const saveSecureItem = async <T>(storageKey: string, data: T): Promise<void> => {
   const encrypted = await encryptPayload(data);
@@ -171,7 +331,7 @@ export const saveSecureItem = async <T>(storageKey: string, data: T): Promise<vo
 };
 
 /**
- * High-level helper to load decrypted items from localStorage
+ * Carga un elemento cifrado de localStorage, aplicando migración y re-cifrado automático si procedía de una clave antigua.
  */
 export const loadSecureItem = async <T>(
   storageKey: string,
@@ -179,11 +339,18 @@ export const loadSecureItem = async <T>(
 ): Promise<T | null> => {
   const stored = localStorage.getItem(storageKey);
   if (!stored) return null;
-  return decryptPayload<T>(stored, validator);
+  const result = await decryptPayloadWithMetadata<T>(stored, validator);
+  if (!result) return null;
+
+  if (result.migratedCiphertext) {
+    localStorage.setItem(storageKey, result.migratedCiphertext);
+  }
+
+  return result.data;
 };
 
 /**
- * Remove an item completely
+ * Elimina un elemento de localStorage.
  */
 export const removeSecureItem = (storageKey: string): void => {
   localStorage.removeItem(storageKey);

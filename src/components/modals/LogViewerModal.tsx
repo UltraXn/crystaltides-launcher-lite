@@ -210,20 +210,35 @@ export const getLineSeverity = (line: string): 'error' | 'warn' | 'info' | 'othe
   return 'other';
 };
 
+export const MAX_LOG_LINES = 5000;
+export const MAX_RENDERED_LINES = 1000;
+
+export interface ParsedLogLine {
+  id: string;
+  lineNumber: number;
+  text: string;
+  severity: 'error' | 'warn' | 'info' | 'other';
+}
+
 function useLogViewer(isOpen: boolean, defaultTab: LogActiveTab) {
   const [activeTab, setActiveTab] = useState<LogActiveTab>(defaultTab);
   const [severityFilter, setSeverityFilter] = useState<LogSeverityFilter>('all');
-  const [logs, setLogs] = useState<string>('');
+  const [parsedLines, setParsedLines] = useState<ParsedLogLine[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [copied, setCopied] = useState<boolean>(false);
   const [searchFilter, setSearchFilter] = useState<string>('');
   const [autoScroll, setAutoScroll] = useState<boolean>(true);
   const [wrapLines, setWrapLines] = useState<boolean>(true);
   const logContainerRef = useRef<HTMLDivElement>(null);
+  const pendingBufferRef = useRef<Array<{ line: string; level?: string }>>([]);
+
+  const fullLogsText = useMemo(() => {
+    return parsedLines.map((l) => l.text).join('\n');
+  }, [parsedLines]);
 
   const handleDownload = () => {
     try {
-      const blob = new Blob([logs], { type: 'text/plain;charset=utf-8' });
+      const blob = new Blob([fullLogsText], { type: 'text/plain;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -237,18 +252,34 @@ function useLogViewer(isOpen: boolean, defaultTab: LogActiveTab) {
 
   const fetchLogs = React.useCallback(async () => {
     setLoading(true);
-    setLogs((prev) => (prev.startsWith('Error al obtener registros:') ? '' : prev));
     try {
       const cmd = activeTab === 'launcher' ? 'get_launcher_logs' : 'get_minecraft_logs';
       const fallback =
         activeTab === 'launcher'
           ? 'No hay registros disponibles en launcher.log.'
           : 'No hay registros de juego disponibles aún en minecraft.log.';
-      const data = await invoke<string>(cmd, { maxLines: 1000 });
+      const data = await invoke<string>(cmd, { maxLines: 2000 });
       const cleanData = typeof data === 'string' ? data.trim() : '';
-      setLogs(cleanData ? data : fallback);
+      const textToParse = cleanData ? data : fallback;
+      const lines = textToParse.split('\n');
+      const capped = lines.length > MAX_LOG_LINES ? lines.slice(-MAX_LOG_LINES) : lines;
+      const parsed: ParsedLogLine[] = capped.map((line, idx) => ({
+        id: `init-${idx}-${line.slice(0, 16)}`,
+        lineNumber: idx + 1,
+        text: line,
+        severity: getLineSeverity(line),
+      }));
+      setParsedLines(parsed);
     } catch (e) {
-      setLogs(`Error al obtener registros: ${e}`);
+      const errText = `Error al obtener registros: ${e}`;
+      setParsedLines([
+        {
+          id: 'error-0',
+          lineNumber: 1,
+          text: errText,
+          severity: 'error',
+        },
+      ]);
     } finally {
       setLoading(false);
     }
@@ -260,40 +291,92 @@ function useLogViewer(isOpen: boolean, defaultTab: LogActiveTab) {
     }
   }, [isOpen, fetchLogs]);
 
-  // Streaming en vivo de logs de Minecraft mediante el evento game-log emitido por el backend
+  // Streaming en vivo y acumulador de eventos con volcado periódico cada ~100 ms
   useEffect(() => {
     if (!isOpen || activeTab !== 'minecraft') return;
 
     let cancelled = false;
-    let unlistenFn: (() => void) | undefined;
+    let unlistenLog: (() => void) | undefined;
+    let unlistenBatch: (() => void) | undefined;
+
+    const timer = setInterval(() => {
+      if (pendingBufferRef.current.length === 0) return;
+      const incoming = pendingBufferRef.current;
+      pendingBufferRef.current = [];
+
+      setParsedLines((prev) => {
+        const base =
+          prev.length === 1 && prev[0].text.startsWith('No hay registros de juego disponibles')
+            ? []
+            : prev;
+
+        let nextLineNum = base.length > 0 ? base[base.length - 1].lineNumber : 0;
+        const newEntries: ParsedLogLine[] = incoming.map((item, idx) => {
+          nextLineNum++;
+          const sev = item.level
+            ? /error|fatal/i.test(item.level)
+              ? 'error'
+              : /warn/i.test(item.level)
+                ? 'warn'
+                : /info/i.test(item.level)
+                  ? 'info'
+                  : 'other'
+            : getLineSeverity(item.line);
+
+          return {
+            id: `stream-${Date.now()}-${idx}-${nextLineNum}`,
+            lineNumber: nextLineNum,
+            text: item.line,
+            severity: sev,
+          };
+        });
+
+        const combined = [...base, ...newEntries];
+        return combined.length > MAX_LOG_LINES ? combined.slice(-MAX_LOG_LINES) : combined;
+      });
+    }, 100);
 
     import('@tauri-apps/api/event')
-      .then(({ listen }) => {
+      .then(async ({ listen }) => {
         if (cancelled) return;
-        return listen<{ line: string; level: string }>('game-log', (event) => {
-          if (cancelled || !event.payload?.line) return;
-          setLogs((prev: string) => {
-            if (prev.startsWith('No hay registros de juego disponibles')) {
-              return event.payload.line;
+
+        // 1. Evento individual game-log y 2. Evento por lotes game-log-batch en paralelo
+        const [unLog, unBatch] = await Promise.all([
+          listen<{ line: string; level?: string }>('game-log', (event) => {
+            if (cancelled || !event.payload?.line) return;
+            pendingBufferRef.current.push({
+              line: event.payload.line,
+              level: event.payload.level,
+            });
+          }),
+          listen<{ lines: Array<{ line: string; level?: string }> }>('game-log-batch', (event) => {
+            if (cancelled || !Array.isArray(event.payload?.lines)) return;
+            for (const item of event.payload.lines) {
+              if (item?.line) {
+                pendingBufferRef.current.push(item);
+              }
             }
-            return `${prev}\n${event.payload.line}`;
-          });
-        });
-      })
-      .then((fn) => {
+          }),
+        ]);
+
         if (cancelled) {
-          fn?.();
+          unLog();
+          unBatch();
         } else {
-          unlistenFn = fn;
+          unlistenLog = unLog;
+          unlistenBatch = unBatch;
         }
       })
       .catch((err) => {
-        console.warn('[LogViewer] Error al suscribir evento game-log:', err);
+        console.warn('[LogViewer] Error al suscribir eventos de log:', err);
       });
 
     return () => {
       cancelled = true;
-      if (unlistenFn) unlistenFn();
+      clearInterval(timer);
+      pendingBufferRef.current = [];
+      if (unlistenLog) unlistenLog();
+      if (unlistenBatch) unlistenBatch();
     };
   }, [isOpen, activeTab]);
 
@@ -301,45 +384,43 @@ function useLogViewer(isOpen: boolean, defaultTab: LogActiveTab) {
     if (autoScroll && logContainerRef.current) {
       logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
     }
-  }, [logs, autoScroll]);
-
-  const rawLines = useMemo(() => logs.split('\n'), [logs]);
+  }, [parsedLines, autoScroll]);
 
   const counts = useMemo(() => {
     let errors = 0;
     let warns = 0;
     let infos = 0;
-    for (const line of rawLines) {
-      const sev = getLineSeverity(line);
-      if (sev === 'error') errors++;
-      else if (sev === 'warn') warns++;
-      else if (sev === 'info') infos++;
+    for (const item of parsedLines) {
+      if (item.severity === 'error') errors++;
+      else if (item.severity === 'warn') warns++;
+      else if (item.severity === 'info') infos++;
     }
-    return { errors, warns, infos, total: rawLines.length };
-  }, [rawLines]);
+    return { errors, warns, infos, total: parsedLines.length };
+  }, [parsedLines]);
 
   const filteredLines = useMemo(() => {
     const filter = searchFilter.trim().toLowerCase();
-    return rawLines
-      .map((line, offset) => ({
-        id: `entry-${offset}-${line.slice(0, 24)}`,
-        lineNumber: offset + 1,
-        text: line,
-      }))
-      .filter((item) => {
-        if (severityFilter !== 'all' && getLineSeverity(item.text) !== severityFilter) {
-          return false;
-        }
-        if (filter && !item.text.toLowerCase().includes(filter)) {
-          return false;
-        }
-        return true;
-      });
-  }, [rawLines, searchFilter, severityFilter]);
+    return parsedLines.filter((item) => {
+      if (severityFilter !== 'all' && item.severity !== severityFilter) {
+        return false;
+      }
+      if (filter && !item.text.toLowerCase().includes(filter)) {
+        return false;
+      }
+      return true;
+    });
+  }, [parsedLines, searchFilter, severityFilter]);
+
+  const displayedLines = useMemo(() => {
+    if (filteredLines.length <= MAX_RENDERED_LINES) {
+      return filteredLines;
+    }
+    return filteredLines.slice(-MAX_RENDERED_LINES);
+  }, [filteredLines]);
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(logs);
+      await navigator.clipboard.writeText(fullLogsText);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
@@ -361,7 +442,9 @@ function useLogViewer(isOpen: boolean, defaultTab: LogActiveTab) {
     severityFilter,
     setSeverityFilter,
     counts,
-    logs,
+    logs: fullLogsText,
+    parsedLines,
+    totalLines: parsedLines.length,
     loading,
     copied,
     searchFilter,
@@ -370,6 +453,7 @@ function useLogViewer(isOpen: boolean, defaultTab: LogActiveTab) {
     setAutoScroll,
     logContainerRef,
     filteredLines,
+    displayedLines,
     fetchLogs,
     handleCopy,
     wrapLines,
@@ -826,44 +910,67 @@ const LogViewerToolbar: React.FC<LogViewerToolbarProps> = ({
 interface LogViewerBodyProps {
   logContainerRef: React.RefObject<HTMLDivElement | null>;
   loading: boolean;
-  logsLength: number;
+  totalParsedCount: number;
   searchFilter: string;
-  filteredLines: Array<{ id: string; lineNumber: number; text: string }>;
+  filteredCount: number;
+  displayedLines: ParsedLogLine[];
   wrapLines: boolean;
 }
 
 const renderLogLinesContent = (
   loading: boolean,
-  logsLength: number,
-  filteredLines: Array<{ id: string; lineNumber: number; text: string }>,
+  totalParsedCount: number,
+  displayedLines: ParsedLogLine[],
+  filteredCount: number,
   searchFilter: string,
   wrapLines: boolean,
 ) => {
-  if (loading && logsLength === 0) {
+  if (loading && totalParsedCount === 0) {
     return (
       <div style={{ color: '#64748b', textAlign: 'center', padding: '50px' }}>
         Cargando registros...
       </div>
     );
   }
-  if (filteredLines.length === 0) {
+  if (filteredCount === 0) {
     return (
       <div style={{ color: '#64748b', textAlign: 'center', padding: '50px' }}>
         No se encontraron coincidencias para "{searchFilter}".
       </div>
     );
   }
-  return filteredLines.map((item) => (
-    <LogLineItem key={item.id} item={item} wrapLines={wrapLines} />
-  ));
+  return (
+    <>
+      {filteredCount > displayedLines.length && (
+        <div
+          style={{
+            padding: '4px 8px',
+            marginBottom: '8px',
+            fontSize: '10px',
+            color: '#94a3b8',
+            background: 'rgba(255, 255, 255, 0.04)',
+            borderRadius: '4px',
+            border: '1px dashed rgba(255, 255, 255, 0.1)',
+            textAlign: 'center',
+          }}
+        >
+          Mostrando las últimas {displayedLines.length} líneas de {filteredCount} coincidencias.
+        </div>
+      )}
+      {displayedLines.map((item) => (
+        <LogLineItem key={item.id} item={item} wrapLines={wrapLines} />
+      ))}
+    </>
+  );
 };
 
 const LogViewerBody: React.FC<LogViewerBodyProps> = ({
   logContainerRef,
   loading,
-  logsLength,
+  totalParsedCount,
   searchFilter,
-  filteredLines,
+  filteredCount,
+  displayedLines,
   wrapLines,
 }) => (
   <div
@@ -882,7 +989,14 @@ const LogViewerBody: React.FC<LogViewerBodyProps> = ({
       scrollbarColor: 'rgba(22, 160, 133, 0.35) rgba(5, 8, 17, 0.6)',
     }}
   >
-    {renderLogLinesContent(loading, logsLength, filteredLines, searchFilter, wrapLines)}
+    {renderLogLinesContent(
+      loading,
+      totalParsedCount,
+      displayedLines,
+      filteredCount,
+      searchFilter,
+      wrapLines,
+    )}
   </div>
 );
 
@@ -949,7 +1063,6 @@ export const LogViewerModal: React.FC<LogViewerModalProps> = ({
     severityFilter,
     setSeverityFilter,
     counts,
-    logs,
     loading,
     copied,
     searchFilter,
@@ -961,6 +1074,8 @@ export const LogViewerModal: React.FC<LogViewerModalProps> = ({
     handleDownload,
     logContainerRef,
     filteredLines,
+    displayedLines,
+    totalLines,
     fetchLogs,
     handleCopy,
     handleOpenFolder,
@@ -1026,14 +1141,15 @@ export const LogViewerModal: React.FC<LogViewerModalProps> = ({
         <LogViewerBody
           logContainerRef={logContainerRef}
           loading={loading}
-          logsLength={logs.length}
+          totalParsedCount={totalLines}
           searchFilter={searchFilter}
-          filteredLines={filteredLines}
+          filteredCount={filteredLines.length}
+          displayedLines={displayedLines}
           wrapLines={wrapLines}
         />
         <LogViewerFooter
           filteredCount={filteredLines.length}
-          totalLines={logs.split('\n').length}
+          totalLines={totalLines}
           searchFilter={searchFilter}
           activeTab={activeTab}
         />

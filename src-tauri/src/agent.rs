@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU16, Ordering};
@@ -23,8 +22,10 @@ pub struct AgentConfig {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AgentBenchmarkMetrics {
-    pub average_fps: f64,
-    pub frametime_p99_ms: f64,
+    /// `None` cuando no hay fuente de frames (instancia sin crystaltides-boost); `Some(0.0)`
+    /// es un dato real (p. ej. ventana minimizada).
+    pub average_fps: Option<f64>,
+    pub frametime_p99_ms: Option<f64>,
     pub gc_pause_time_ms: f64,
     pub swapchain_backend: String,
     pub integrity_status: String,
@@ -57,22 +58,20 @@ pub(crate) enum IncomingIpcMessage {
     },
     #[serde(rename = "telemetry")]
     Telemetry {
-        fps: f64,
-        frametime_p99_ms: f64,
+        fps: Option<f64>,
+        frametime_p99_ms: Option<f64>,
         gc_pause_time_ms: f64,
         memory_used_mb: Option<u64>,
         memory_total_mb: Option<u64>,
         swapchain_backend: Option<String>,
     },
     #[serde(rename = "game_ready")]
-    GameReady {
-        load_duration_ms: Option<u64>,
-    },
+    GameReady { load_duration_ms: Option<u64> },
 }
 
 pub const MAX_IPC_FRAME_BYTES: usize = 16384; // 16 KB anti-DoS limit
 
-static LIVE_METRICS: OnceLock<Arc<Mutex<AgentBenchmarkMetrics>>> = OnceLock::new();
+static LIVE_METRICS: OnceLock<Arc<Mutex<Option<AgentBenchmarkMetrics>>>> = OnceLock::new();
 static ACTUAL_IPC_PORT: AtomicU16 = AtomicU16::new(0);
 static EXPECTED_SESSION_TOKEN: OnceLock<Mutex<Option<String>>> = OnceLock::new();
 static IPC_INIT_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
@@ -110,30 +109,32 @@ pub fn verify_session_token(token: Option<&str>) -> bool {
     }
 }
 
-pub(crate) fn sanitize_telemetry(fps: f64, frametime_p99_ms: f64, gc_pause_time_ms: f64) -> (f64, f64, f64) {
-    let clean_fps = if fps.is_finite() && fps >= 0.0 { fps.min(1000.0) } else { 0.0 };
-    let clean_p99 = if frametime_p99_ms.is_finite() && frametime_p99_ms >= 0.0 { frametime_p99_ms.min(10000.0) } else { 0.0 };
-    let clean_gc = if gc_pause_time_ms.is_finite() && gc_pause_time_ms >= 0.0 { gc_pause_time_ms.min(60000.0) } else { 0.0 };
+/// Descarta valores no finitos o negativos y acota a `max`.
+fn sanitize_metric(value: f64, max: f64) -> Option<f64> {
+    (value.is_finite() && value >= 0.0).then(|| value.min(max))
+}
+
+pub(crate) fn sanitize_telemetry(
+    fps: Option<f64>,
+    frametime_p99_ms: Option<f64>,
+    gc_pause_time_ms: f64,
+) -> (Option<f64>, Option<f64>, f64) {
+    // Un menú sin límite de FPS puede superar los 1000 FPS reales: el tope solo filtra basura
+    let clean_fps = fps.and_then(|v| sanitize_metric(v, 100_000.0));
+    let clean_p99 = frametime_p99_ms.and_then(|v| sanitize_metric(v, 10_000.0));
+    let clean_gc = sanitize_metric(gc_pause_time_ms, 60_000.0).unwrap_or(0.0);
     (clean_fps, clean_p99, clean_gc)
 }
 
-fn get_live_metrics_handle() -> &'static Arc<Mutex<AgentBenchmarkMetrics>> {
-    LIVE_METRICS.get_or_init(|| {
-        let is_vulkan = cfg!(target_os = "windows");
-        Arc::new(Mutex::new(AgentBenchmarkMetrics {
-            average_fps: 144.0,
-            frametime_p99_ms: 6.94,
-            gc_pause_time_ms: 0.0,
-            swapchain_backend: if is_vulkan {
-                "OpenGL/Vulkan Dual Layer".to_string()
-            } else {
-                "OpenGL Core".to_string()
-            },
-            integrity_status: "VERIFIED_STANDBY".to_string(),
-            memory_used_mb: None,
-            memory_total_mb: None,
-        }))
-    })
+fn get_live_metrics_handle() -> &'static Arc<Mutex<Option<AgentBenchmarkMetrics>>> {
+    LIVE_METRICS.get_or_init(|| Arc::new(Mutex::new(None)))
+}
+
+pub fn reset_live_metrics() {
+    let handle = get_live_metrics_handle();
+    if let Ok(mut lock) = handle.lock() {
+        *lock = None;
+    }
 }
 
 pub(crate) fn parse_ipc_line(line: &str) -> Option<IncomingIpcMessage> {
@@ -155,14 +156,20 @@ fn handle_handshake(
         crate::logger::log(
             "WARN",
             "GameIPC",
-            &format!("Handshake rechazado para {}: token de sesión inválido", peer),
+            &format!(
+                "Handshake rechazado para {}: token de sesión inválido",
+                peer
+            ),
         );
         return false;
     }
 
     if let Some(ref rend) = payload.gl_renderer {
         let rend_lower = rend.to_lowercase();
-        if rend_lower.contains("intel") || rend_lower.contains("microsoft basic") || rend_lower.contains("llvmpipe") {
+        if rend_lower.contains("intel")
+            || rend_lower.contains("microsoft basic")
+            || rend_lower.contains("llvmpipe")
+        {
             crate::logger::log(
                 "WARN",
                 "GameIPC",
@@ -190,42 +197,60 @@ fn handle_handshake(
 
 fn handle_telemetry(
     app: &AppHandle,
-    fps: f64,
-    frametime_p99_ms: f64,
+    fps: Option<f64>,
+    frametime_p99_ms: Option<f64>,
     gc_pause_time_ms: f64,
     memory_used_mb: Option<u64>,
     memory_total_mb: Option<u64>,
     swapchain_backend: Option<String>,
 ) {
-    if gc_pause_time_ms > 250.0 {
+    let (clean_fps, clean_p99, clean_gc) =
+        sanitize_telemetry(fps, frametime_p99_ms, gc_pause_time_ms);
+
+    if clean_gc > 250.0 {
+        let fmt_opt = |v: Option<f64>, decimals: usize| {
+            v.map_or_else(|| "n/d".to_string(), |v| format!("{:.*}", decimals, v))
+        };
         crate::logger::log(
             "WARN",
             "GameIPC",
             &format!(
-                "Pausa severa de GC detectada: {:.1} ms (FPS: {:.0}, p99: {:.2} ms). Evaluando presión de memoria.",
-                gc_pause_time_ms, fps, frametime_p99_ms
+                "Pausa severa de GC detectada: {:.1} ms (FPS: {}, p99: {} ms). Evaluando presión de memoria.",
+                clean_gc,
+                fmt_opt(clean_fps, 0),
+                fmt_opt(clean_p99, 2)
             ),
         );
     }
 
-    let (clean_fps, clean_p99, clean_gc) = sanitize_telemetry(fps, frametime_p99_ms, gc_pause_time_ms);
     let metrics_lock = get_live_metrics_handle();
     if let Ok(mut lock) = metrics_lock.lock() {
-        lock.average_fps = clean_fps;
-        lock.frametime_p99_ms = clean_p99;
-        lock.gc_pause_time_ms = clean_gc;
-        lock.memory_used_mb = memory_used_mb;
-        lock.memory_total_mb = memory_total_mb;
-        if let Some(sw) = swapchain_backend {
-            lock.swapchain_backend = sw;
-        }
-        lock.integrity_status = "ONLINE_LINKED".to_string();
+        let current_sw = swapchain_backend.unwrap_or_else(|| {
+            lock.as_ref()
+                .map(|m| m.swapchain_backend.clone())
+                .unwrap_or_else(|| "OpenGL".to_string())
+        });
 
-        let _ = app.emit("game-ipc-metrics", lock.clone());
+        let updated = AgentBenchmarkMetrics {
+            average_fps: clean_fps,
+            frametime_p99_ms: clean_p99,
+            gc_pause_time_ms: clean_gc,
+            swapchain_backend: current_sw,
+            integrity_status: "ONLINE_LINKED".to_string(),
+            memory_used_mb,
+            memory_total_mb,
+        };
+        *lock = Some(updated.clone());
+
+        let _ = app.emit("game-ipc-metrics", updated);
     }
 }
 
-async fn handle_ipc_client(app: AppHandle, stream: tokio::net::TcpStream, peer: std::net::SocketAddr) {
+async fn handle_ipc_client(
+    app: AppHandle,
+    stream: tokio::net::TcpStream,
+    peer: std::net::SocketAddr,
+) {
     let (reader, _writer) = stream.into_split();
     let mut buf_reader = BufReader::new(reader);
     let mut line = String::new();
@@ -238,11 +263,17 @@ async fn handle_ipc_client(app: AppHandle, stream: tokio::net::TcpStream, peer: 
         match limited.read_line(&mut line).await {
             Ok(0) => break, // EOF
             Ok(n) if n > MAX_IPC_FRAME_BYTES => {
-                crate::logger::log("WARN", "GameIPC", "Frame excedió límite de tamaño; desconectando.");
+                crate::logger::log(
+                    "WARN",
+                    "GameIPC",
+                    "Frame excedió límite de tamaño; desconectando.",
+                );
                 break;
             }
             Ok(_) => {
-                let Some(msg) = parse_ipc_line(&line) else { continue };
+                let Some(msg) = parse_ipc_line(&line) else {
+                    continue;
+                };
                 match msg {
                     IncomingIpcMessage::Handshake {
                         token,
@@ -289,7 +320,10 @@ async fn handle_ipc_client(app: AppHandle, stream: tokio::net::TcpStream, peer: 
                         crate::logger::log(
                             "INFO",
                             "GameIPC",
-                            &format!("Minecraft reportó TitleScreen listo en {:?} ms", load_duration_ms),
+                            &format!(
+                                "Minecraft reportó TitleScreen listo en {:?} ms",
+                                load_duration_ms
+                            ),
                         );
                         let _ = app.emit("game-ipc-ready", load_duration_ms);
                     }
@@ -384,38 +418,48 @@ pub async fn start_game_ipc_server(app_handle: AppHandle) -> Result<u16, String>
 
 const EMBEDDED_AGENT_JAR: &[u8] = include_bytes!("../assets/game-bridge.jar");
 #[cfg(target_os = "windows")]
-const EMBEDDED_AGENT_DLL: &[u8] = include_bytes!("../assets/game_bridge_core.dll");
-#[cfg(target_os = "windows")]
 const EMBEDDED_CT_AGENT_DLL: &[u8] = include_bytes!("../assets/ct-agent.dll");
-const EMBEDDED_BOOST_JAR: &[u8] = include_bytes!("../assets/crystaltides-boost.jar");
+const EMBEDDED_BOOST_FABRIC_JAR: &[u8] = include_bytes!("../assets/crystaltides-boost-fabric.jar");
+const EMBEDDED_BOOST_NEOFORGE_JAR: &[u8] =
+    include_bytes!("../assets/crystaltides-boost-neoforge.jar");
+/// SHA-256 de builds de crystaltides-boost.jar desplegados por versiones anteriores del launcher.
+/// Al reemplazar los jars embebidos, añadir aquí los hashes previos para que
+/// `remove_crystaltides_boost` pueda seguir limpiándolos de instancias existentes.
+const LEGACY_BOOST_JAR_SHA256: &[&str] = &[
+    "8b87d7242e7e37b57dde2997914bb69884fd253378c8856bddbcfbff27bfcfd8",
+    "55fbe3a673d0efdc614464c996d5a57d1c36b8a6afcb4f5b09bfd52a1f68917a", // fabric 1.0.0 (sin agent bridge)
+    "d667f0b8fa70d1dec49fc546fd3a5a2ce6589ac0ad86d206c1516bdc59568461", // neoforge 1.0.0 (sin agent bridge)
+    "9c39a75d0ad8c87c84b1f56522a47575f8ecb5d280aea0e562a1443b6f4740a7", // crystaltides-boost-fabric.jar previo (sync 2026-10-16)
+    "e53774d3b5aa9227920d421515a6eae5a4b5ca2ee8e3233203948f6387d739e2", // crystaltides-boost-neoforge.jar previo (sync 2026-10-16)
+    "4512f6021b5af028fec4ceb8e484632b985259d63677eaa5b3ae9481afdeac81", // crystaltides-boost-fabric.jar previo (sync 2026-10-16)
+    "f194c8c377502029a8d58e3f1f66e38c5bf8b2bb374ee20c50d6c54a04d26f2c", // crystaltides-boost-neoforge.jar previo (sync 2026-10-16)
+];
+
+fn is_known_boost_jar(bytes: &[u8]) -> bool {
+    use sha2::Digest;
+
+    if bytes == EMBEDDED_BOOST_FABRIC_JAR || bytes == EMBEDDED_BOOST_NEOFORGE_JAR {
+        return true;
+    }
+    let sha256 = hex::encode(sha2::Sha256::digest(bytes));
+    LEGACY_BOOST_JAR_SHA256.contains(&sha256.as_str())
+}
 
 fn file_sha256_matches(path: &Path, expected_bytes: &[u8]) -> bool {
     let Ok(existing_bytes) = fs::read(path) else {
         return false;
     };
-    Sha256::digest(&existing_bytes) == Sha256::digest(expected_bytes)
+    existing_bytes == expected_bytes
 }
 
 pub fn validate_game_dir(game_dir: &str) -> Result<PathBuf, String> {
-    let trimmed = game_dir.trim();
-    if trimmed.is_empty() {
-        return Err("El directorio del juego no puede estar vacío".to_string());
-    }
-    let path = PathBuf::from(trimmed);
-    if !path.is_absolute() {
-        return Err("Ruta no autorizada: El directorio del juego debe ser una ruta absoluta".to_string());
-    }
-    for component in path.components() {
-        if let std::path::Component::ParentDir = component {
-            return Err("Ruta no autorizada: Detectada navegación relativa hacia directorios padres".to_string());
-        }
-    }
-    Ok(path)
+    crate::paths::validate_game_dir(game_dir)
 }
 
 fn deploy_agent_jar(base_path: &Path) {
     let target_jar = base_path.join("game-bridge.jar");
-    let needs_deploy = !target_jar.exists() || !file_sha256_matches(&target_jar, EMBEDDED_AGENT_JAR);
+    let needs_deploy =
+        !target_jar.exists() || !file_sha256_matches(&target_jar, EMBEDDED_AGENT_JAR);
 
     if needs_deploy {
         if let Err(e) = fs::write(&target_jar, EMBEDDED_AGENT_JAR) {
@@ -434,16 +478,35 @@ fn deploy_agent_jar(base_path: &Path) {
     }
 }
 
-pub fn deploy_boost_mod(base_path: &Path) {
+pub fn deploy_boost_mod(base_path: &Path, loader_type: &str) {
+    let loader = loader_type.to_lowercase();
+    let jar_bytes: Option<&[u8]> = match loader.as_str() {
+        "fabric" | "quilt" => Some(EMBEDDED_BOOST_FABRIC_JAR),
+        "neoforge" => Some(EMBEDDED_BOOST_NEOFORGE_JAR),
+        _ => None,
+    };
+
+    let Some(bytes) = jar_bytes else {
+        crate::logger::log(
+            "WARN",
+            "CrystalBoost",
+            &format!(
+                "Loader '{}' no es compatible con CrystalTides Boost. Despliegue omitido.",
+                loader_type
+            ),
+        );
+        return;
+    };
+
     let mods_dir = base_path.join("mods");
     let target_jar = mods_dir.join("crystaltides-boost.jar");
     if !mods_dir.exists() {
         let _ = fs::create_dir_all(&mods_dir);
     }
-    let needs_deploy = !target_jar.exists() || !file_sha256_matches(&target_jar, EMBEDDED_BOOST_JAR);
+    let needs_deploy = !target_jar.exists() || !file_sha256_matches(&target_jar, bytes);
 
     if needs_deploy {
-        if let Err(e) = fs::write(&target_jar, EMBEDDED_BOOST_JAR) {
+        if let Err(e) = fs::write(&target_jar, bytes) {
             crate::logger::log(
                 "WARN",
                 "CrystalBoost",
@@ -453,51 +516,91 @@ pub fn deploy_boost_mod(base_path: &Path) {
             crate::logger::log(
                 "INFO",
                 "CrystalBoost",
-                "crystaltides-boost.jar desplegado automáticamente en mods/.",
+                &format!(
+                    "crystaltides-boost.jar ({}) desplegado automáticamente en mods/.",
+                    loader_type
+                ),
             );
         }
     }
 }
 
 #[tauri::command]
-pub fn deploy_crystaltides_boost(game_dir: String) -> Result<bool, String> {
-    let base_path = validate_game_dir(&game_dir)?;
-    deploy_boost_mod(&base_path);
-    Ok(true)
+pub async fn deploy_crystaltides_boost(
+    game_dir: String,
+    loader_type: Option<String>,
+) -> Result<bool, String> {
+    tokio::task::spawn_blocking(move || {
+        let base_path = validate_game_dir(&game_dir)?;
+        let loader = loader_type.unwrap_or_else(|| "fabric".to_string());
+        deploy_boost_mod(&base_path, &loader);
+        Ok(true)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn remove_crystaltides_boost(game_dir: String) -> Result<bool, String> {
+    tokio::task::spawn_blocking(move || {
+        let base_path = validate_game_dir(&game_dir)?;
+        let mods_dir = base_path.join("mods");
+        let target_jar = mods_dir.join("crystaltides-boost.jar");
+
+        if !target_jar.exists() {
+            return Ok(false);
+        }
+
+        let existing_bytes = match fs::read(&target_jar) {
+            Ok(b) => b,
+            Err(e) => {
+                crate::logger::log(
+                    "WARN",
+                    "CrystalBoost",
+                    &format!(
+                        "No se pudo leer crystaltides-boost.jar para verificar antes de borrar: {}",
+                        e
+                    ),
+                );
+                return Err(format!("No se pudo leer crystaltides-boost.jar: {}", e));
+            }
+        };
+
+        if is_known_boost_jar(&existing_bytes) {
+            if let Err(e) = fs::remove_file(&target_jar) {
+                crate::logger::log(
+                    "WARN",
+                    "CrystalBoost",
+                    &format!("No se pudo eliminar crystaltides-boost.jar: {}", e),
+                );
+                return Err(format!("No se pudo eliminar crystaltides-boost.jar: {}", e));
+            }
+            crate::logger::log(
+                "INFO",
+                "CrystalBoost",
+                "crystaltides-boost.jar obsoleto/no aplicable eliminado de mods/.",
+            );
+            Ok(true)
+        } else {
+            crate::logger::log(
+                "WARN",
+                "CrystalBoost",
+                "crystaltides-boost.jar detectado en mods/, pero no coincide byte a byte con los binarios embebidos del launcher. No se eliminará.",
+            );
+            Ok(false)
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 fn deploy_native_agent(natives_dir: &Path) -> PathBuf {
-    let lib_filename = if cfg!(target_os = "windows") {
-        "game_bridge_core.dll"
-    } else if cfg!(target_os = "macos") {
-        "libgame_bridge_core.dylib"
-    } else {
-        "libgame_bridge_core.so"
-    };
-
-    let agent_path = natives_dir.join(lib_filename);
+    let ct_agent_path = natives_dir.join("ct-agent.dll");
 
     #[cfg(target_os = "windows")]
     {
-        let needs_deploy = !agent_path.exists() || !file_sha256_matches(&agent_path, EMBEDDED_AGENT_DLL);
-        if needs_deploy {
-            if let Err(e) = fs::write(&agent_path, EMBEDDED_AGENT_DLL) {
-                crate::logger::log(
-                    "WARN",
-                    "CrystalAgent",
-                    &format!("No se pudo escribir game_bridge_core.dll embebido: {}", e),
-                );
-            } else {
-                crate::logger::log(
-                    "INFO",
-                    "CrystalAgent",
-                    "game_bridge_core.dll desplegado automáticamente en natives.",
-                );
-            }
-        }
-
-        let ct_agent_path = natives_dir.join("ct-agent.dll");
-        let needs_deploy_ct = !ct_agent_path.exists() || !file_sha256_matches(&ct_agent_path, EMBEDDED_CT_AGENT_DLL);
+        let needs_deploy_ct =
+            !ct_agent_path.exists() || !file_sha256_matches(&ct_agent_path, EMBEDDED_CT_AGENT_DLL);
         if needs_deploy_ct {
             if let Err(e) = fs::write(&ct_agent_path, EMBEDDED_CT_AGENT_DLL) {
                 crate::logger::log(
@@ -525,17 +628,17 @@ fn deploy_native_agent(natives_dir: &Path) -> PathBuf {
         );
     }
 
-    agent_path
+    ct_agent_path
 }
 
 fn generate_agent_token(agent_path: &Path) -> String {
     #[cfg(target_os = "windows")]
     {
-        if agent_path.exists() && !file_sha256_matches(agent_path, EMBEDDED_AGENT_DLL) {
+        if agent_path.exists() && !file_sha256_matches(agent_path, EMBEDDED_CT_AGENT_DLL) {
             crate::logger::log(
                 "WARN",
                 "CrystalAgent",
-                "Advertencia de integridad: SHA-256 de game_bridge_core.dll en disco difiere del binario embebido.",
+                "Advertencia de integridad: SHA-256 de ct-agent.dll en disco difiere del binario embebido.",
             );
         }
     }
@@ -547,39 +650,108 @@ fn generate_agent_token(agent_path: &Path) -> String {
     session_tok
 }
 
-/// Prepara y verifica la presencia e integridad del binario nativo Crystal Agent (`game_bridge_core.dll` / `.so`)
+/// Prepara y verifica la presencia e integridad del binario nativo Crystal Agent (`ct-agent.dll`)
 #[tauri::command]
-pub fn prepare_crystal_agent(game_dir: String) -> Result<AgentConfig, String> {
-    let base_path = validate_game_dir(&game_dir)?;
-    let natives_dir = base_path.join("natives");
+pub async fn prepare_crystal_agent(game_dir: String) -> Result<AgentConfig, String> {
+    tokio::task::spawn_blocking(move || {
+        let base_path = validate_game_dir(&game_dir)?;
+        let natives_dir = base_path.join("natives");
 
-    if !natives_dir.exists() {
-        fs::create_dir_all(&natives_dir)
-            .map_err(|e| format!("Failed to create natives directory: {}", e))?;
-    }
+        if !natives_dir.exists() {
+            fs::create_dir_all(&natives_dir)
+                .map_err(|e| format!("Failed to create natives directory: {}", e))?;
+        }
 
-    deploy_agent_jar(&base_path);
-    let agent_path = deploy_native_agent(&natives_dir);
-    let session_tok = generate_agent_token(&agent_path);
+        for subdir in &["jna", "lwjgl", "netty", "java"] {
+            let _ = fs::create_dir_all(natives_dir.join(subdir));
+        }
 
-    Ok(AgentConfig {
-        agent_enabled: true,
-        native_library_path: agent_path.to_string_lossy().to_string(),
-        agent_version: "2.0.0-native-fsr3.1".to_string(),
-        injected_pid: None,
-        handshake_token: session_tok,
-        ipc_port: get_actual_game_ipc_port(),
+        deploy_agent_jar(&base_path);
+        let agent_path = deploy_native_agent(&natives_dir);
+        let session_tok = generate_agent_token(&agent_path);
+
+        Ok(AgentConfig {
+            agent_enabled: true,
+            native_library_path: agent_path.to_string_lossy().to_string(),
+            agent_version: "2.0.0-native".to_string(),
+            injected_pid: None,
+            handshake_token: session_tok,
+            ipc_port: get_actual_game_ipc_port(),
+        })
     })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+fn resolve_instance_mc_version(base_path: &Path) -> String {
+    let cf_path = base_path.join("minecraftinstance.json");
+    if let Ok(content) = fs::read_to_string(&cf_path) {
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+            if let Some(v) = val
+                .get("minecraftVersion")
+                .and_then(|v| v.as_str())
+                .or_else(|| {
+                    val.get("manifest")
+                        .and_then(|m| m.get("minecraft"))
+                        .and_then(|mc| mc.get("version"))
+                        .and_then(|v| v.as_str())
+                })
+            {
+                return v.to_string();
+            }
+        }
+    }
+    let mr_path = base_path.join("profile.json");
+    if let Ok(content) = fs::read_to_string(&mr_path) {
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+            if let Some(v) = val.get("game_version").and_then(|v| v.as_str()) {
+                return v.to_string();
+            }
+        }
+    }
+    let cfg_path = base_path.join("instance.cfg");
+    if let Ok(content) = fs::read_to_string(&cfg_path) {
+        for line in content.lines() {
+            if let Some(rest) = line.strip_prefix("IntendedVersion=") {
+                let v = rest.trim();
+                if !v.is_empty() {
+                    return v.to_string();
+                }
+            }
+        }
+    }
+    let versions_dir = base_path.join("versions");
+    if let Ok(entries) = fs::read_dir(&versions_dir) {
+        for entry in entries.flatten() {
+            if entry.path().is_dir() {
+                if let Some(name) = entry.file_name().to_str() {
+                    if !name.is_empty() {
+                        return name.to_string();
+                    }
+                }
+            }
+        }
+    }
+    "1.21.1".to_string()
+}
+
+fn clean_path_for_jvm(path: &Path) -> String {
+    let s = path.to_string_lossy();
+    if let Some(stripped) = s.strip_prefix(r"\\?\") {
+        stripped.to_string()
+    } else {
+        s.to_string()
+    }
 }
 
 pub fn build_agent_jvm_args(base_path: &Path) -> Result<Vec<String>, String> {
     let natives_dir = base_path.join("natives");
+    let mc_version = resolve_instance_mc_version(base_path);
 
     let mut args = vec![
-        format!("-Djava.library.path={}", natives_dir.to_string_lossy()),
+        format!("-Djava.library.path={}", clean_path_for_jvm(&natives_dir)),
         "-Dcrystaltides.agent.enabled=true".to_string(),
-        "-Dcrystaltides.agent.fsr3_frame_gen=true".to_string(),
-        "-Dcrystaltides.agent.zero_gc_hud=true".to_string(),
+        format!("-Dcrystaltides.minecraft.version={}", mc_version),
         format!("-Dcrystaltides.ipc.port={}", get_actual_game_ipc_port()),
     ];
 
@@ -599,7 +771,7 @@ pub fn build_agent_jvm_args(base_path: &Path) -> Result<Vec<String>, String> {
 
     for candidate in &agent_jar_candidates {
         if candidate.exists() {
-            args.push(format!("-javaagent:{}", candidate.to_string_lossy()));
+            args.push(format!("-javaagent:{}", clean_path_for_jvm(candidate)));
             break;
         }
     }
@@ -611,7 +783,7 @@ pub fn build_agent_jvm_args(base_path: &Path) -> Result<Vec<String>, String> {
 
     for candidate in &ct_agent_candidates {
         if candidate.exists() {
-            args.push(format!("-agentpath:{}", candidate.to_string_lossy()));
+            args.push(format!("-agentpath:{}", clean_path_for_jvm(candidate)));
             break;
         }
     }
@@ -628,7 +800,7 @@ pub fn get_agent_jvm_args(game_dir: String) -> Result<Vec<String>, String> {
 
 /// Obtiene las métricas de rendimiento en tiempo real reportadas por la capa nativa OpenGL/Vulkan del Agente
 #[tauri::command]
-pub fn get_agent_benchmark_status() -> Result<AgentBenchmarkMetrics, String> {
+pub fn get_agent_benchmark_status() -> Result<Option<AgentBenchmarkMetrics>, String> {
     let handle = get_live_metrics_handle();
     let lock = handle.lock().map_err(|e| e.to_string())?;
     Ok(lock.clone())
@@ -674,12 +846,73 @@ mod tests {
                 memory_used_mb,
                 ..
             } => {
-                assert!((fps - 144.5).abs() < f64::EPSILON);
-                assert!((frametime_p99_ms - 6.8).abs() < f64::EPSILON);
+                assert_eq!(fps, Some(144.5));
+                assert_eq!(frametime_p99_ms, Some(6.8));
                 assert_eq!(gc_pause_time_ms, 0.0);
                 assert_eq!(memory_used_mb, Some(2500));
             }
             _ => panic!("Expected Telemetry message variant"),
+        }
+    }
+
+    #[test]
+    fn test_parse_ipc_game_bridge_wire_format() {
+        // Líneas exactas que emite IpcClient.java (game-bridge): sin fps/p99 ni datos GL
+        let handshake = r#"{"type":"handshake","token":"tok-1","minecraft_version":"1.21.1","client_version":"CrystalAgent-v2.0 (Windows 10, Java 21)","mods_count":0}"#;
+        match parse_ipc_line(handshake) {
+            Some(IncomingIpcMessage::Handshake {
+                token,
+                mods_count,
+                gl_renderer,
+                ..
+            }) => {
+                assert_eq!(token.as_deref(), Some("tok-1"));
+                assert_eq!(mods_count, Some(0));
+                assert!(gl_renderer.is_none());
+            }
+            other => panic!("Expected Handshake, got {:?}", other),
+        }
+
+        let telemetry = r#"{"type":"telemetry","gc_pause_time_ms":12.0,"memory_used_mb":2048,"memory_total_mb":4096,"swapchain_backend":"OpenGL/LWJGL"}"#;
+        match parse_ipc_line(telemetry) {
+            Some(IncomingIpcMessage::Telemetry {
+                fps,
+                frametime_p99_ms,
+                gc_pause_time_ms,
+                memory_total_mb,
+                swapchain_backend,
+                ..
+            }) => {
+                // Sin crystaltides-boost no hay fuente de frames: ausencia, no 0
+                assert_eq!(fps, None);
+                assert_eq!(frametime_p99_ms, None);
+                assert_eq!(gc_pause_time_ms, 12.0);
+                assert_eq!(memory_total_mb, Some(4096));
+                assert_eq!(swapchain_backend.as_deref(), Some("OpenGL/LWJGL"));
+            }
+            other => panic!("Expected Telemetry, got {:?}", other),
+        }
+
+        // Con crystaltides-boost presente el agente añade fps y p99 (FrameStats)
+        let telemetry_with_frames = r#"{"type":"telemetry","fps":114.8,"frametime_p99_ms":10.06,"gc_pause_time_ms":0.0,"memory_used_mb":4,"memory_total_mb":8172,"swapchain_backend":"OpenGL/LWJGL"}"#;
+        match parse_ipc_line(telemetry_with_frames) {
+            Some(IncomingIpcMessage::Telemetry {
+                fps,
+                frametime_p99_ms,
+                ..
+            }) => {
+                assert_eq!(fps, Some(114.8));
+                assert_eq!(frametime_p99_ms, Some(10.06));
+            }
+            other => panic!("Expected Telemetry, got {:?}", other),
+        }
+
+        // PrintWriter.println en Windows termina con \r\n
+        match parse_ipc_line("{\"type\":\"game_ready\",\"load_duration_ms\":8123}\r\n") {
+            Some(IncomingIpcMessage::GameReady { load_duration_ms }) => {
+                assert_eq!(load_duration_ms, Some(8123));
+            }
+            other => panic!("Expected GameReady, got {:?}", other),
         }
     }
 
@@ -694,8 +927,12 @@ mod tests {
     fn test_build_agent_jvm_args_ipc_port() {
         let temp_dir = std::env::temp_dir();
         let args = build_agent_jvm_args(&temp_dir).expect("Should build JVM args");
-        assert!(args.iter().any(|arg| arg == "-Dcrystaltides.agent.fsr3_frame_gen=true"));
-        assert!(args.iter().any(|arg| arg == &format!("-Dcrystaltides.ipc.port={}", get_actual_game_ipc_port())));
+        assert!(args
+            .iter()
+            .any(|arg| arg.starts_with("-Dcrystaltides.minecraft.version=")));
+        assert!(args
+            .iter()
+            .any(|arg| arg == &format!("-Dcrystaltides.ipc.port={}", get_actual_game_ipc_port())));
     }
 
     #[test]
@@ -707,7 +944,9 @@ mod tests {
         let _ = fs::write(&ct_path, b"test_dll");
 
         let args = build_agent_jvm_args(&temp_dir).expect("Should build JVM args");
-        assert!(args.iter().any(|arg| arg.starts_with("-agentpath:") && arg.contains("ct-agent.dll")));
+        assert!(args
+            .iter()
+            .any(|arg| arg.starts_with("-agentpath:") && arg.contains("ct-agent.dll")));
 
         let _ = fs::remove_dir_all(&temp_dir);
     }
@@ -725,6 +964,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_verify_session_token_fail_closed() {
         // En ausencia de un token inicializado, fail-closed rechaza todo
         set_expected_session_token(None);
@@ -747,15 +987,22 @@ mod tests {
 
     #[test]
     fn test_telemetry_metrics_sanitization() {
-        let (fps, p99, gc) = sanitize_telemetry(f64::NAN, -10.0, f64::INFINITY);
-        assert_eq!(fps, 0.0);
-        assert_eq!(p99, 0.0);
+        // Basura -> sin dato (la UI muestra "—"), nunca un número inventado
+        let (fps, p99, gc) = sanitize_telemetry(Some(f64::NAN), Some(-10.0), f64::INFINITY);
+        assert_eq!(fps, None);
+        assert_eq!(p99, None);
         assert_eq!(gc, 0.0);
 
-        let (fps_valid, p99_valid, gc_valid) = sanitize_telemetry(144.5, 6.9, 0.5);
-        assert_eq!(fps_valid, 144.5);
-        assert_eq!(p99_valid, 6.9);
+        let (fps_valid, p99_valid, gc_valid) = sanitize_telemetry(Some(144.5), Some(6.9), 0.5);
+        assert_eq!(fps_valid, Some(144.5));
+        assert_eq!(p99_valid, Some(6.9));
         assert_eq!(gc_valid, 0.5);
+
+        // Sin fuente de frames: se conserva la ausencia; 0 FPS (minimizado) es un dato real
+        assert_eq!(sanitize_telemetry(None, None, 1.0), (None, None, 1.0));
+        assert_eq!(sanitize_telemetry(Some(0.0), Some(0.0), 0.0).0, Some(0.0));
+        // Menús sin límite de FPS superan 1000 legítimamente
+        assert_eq!(sanitize_telemetry(Some(2400.0), None, 0.0).0, Some(2400.0));
     }
 
     #[test]
@@ -774,29 +1021,33 @@ mod tests {
 
     #[test]
     fn test_validate_game_dir_valid_path() {
-        #[cfg(target_os = "windows")]
-        let valid = validate_game_dir("C:/Users/gamer/.minecraft");
-        #[cfg(not(target_os = "windows"))]
-        let valid = validate_game_dir("/home/gamer/.minecraft");
-        assert!(valid.is_ok());
+        if let Some(home) = dirs::home_dir() {
+            let valid_ct = home.join(".crystaltides");
+            assert!(validate_game_dir(&valid_ct.to_string_lossy()).is_ok());
+        }
+        let temp = tempfile::tempdir().unwrap();
+        assert!(validate_game_dir(&temp.path().to_string_lossy()).is_ok());
     }
 
     #[test]
     fn test_file_sha256_matches() {
-        let temp_file = std::env::temp_dir().join("sha256_unit_test.bin");
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        let temp_file = temp_dir.path().join("sha256_unit_test.bin");
         let content = b"crystaltides-integrity-check-bytes";
         let _ = fs::write(&temp_file, content);
 
         assert!(file_sha256_matches(&temp_file, content));
-        assert!(!file_sha256_matches(&temp_file, b"corrupted-tampered-content"));
-
-        let _ = fs::remove_file(&temp_file);
+        assert!(!file_sha256_matches(
+            &temp_file,
+            b"corrupted-tampered-content"
+        ));
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_generate_agent_token_cryptographic_uniqueness() {
-        let temp_dir = std::env::temp_dir();
-        let fake_dll = temp_dir.join("test_agent_token.dll");
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        let fake_dll = temp_dir.path().join("test_agent_token.dll");
         let _ = fs::write(&fake_dll, b"dummy content");
 
         let token1 = generate_agent_token(&fake_dll);
@@ -807,7 +1058,88 @@ mod tests {
         assert_eq!(token2.len(), 36);
         assert!(verify_session_token(Some(&token2)));
         assert!(!verify_session_token(Some(&token1))); // El token2 reemplazó el token esperado
+    }
 
-        let _ = fs::remove_file(&fake_dll);
+    #[test]
+    #[serial_test::serial]
+    fn test_live_metrics_initially_none_and_resettable() {
+        reset_live_metrics();
+        let handle = get_live_metrics_handle();
+        let lock = handle.lock().expect("lock metrics");
+        assert!(
+            lock.is_none(),
+            "Live metrics must be None by default when disconnected"
+        );
+    }
+
+    #[test]
+    fn test_is_known_boost_jar_accepts_embedded_and_previous_builds() {
+        assert!(is_known_boost_jar(EMBEDDED_BOOST_FABRIC_JAR));
+        assert!(is_known_boost_jar(EMBEDDED_BOOST_NEOFORGE_JAR));
+        assert!(!is_known_boost_jar(
+            b"some-other-mod-named-crystaltides-boost"
+        ));
+        assert!(!is_known_boost_jar(&[]));
+        for legacy in LEGACY_BOOST_JAR_SHA256 {
+            assert_eq!(legacy.len(), 64, "SHA-256 legacy mal formado: {}", legacy);
+        }
+    }
+
+    /// Extrae el checksum (última columna) de la fila de `file_name` en assets/MANIFEST.md
+    fn manifest_sha256_for(file_name: &str) -> Option<String> {
+        let manifest = include_str!("../assets/MANIFEST.md");
+        let row_prefix = format!("| `{}` |", file_name);
+        manifest
+            .lines()
+            .find(|line| line.starts_with(&row_prefix))
+            .and_then(|line| line.trim_end().trim_end_matches('|').rsplit('|').next())
+            .map(|cell| cell.trim().trim_matches('`').to_string())
+    }
+
+    #[test]
+    fn test_embedded_assets_sha256_manifest_integrity() {
+        use sha2::Digest;
+        let fabric_boost_hash = hex::encode(sha2::Sha256::digest(EMBEDDED_BOOST_FABRIC_JAR));
+        assert_eq!(
+            fabric_boost_hash,
+            "155ee7d83e79eab6e1414e428f9dbd71ea15463f600a91447e22506f1303df23"
+        );
+        assert_eq!(
+            manifest_sha256_for("crystaltides-boost-fabric.jar").as_deref(),
+            Some(fabric_boost_hash.as_str())
+        );
+
+        let neoforge_boost_hash = hex::encode(sha2::Sha256::digest(EMBEDDED_BOOST_NEOFORGE_JAR));
+        assert_eq!(
+            neoforge_boost_hash,
+            "7f4999068fbe0a01c1b3a06aadbcc0501e3d460fb65a21878f028027d16f9130"
+        );
+        assert_eq!(
+            manifest_sha256_for("crystaltides-boost-neoforge.jar").as_deref(),
+            Some(neoforge_boost_hash.as_str())
+        );
+
+        let bridge_jar_hash = hex::encode(sha2::Sha256::digest(EMBEDDED_AGENT_JAR));
+        assert_eq!(
+            bridge_jar_hash,
+            "24055194ace5737417eb716cdc9f8a6c0dfa010049dffe90a282588408a93684"
+        );
+        assert_eq!(
+            manifest_sha256_for("game-bridge.jar").as_deref(),
+            Some(bridge_jar_hash.as_str())
+        );
+
+        #[cfg(target_os = "windows")]
+        {
+            let ct_agent_hash = hex::encode(sha2::Sha256::digest(EMBEDDED_CT_AGENT_DLL));
+            assert_eq!(
+                ct_agent_hash,
+                "ba1aa3c7b9eb074a6be5480087216fbe32d73654eab695f2a676d5a84f94d6e8"
+            );
+            assert_eq!(
+                manifest_sha256_for("ct-agent.dll").as_deref(),
+                Some(ct_agent_hash.as_str())
+            );
+        }
     }
 }

@@ -1,8 +1,9 @@
 import React from 'react';
 import { Sliders, RotateCcw } from 'lucide-react';
-import { useLauncherStore, launcherActions, LauncherState } from '../../store/launcherStore';
+import { useLauncherStore, launcherActions, LauncherState, useT } from '../../store/launcherStore';
 
 export const DockBackgroundAdjuster: React.FC = () => {
+  const t = useT();
   const dockConfig = useLauncherStore((s: LauncherState) => s.dockConfig);
   const posX = dockConfig.dockBgPosX ?? 50;
   const posY = dockConfig.dockBgPosY ?? 50;
@@ -66,7 +67,7 @@ export const DockBackgroundAdjuster: React.FC = () => {
               borderRadius: '4px',
             }}
           >
-            <RotateCcw size={9} /> Restablecer
+            <RotateCcw size={9} /> Restablecer Encuadre
           </button>
         )}
       </div>
@@ -90,6 +91,7 @@ export const DockBackgroundAdjuster: React.FC = () => {
         </div>
         <input
           type="range"
+          aria-label={t.hudEditor.posY}
           min="0"
           max="100"
           value={posY}
@@ -142,6 +144,7 @@ export const DockBackgroundAdjuster: React.FC = () => {
         </div>
         <input
           type="range"
+          aria-label={t.hudEditor.posX}
           min="0"
           max="100"
           value={posX}
@@ -195,6 +198,7 @@ export const DockBackgroundAdjuster: React.FC = () => {
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <input
             type="range"
+            aria-label={t.hudEditor.zoomScale}
             min="100"
             max="250"
             value={scale}
@@ -242,6 +246,7 @@ export const DockBackgroundAdjuster: React.FC = () => {
         </div>
         <input
           type="range"
+          aria-label={t.hudEditor.bgOpacity}
           min="15"
           max="100"
           value={opacity}
