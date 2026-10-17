@@ -25,7 +25,7 @@ pub struct GameStoppedPayload {
 }
 
 /// Una sesión de juego: el proceso hijo y, en Windows, el Job Object que encierra su árbol.
-/// Viven bajo el mismo mutex para que retirar una sesión cierre su propio Job y nunca el de otra.
+/// Viven bajo el mismo mutex para que retirar una sesión termine su propio Job y nunca el de otra.
 struct GameSession {
     child: Child,
     #[cfg(target_os = "windows")]
@@ -37,7 +37,7 @@ static TIMER_ACTIVE: AtomicBool = AtomicBool::new(false);
 
 /// Entre comprobar que no hay instancia activa y guardar la sesión nueva pasan el hook
 /// pre-launch (hasta 10 s) y el spawn; sin esta marca dos lanzamientos simultáneos pasaban
-/// ambos la comprobación y el segundo, al sustituir el Job, liquidaba el primer juego.
+/// ambos la comprobación y el segundo sustituía la sesión del primero, que quedaba sin vigilar.
 static LAUNCH_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 
 /// Reserva exclusiva de un lanzamiento; se libera al soltarse, tanto con éxito como con error.
@@ -71,7 +71,12 @@ fn lock_session(session: &Mutex<Option<GameSession>>) -> MutexGuard<'_, Option<G
 /// Retira la sesión terminada con el lock tomado, para que un lanzamiento nuevo no pueda colarse
 /// entre retirar el proceso y restaurar el estado global (Job, timer, métricas).
 fn end_session(slot: &mut Option<GameSession>) {
-    // En Windows suelta el Job: KILL_ON_JOB_CLOSE liquida los procesos huérfanos del árbol
+    // El proceso principal ya salió: se termina el Job para no dejar huérfanos del árbol
+    // (p. ej. hijos que lanzó el wrapper o un mod)
+    #[cfg(target_os = "windows")]
+    if let Some(job) = slot.as_ref().and_then(|session| session.job.as_ref()) {
+        job.terminate(0);
+    }
     *slot = None;
     set_high_resolution_timer(false);
     crate::agent::reset_live_metrics();
@@ -120,26 +125,13 @@ pub struct ProcessJobGuard {
 impl ProcessJobGuard {
     #[allow(unsafe_code)]
     pub fn new() -> Option<Self> {
-        use windows::Win32::System::JobObjects::{
-            CreateJobObjectW, JobObjectExtendedLimitInformation, SetInformationJobObject,
-            JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-        };
+        use windows::Win32::System::JobObjects::CreateJobObjectW;
         // SAFETY: Crea un nuevo Job Object de Windows para encapsular el árbol de procesos de Minecraft.
-        // Si el launcher termina inesperadamente, Windows liquida automáticamente todos los procesos del Job.
+        // Sin JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE: Windows cierra el handle al terminar el launcher
+        // (también al cerrarlo con normalidad) y con ese flag se llevaba el juego por delante.
+        // El Job sirve para terminar el árbol entero a propósito (`terminate`).
         unsafe {
             let job = CreateJobObjectW(None, None).ok()?;
-            let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
-            info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-            let res = SetInformationJobObject(
-                job,
-                JobObjectExtendedLimitInformation,
-                &info as *const _ as *const std::ffi::c_void,
-                std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
-            );
-            if res.is_err() {
-                let _ = windows::Win32::Foundation::CloseHandle(job);
-                return None;
-            }
             Some(Self {
                 job_handle: job.0 as isize,
             })
@@ -1397,6 +1389,66 @@ mod tests {
         }
         let err = check_running_instance(&session).unwrap_err();
         assert!(err.contains("cerrando"), "{err}");
+    }
+
+    #[cfg(target_os = "windows")]
+    fn assign_to_job(job: &ProcessJobGuard, child: &Child) {
+        use std::os::windows::io::AsRawHandle;
+        let handle = windows::Win32::Foundation::HANDLE(child.as_raw_handle() as _);
+        assert!(
+            job.assign_process(handle),
+            "no se pudo asignar el hijo al Job"
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    fn wait_exit(child: &mut Child, timeout: Duration) -> bool {
+        let start = std::time::Instant::now();
+        while start.elapsed() < timeout {
+            if matches!(child.try_wait(), Ok(Some(_))) {
+                return true;
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+        false
+    }
+
+    /// Es lo que pasa al cerrar el launcher: Windows cierra el handle del Job al terminar el
+    /// proceso. El juego tiene que seguir vivo.
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_closing_job_handle_keeps_game_alive() {
+        let mut game = spawn_sleeping_child();
+        let job = ProcessJobGuard::new().expect("job");
+        assign_to_job(&job, &game);
+
+        drop(job);
+
+        assert!(!wait_exit(&mut game, Duration::from_millis(500)));
+        let _ = game.kill();
+        let _ = game.wait();
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_end_session_terminates_orphans_left_in_job() {
+        let game = spawn_sleeping_child();
+        let mut orphan = spawn_sleeping_child();
+        let job = ProcessJobGuard::new().expect("job");
+        assign_to_job(&job, &game);
+        assign_to_job(&job, &orphan);
+
+        let mut slot = Some(GameSession {
+            child: game,
+            job: Some(job),
+        });
+        end_session(&mut slot);
+
+        assert!(slot.is_none());
+        assert!(
+            wait_exit(&mut orphan, Duration::from_secs(5)),
+            "el huérfano del Job debe terminar al retirar la sesión"
+        );
     }
 
     #[test]

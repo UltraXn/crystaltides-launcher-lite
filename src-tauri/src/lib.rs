@@ -1370,9 +1370,9 @@ pub fn run() {
             if let tauri::WindowEvent::CloseRequested { .. } = event {
                 if window.label() == "main" && process_manager::is_game_running() {
                     logger::log(
-                        "WARN",
+                        "INFO",
                         "App",
-                        "Cierre del Launcher detectado con Minecraft activo.",
+                        "Launcher cerrado con Minecraft activo: el juego sigue en ejecución.",
                     );
                 }
             }
