@@ -128,7 +128,7 @@ fn extract_zip_entry<R: std::io::Read>(
         None => return Ok(()),
     };
 
-    if file.is_dir() || (*file.name()).ends_with('/') {
+    if file.is_dir() || file.name().map_or(false, |n| n.ends_with('/')) {
         fs::create_dir_all(&outpath)
             .map_err(|e| format!("Error al crear directorio en descompresión: {}", e))?;
         return Ok(());
