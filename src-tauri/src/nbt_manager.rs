@@ -201,7 +201,7 @@ pub fn list_singleplayer_saves_sync(game_dir: &str) -> Result<Vec<SingleplayerSa
     }
 
     // Ordenar de más reciente a más antiguo
-    result.sort_by(|a, b| b.last_played.cmp(&a.last_played));
+    result.sort_by_key(|a| std::cmp::Reverse(a.last_played));
 
     Ok(result)
 }

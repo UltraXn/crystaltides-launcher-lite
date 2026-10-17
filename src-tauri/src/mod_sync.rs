@@ -362,7 +362,7 @@ pub fn list_instance_mods_sync(target_dir: &str) -> Result<Vec<LocalModItem>, St
         });
     }
 
-    items.sort_by(|a, b| a.filename.to_lowercase().cmp(&b.filename.to_lowercase()));
+    items.sort_by_key(|a| a.filename.to_lowercase());
     Ok(items)
 }
 

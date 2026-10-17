@@ -303,7 +303,7 @@ fn scan_windows_gpus() -> Vec<(String, u64)> {
     }
 
     // Sort by VRAM descending so dedicated dGPU (RTX/Radeon) is selected ahead of iGPU
-    gpus.sort_by(|a, b| b.1.cmp(&a.1));
+    gpus.sort_by_key(|a| std::cmp::Reverse(a.1));
     gpus
 }
 
