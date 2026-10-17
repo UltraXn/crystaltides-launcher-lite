@@ -241,7 +241,9 @@ pub fn analyze_latest_crash_sync(
     game_dir: &str,
     exit_code: Option<i32>,
 ) -> Result<CrashDiagnosis, String> {
-    let base = Path::new(game_dir);
+    // Devuelve al frontend el contenido de los logs que encuentre: solo en carpetas autorizadas
+    let base = crate::agent::validate_game_dir(game_dir)?;
+    let base = base.as_path();
     let mut latest_crash_text = read_newest_crash_report(base).unwrap_or_default();
     if latest_crash_text.is_empty() {
         latest_crash_text = read_fallback_log_text(base);

@@ -56,49 +56,12 @@ pub struct BootContext {
     pub os: String,
 }
 
+/// El directorio de instalación tiene que ser uno dedicado (ver `paths::check_dedicated_dir`):
+/// la desinstalación borra carpetas dentro de él, y no podría retirarse de una carpeta del
+/// sistema o del Escritorio sin arrastrar lo que ya había allí.
 pub fn validate_install_dir(target_dir: &str) -> Result<PathBuf, String> {
-    let trimmed = target_dir.trim();
-    if trimmed.is_empty() {
-        return Err("El directorio de instalación no puede estar vacío.".to_string());
-    }
-    let path = PathBuf::from(trimmed);
-    if !path.is_absolute() {
-        return Err(
-            "Ruta no autorizada: El directorio de instalación debe ser una ruta absoluta."
-                .to_string(),
-        );
-    }
-    for component in path.components() {
-        if let std::path::Component::ParentDir = component {
-            return Err(
-                "Ruta no autorizada: Detectada navegación relativa hacia directorios padres."
-                    .to_string(),
-            );
-        }
-    }
-    if path.parent().is_none() {
-        return Err("Ruta no autorizada: No se puede instalar en la raíz del disco.".to_string());
-    }
-    if let Some(home) = dirs::home_dir() {
-        if path == home {
-            return Err(
-                "Ruta no autorizada: No se puede instalar directamente en la raíz del usuario."
-                    .to_string(),
-            );
-        }
-    }
-    #[cfg(target_os = "windows")]
-    {
-        if let Ok(sys_drive) = std::env::var("SystemDrive") {
-            let win_dir = PathBuf::from(format!("{}\\Windows", sys_drive));
-            if path.starts_with(&win_dir) {
-                return Err(
-                    "Ruta no autorizada: No se puede instalar dentro del directorio de Windows."
-                        .to_string(),
-                );
-            }
-        }
-    }
+    let path = paths::require_absolute_path(target_dir)?;
+    paths::check_dedicated_dir(&path)?;
     Ok(path)
 }
 
@@ -325,105 +288,42 @@ async fn launch_installed_app(target_dir: String) -> Result<(), String> {
         .map_err(|e| e.to_string())?
 }
 
+/// `.installed.json` de CrystalTides en `dir`: autentica una instalación en una carpeta
+/// personalizada que no consta en el registro (Linux/macOS no tienen registro).
+fn has_crystaltides_install_marker(dir: &Path) -> bool {
+    let Ok(content) = fs::read_to_string(dir.join(".installed.json")) else {
+        return false;
+    };
+    let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) else {
+        return false;
+    };
+    let is_installed = val
+        .get("installed")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let prod_name = val
+        .get("productName")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    is_installed && prod_name.contains("CrystalTides")
+}
+
+/// Directorio que se puede desinstalar: uno dedicado (nunca la raíz del disco, el home, el
+/// Escritorio ni carpetas del sistema) que sea, o esté dentro de, la instalación predeterminada
+/// o la registrada, o que tenga el `.installed.json` de CrystalTides. Devuelve la ruta
+/// normalizada.
 pub fn is_authorized_uninstall_target(path: &Path) -> Result<PathBuf, String> {
-    let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    paths::check_dedicated_dir(path)?;
+    let target = paths::normalize_for_compare(path);
 
-    // 1. Prohibir raíces del disco o carpetas críticas
-    if canonical.parent().is_none() {
-        return Err("Ruta no autorizada: No se permite desinstalar la raíz del disco.".to_string());
+    let is_known_install = sys::get_default_install_dir()
+        .into_iter()
+        .chain(sys::get_registered_install_location())
+        .any(|dir| paths::is_within_root(&target, &paths::normalize_for_compare(&dir)));
+
+    if is_known_install || has_crystaltides_install_marker(&target) {
+        return Ok(target);
     }
-
-    if let Some(home) = dirs::home_dir() {
-        let home_canon = home.canonicalize().unwrap_or(home.clone());
-        if canonical == home_canon {
-            return Err(
-                "Ruta no autorizada: No se permite desinstalar el directorio raíz del usuario."
-                    .to_string(),
-            );
-        }
-        let desktop = home.join("Desktop");
-        let desktop_canon = desktop.canonicalize().unwrap_or(desktop);
-        if canonical == desktop_canon {
-            return Err(
-                "Ruta no autorizada: No se permite desinstalar el escritorio del usuario."
-                    .to_string(),
-            );
-        }
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        if let Ok(sys_drive) = std::env::var("SystemDrive") {
-            let win_dir = PathBuf::from(format!("{}\\Windows", sys_drive));
-            let pf_dir = PathBuf::from(format!("{}\\Program Files", sys_drive));
-            let pf86_dir = PathBuf::from(format!("{}\\Program Files (x86)", sys_drive));
-            if canonical.starts_with(&win_dir)
-                || canonical.starts_with(&pf_dir)
-                || canonical.starts_with(&pf86_dir)
-            {
-                return Err(
-                    "Ruta no autorizada: Directorio protegido del sistema operativo.".to_string(),
-                );
-            }
-        }
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        let forbidden = [
-            Path::new("/etc"),
-            Path::new("/usr"),
-            Path::new("/bin"),
-            Path::new("/sbin"),
-            Path::new("/var"),
-        ];
-        for f in &forbidden {
-            if canonical.starts_with(f) {
-                return Err(
-                    "Ruta no autorizada: Directorio protegido del sistema operativo.".to_string(),
-                );
-            }
-        }
-    }
-
-    // 2. Coincide con el directorio de instalación predeterminado (~/.crystaltides)
-    let default_dir =
-        sys::get_default_install_dir().unwrap_or_else(|| PathBuf::from(".crystaltides"));
-    let default_canonical = default_dir
-        .canonicalize()
-        .unwrap_or_else(|_| default_dir.clone());
-    if canonical.starts_with(&default_canonical) {
-        return Ok(canonical);
-    }
-
-    // 3. Coincide con la ubicación registrada en el sistema operativo (Registro de Windows)
-    if let Some(reg_dir) = sys::get_registered_install_location() {
-        let reg_canonical = reg_dir.canonicalize().unwrap_or_else(|_| reg_dir.clone());
-        if canonical == reg_canonical || canonical.starts_with(&reg_canonical) {
-            return Ok(canonical);
-        }
-    }
-
-    // 4. Directorio de instalación personalizado autenticado por .installed.json de CrystalTides
-    let installed_json = canonical.join(".installed.json");
-    if installed_json.exists() {
-        if let Ok(content) = fs::read_to_string(&installed_json) {
-            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
-                let is_installed = val
-                    .get("installed")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false);
-                let prod_name = val
-                    .get("productName")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                if is_installed && prod_name.contains("CrystalTides") {
-                    return Ok(canonical);
-                }
-            }
-        }
-    }
-
     Err("Ruta no autorizada para desinstalación: debe residir dentro del directorio de CrystalTides.".to_string())
 }
 
@@ -431,18 +331,8 @@ pub fn perform_self_uninstall_sync(
     target_dir: &str,
     remove_user_data: Option<bool>,
 ) -> Result<(), String> {
-    if target_dir.trim().is_empty() {
-        return Err("Ruta de desinstalación vacía.".to_string());
-    }
-    let path = Path::new(target_dir);
-    if path
-        .components()
-        .any(|c| c == std::path::Component::ParentDir)
-    {
-        return Err("Ruta no autorizada: secuencias relativas '..' prohibidas.".to_string());
-    }
-
-    let verified_dir = is_authorized_uninstall_target(path)?;
+    let path = paths::require_absolute_path(target_dir)?;
+    let verified_dir = is_authorized_uninstall_target(&path)?;
     let remove_all = remove_user_data.unwrap_or(false);
     sys::unregister_system_app(&verified_dir, remove_all)?;
 
@@ -460,18 +350,8 @@ async fn perform_self_uninstall(
 }
 
 pub fn schedule_self_deletion_sync(target_dir: &str) -> Result<(), String> {
-    if target_dir.trim().is_empty() {
-        return Err("Ruta de desinstalación vacía.".to_string());
-    }
-    let path = Path::new(target_dir);
-    if path
-        .components()
-        .any(|c| c == std::path::Component::ParentDir)
-    {
-        return Err("Ruta no autorizada: secuencias relativas '..' prohibidas.".to_string());
-    }
-
-    let verified_dir = is_authorized_uninstall_target(path)?;
+    let path = paths::require_absolute_path(target_dir)?;
+    let verified_dir = is_authorized_uninstall_target(&path)?;
     sys::schedule_self_deletion(&verified_dir)?;
     Ok(())
 }
@@ -708,6 +588,16 @@ pub fn resolve_classpath_sync(
     let crystal_libs = home_path.join(".crystaltides/libraries");
     for rel in lib_rel_paths {
         let clean_rel = rel.replace('\\', "/");
+        // Los candidatos de < 22 bytes se borran: una ruta que saliera de libraries/ no puede
+        // llegar a add_if_exists
+        let rel_path = Path::new(&clean_rel);
+        if rel_path.has_root()
+            || rel_path
+                .components()
+                .any(|c| !matches!(c, std::path::Component::Normal(_)))
+        {
+            continue;
+        }
         let p1 = game_path.join("libraries").join(Path::new(&clean_rel));
         if p1.is_file() {
             add_if_exists(p1);
@@ -732,25 +622,30 @@ pub fn resolve_classpath_sync(
     cp_entries.join(separator)
 }
 
+/// El frontend sigue enviando `homeDir`, pero se ignora: el home lo resuelve el backend, para
+/// que no se pueda apuntar la búsqueda (y el borrado de jars vacíos) a otra carpeta.
 #[tauri::command]
 async fn resolve_classpath(
     game_dir: String,
-    home_dir: String,
     version_id: String,
     mc_version: String,
     lib_rel_paths: Vec<String>,
-) -> String {
+) -> Result<String, String> {
+    let game_dir = paths::validate_game_dir(&game_dir)?;
+    paths::SafeId::parse(version_id.as_str())?;
+    paths::SafeId::parse(mc_version.as_str())?;
+    let home_dir = dirs::home_dir().ok_or("No se pudo resolver el directorio personal.")?;
     tokio::task::spawn_blocking(move || {
         resolve_classpath_sync(
-            &game_dir,
-            &home_dir,
+            &game_dir.to_string_lossy(),
+            &home_dir.to_string_lossy(),
             &version_id,
             &mc_version,
             &lib_rel_paths,
         )
     })
     .await
-    .unwrap_or_default()
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -838,10 +733,13 @@ async fn install_java_runtime(
     distribution: Option<String>,
 ) -> Result<String, String> {
     use tauri::Emitter;
-    let install_path = std::path::PathBuf::from(install_dir);
+    // Se borran y recrean `java-N/` y `.temp/` dentro: tiene que ser una carpeta autorizada
+    let install_path = paths::validate_game_dir(&install_dir)?;
+    let version =
+        u8::try_from(version).map_err(|_| format!("Versión de Java inválida: {}", version))?;
     let app_clone = app_handle.clone();
     let path = java_manager::download_and_install_java(
-        version as u8,
+        version,
         &install_path,
         distribution.as_deref(),
         move |progress| {
@@ -993,12 +891,18 @@ async fn get_installed_minecraft_versions() -> Vec<String> {
 #[tauri::command]
 async fn prepare_minecraft_version(version_id: String, game_dir: String) -> Result<String, String> {
     agent::validate_game_dir(&game_dir)?;
+    // Se usa como nombre de carpeta y de archivo dentro de versions/
+    paths::SafeId::parse(version_id.as_str())?;
     version_manager::cleanup_installer_artifacts(Path::new(&game_dir));
     version_manager::prepare_version(&version_id, &game_dir).await
 }
 
 #[tauri::command]
 async fn cleanup_installer_cache(game_dir: String) {
+    // Borra archivos del directorio: si no es una carpeta autorizada no se toca nada
+    if agent::validate_game_dir(&game_dir).is_err() {
+        return;
+    }
     let _ = tokio::task::spawn_blocking(move || {
         version_manager::cleanup_installer_artifacts(Path::new(&game_dir));
     })
@@ -1014,6 +918,11 @@ async fn install_mod_loader(
     java_path: String,
 ) -> Result<String, String> {
     agent::validate_game_dir(&game_dir)?;
+    // Acaban en nombres de archivo (p. ej. `neoforge-<versión>-installer.jar`) y en rutas
+    paths::SafeId::parse(mc_version.as_str())?;
+    if !loader_version.trim().is_empty() {
+        paths::SafeId::parse(loader_version.as_str())?;
+    }
     version_manager::install_mod_loader(
         &loader_type,
         &loader_version,
@@ -1811,6 +1720,72 @@ mod tests {
         assert!(err.is_timeout(), "error inesperado: {err}");
         assert!(started.elapsed() < std::time::Duration::from_secs(2));
         server.join().unwrap();
+    }
+
+    #[test]
+    fn test_validate_install_dir_requires_dedicated_dir() {
+        assert!(validate_install_dir("").is_err());
+        assert!(validate_install_dir("relativa").is_err());
+        let home = dirs::home_dir().expect("home");
+        assert!(validate_install_dir(&home.to_string_lossy()).is_err());
+        assert!(validate_install_dir(&home.join(".crystaltides").to_string_lossy()).is_ok());
+        if let Some(desktop) = dirs::desktop_dir() {
+            assert!(validate_install_dir(&desktop.to_string_lossy()).is_err());
+            assert!(validate_install_dir(&desktop.join("CrystalTides").to_string_lossy()).is_ok());
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            // Antes solo se comprobaba `C:\Windows` distinguiendo mayúsculas
+            assert!(validate_install_dir(r"c:\windows\CrystalTides").is_err());
+            let program_files = std::env::var("ProgramFiles").unwrap_or(r"C:\Program Files".into());
+            assert!(validate_install_dir(&format!(r"{}\CrystalTides", program_files)).is_err());
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    #[serial_test::serial]
+    #[allow(unsafe_code)]
+    fn test_uninstall_target_rejects_system_dir_even_as_default_install() {
+        // `canonicalize` devuelve `\\?\C:\Windows\...`, así que la lista negra anterior nunca
+        // coincidía con una carpeta existente: con la instalación predeterminada apuntando a
+        // System32 se autorizaba su desinstalación
+        let system32 =
+            std::path::PathBuf::from(std::env::var("SystemRoot").unwrap_or(r"C:\Windows".into()))
+                .join("System32");
+        unsafe {
+            std::env::set_var("CRYSTALTIDES_HOME", &system32);
+        }
+        let result = is_authorized_uninstall_target(&system32);
+        unsafe {
+            std::env::remove_var("CRYSTALTIDES_HOME");
+        }
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_resolve_classpath_skips_library_paths_outside_libraries() {
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        let game_dir = temp_dir.path().join("game");
+        fs::create_dir_all(game_dir.join("libraries")).expect("libraries");
+        // Jar < 22 bytes fuera de libraries/: si la ruta relativa colara, se borraría
+        let outside_jar = temp_dir.path().join("outside.jar");
+        fs::write(&outside_jar, b"tiny").expect("write jar");
+
+        let cp = resolve_classpath_sync(
+            &game_dir.to_string_lossy(),
+            &temp_dir.path().join("home").to_string_lossy(),
+            "1.21.1",
+            "1.21.1",
+            &[
+                "../outside.jar".to_string(),
+                outside_jar.to_string_lossy().to_string(),
+            ],
+        );
+
+        assert!(outside_jar.exists());
+        assert!(!cp.contains("outside.jar"));
     }
 
     #[test]
