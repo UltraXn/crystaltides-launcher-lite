@@ -1377,26 +1377,38 @@ fn restart_app(app: tauri::AppHandle) {
 
 static SHARED_HTTP_CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
 
-pub fn get_shared_http_client() -> &'static reqwest::Client {
-    SHARED_HTTP_CLIENT.get_or_init(|| {
-        let redirect_policy = reqwest::redirect::Policy::custom(|attempt| {
-            if attempt.previous().len() >= 10 {
-                return attempt.error("Demasiadas redirecciones consecutivas.");
-            }
-            let next_url = attempt.url();
-            if let Err(e) = crate::network::validate_allowed_https_url(next_url.as_str()) {
-                return attempt.error(format!("Redirección abortada por seguridad: {e}"));
-            }
-            attempt.follow()
-        });
+const HTTP_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+/// Sin timeout total: una descarga grande (runtime de Java) en una conexión lenta es legítima.
+/// El de lectura se reinicia con cada lectura, así que solo corta conexiones que se quedan colgadas.
+const HTTP_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
-        reqwest::Client::builder()
-            .user_agent("CrystalTides-Launcher-Lite")
-            .tcp_keepalive(std::time::Duration::from_secs(60))
-            .redirect(redirect_policy)
-            .build()
-            .unwrap_or_default()
-    })
+fn build_http_client(
+    connect_timeout: std::time::Duration,
+    read_timeout: std::time::Duration,
+) -> reqwest::Client {
+    let redirect_policy = reqwest::redirect::Policy::custom(|attempt| {
+        if attempt.previous().len() >= 10 {
+            return attempt.error("Demasiadas redirecciones consecutivas.");
+        }
+        let next_url = attempt.url();
+        if let Err(e) = crate::network::validate_allowed_https_url(next_url.as_str()) {
+            return attempt.error(format!("Redirección abortada por seguridad: {e}"));
+        }
+        attempt.follow()
+    });
+
+    reqwest::Client::builder()
+        .user_agent("CrystalTides-Launcher-Lite")
+        .tcp_keepalive(std::time::Duration::from_secs(60))
+        .connect_timeout(connect_timeout)
+        .read_timeout(read_timeout)
+        .redirect(redirect_policy)
+        .build()
+        .unwrap_or_default()
+}
+
+pub fn get_shared_http_client() -> &'static reqwest::Client {
+    SHARED_HTTP_CLIENT.get_or_init(|| build_http_client(HTTP_CONNECT_TIMEOUT, HTTP_READ_TIMEOUT))
 }
 
 /// `QuietUninstallString` del registro: `"<exe>" --uninstall --silent`.
@@ -1799,6 +1811,31 @@ mod tests {
 
         // Limpieza
         let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[tokio::test]
+    async fn test_http_client_aborts_stalled_connection() {
+        // Acepta la conexión y no responde nunca: sin read_timeout la petición quedaría colgada
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let (_socket, _) = listener.accept().unwrap();
+            std::thread::sleep(std::time::Duration::from_secs(3));
+        });
+
+        let client = build_http_client(
+            std::time::Duration::from_secs(2),
+            std::time::Duration::from_millis(200),
+        );
+        let started = std::time::Instant::now();
+        let err = client
+            .get(format!("http://{addr}/"))
+            .send()
+            .await
+            .expect_err("la petición debe fallar por timeout");
+        assert!(err.is_timeout(), "error inesperado: {err}");
+        assert!(started.elapsed() < std::time::Duration::from_secs(2));
+        server.join().unwrap();
     }
 
     #[test]
