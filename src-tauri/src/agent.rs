@@ -662,6 +662,10 @@ pub async fn prepare_crystal_agent(game_dir: String) -> Result<AgentConfig, Stri
                 .map_err(|e| format!("Failed to create natives directory: {}", e))?;
         }
 
+        for subdir in &["jna", "lwjgl", "netty", "java"] {
+            let _ = fs::create_dir_all(natives_dir.join(subdir));
+        }
+
         deploy_agent_jar(&base_path);
         let agent_path = deploy_native_agent(&natives_dir);
         let session_tok = generate_agent_token(&agent_path);

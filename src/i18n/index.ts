@@ -16,6 +16,8 @@ export const translations = {
       launch: 'Iniciar Juego',
       launching: 'Iniciando...',
       running: 'En ejecución',
+      stopGame: 'Detener',
+      runningTooltip: 'Minecraft en ejecución (Clic para cerrar el juego)',
     },
     // HUD Editor Overlay
     hudEditor: {
@@ -427,6 +429,8 @@ export const translations = {
       launch: 'Start Game',
       launching: 'Launching...',
       running: 'Running',
+      stopGame: 'Stop',
+      runningTooltip: 'Minecraft is running (Click to close game)',
     },
     // HUD Editor Overlay
     hudEditor: {

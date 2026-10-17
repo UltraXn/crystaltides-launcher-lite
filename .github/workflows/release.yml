@@ -82,6 +82,11 @@ jobs:
           }
           Write-Host "✓ Versión $tagVersion alineada (tag, tauri.conf.json, Cargo.toml)"
 
+      # El build de Tauri no acepta --locked directamente: se comprueba antes que Cargo.lock está
+      # sincronizado, para que el release use exactamente las dependencias versionadas.
+      - name: Verify Cargo.lock is in sync
+        run: cargo metadata --locked --format-version 1 --manifest-path src-tauri/Cargo.toml > $null
+
       - name: Build Self-Installing Launcher (Tauri CLI, no bundle)
         # bundle.active=false: el propio ejecutable es el instalador (BootMode::Install).
         # El frontend (tsc + vite) lo compila beforeBuildCommand con estas mismas variables.

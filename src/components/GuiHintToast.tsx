@@ -60,7 +60,9 @@ function useGuiHintToast() {
   const startTimeRef = useRef<number>(0);
   const isHoveredRef = useRef(false);
 
-  isHoveredRef.current = isHovered;
+  useEffect(() => {
+    isHoveredRef.current = isHovered;
+  }, [isHovered]);
 
   const triggerDismiss = useCallback(() => {
     if (hideTimerRef.current) {
