@@ -573,9 +573,45 @@ fn spawn_log_batcher(app: AppHandle, rx: std::sync::mpsc::Receiver<GameLogPayloa
     });
 }
 
+/// Segundos sin salida de log, tras el `Stopping!` del cliente, antes de forzar el cierre.
+/// Se cuenta desde la última línea y no desde la señal: el servidor integrado sigue guardando
+/// el mundo después de `Stopping!` y mientras escriba log no se considera zombi.
+const SHUTDOWN_IDLE_GRACE: Duration = Duration::from_secs(20);
+
+/// `true` solo para el `Stopping!` que emite el propio cliente al cerrarse
+/// (`[hh:mm:ss] [Render thread/INFO]: Stopping!`, o con `[minecraft/Minecraft]` en Forge/NeoForge).
+/// El mensaje debe ser exactamente `Stopping!` tras el primer `]: `, así que una línea de chat
+/// (`...]: [System] [CHAT] <x> Stopping!`) nunca coincide.
+fn is_client_shutdown_line(line: &str) -> bool {
+    let Some(idx) = line.find("]: ") else {
+        return false;
+    };
+    let (header, message) = (&line[..idx], &line[idx + 3..]);
+    header.contains("/INFO") && message.trim_end() == "Stopping!"
+}
+
+/// Arma la señal con el `Stopping!` del cliente y, una vez armada, la renueva con cada línea
+/// para que el periodo de gracia se mida en inactividad.
+fn record_shutdown_activity(shutdown_signal: &Mutex<Option<std::time::Instant>>, line: &str) {
+    let Ok(mut sig) = shutdown_signal.lock() else {
+        return;
+    };
+    if sig.is_some() {
+        *sig = Some(std::time::Instant::now());
+    } else if is_client_shutdown_line(line) {
+        *sig = Some(std::time::Instant::now());
+        crate::logger::log(
+            "INFO",
+            "ProcessManager",
+            "Detectada señal de parada de Minecraft ('Stopping!'). Se forzará el cierre si el proceso sigue vivo tras 20s sin actividad de log.",
+        );
+    }
+}
+
 fn spawn_stdout_streamer(
     tx: std::sync::mpsc::Sender<GameLogPayload>,
     stdout: std::process::ChildStdout,
+    shutdown_signal: Arc<Mutex<Option<std::time::Instant>>>,
 ) {
     thread::spawn(move || {
         let mut reader = BufReader::new(stdout);
@@ -590,6 +626,8 @@ fn spawn_stdout_streamer(
             if line.is_empty() {
                 continue;
             }
+
+            record_shutdown_activity(&shutdown_signal, &line);
 
             let level = if line.contains("[ERROR]")
                 || line.contains(" Exception")
@@ -617,6 +655,7 @@ fn spawn_stdout_streamer(
 fn spawn_stderr_streamer(
     tx: std::sync::mpsc::Sender<GameLogPayload>,
     stderr: std::process::ChildStderr,
+    shutdown_signal: Arc<Mutex<Option<std::time::Instant>>>,
 ) {
     thread::spawn(move || {
         let mut reader = BufReader::new(stderr);
@@ -631,6 +670,8 @@ fn spawn_stderr_streamer(
             if line.is_empty() {
                 continue;
             }
+
+            record_shutdown_activity(&shutdown_signal, &line);
 
             crate::logger::log_minecraft(&line, "ERROR");
             let _ = tx.send(GameLogPayload {
@@ -665,15 +706,14 @@ fn handle_post_exit_command(
     let _ = execute_hook_command(post_cmd, game_dir, &envs);
 }
 
-fn handle_child_exit(
+fn notify_game_stopped(
     app_handle: &AppHandle,
     pid: u32,
-    status: std::process::ExitStatus,
+    exit_code: Option<i32>,
+    success: bool,
     post_exit_cmd: Option<&str>,
     game_dir: &str,
 ) {
-    let exit_code = status.code();
-    let success = status.success();
     crate::logger::log(
         if success { "INFO" } else { "ERROR" },
         "ProcessManager",
@@ -698,9 +738,27 @@ fn handle_child_exit(
     let _ = app_handle.emit("game-stopped", GameStoppedPayload { exit_code, success });
 }
 
+fn handle_child_exit(
+    app_handle: &AppHandle,
+    pid: u32,
+    status: std::process::ExitStatus,
+    post_exit_cmd: Option<&str>,
+    game_dir: &str,
+) {
+    notify_game_stopped(
+        app_handle,
+        pid,
+        status.code(),
+        status.success(),
+        post_exit_cmd,
+        game_dir,
+    );
+}
+
 fn handle_child_error(app_handle: &AppHandle, err: std::io::Error) {
     println!("[ProcessManager] Error checking process status: {}", err);
     set_high_resolution_timer(false);
+    crate::agent::reset_live_metrics();
     #[cfg(target_os = "windows")]
     {
         if let Ok(mut job_lock) = get_game_job_guard().lock() {
@@ -727,6 +785,7 @@ fn poll_child_status(
     pid: u32,
     post_exit_cmd: Option<&str>,
     game_dir: &str,
+    shutdown_signal: &Arc<Mutex<Option<std::time::Instant>>>,
 ) -> PollResult {
     let process_lock = get_game_process_handle();
     let mut lock = process_lock.lock().unwrap_or_else(|e| {
@@ -750,7 +809,35 @@ fn poll_child_status(
             handle_child_exit(app_handle, pid, status, post_exit_cmd, game_dir);
             PollResult::Exited
         }
-        Ok(None) => PollResult::Running,
+        Ok(None) => {
+            let should_kill_zombie = shutdown_signal
+                .lock()
+                .ok()
+                .and_then(|sig| *sig)
+                .is_some_and(|last_activity| last_activity.elapsed() >= SHUTDOWN_IDLE_GRACE);
+
+            if should_kill_zombie {
+                crate::logger::log(
+                    "WARN",
+                    "ProcessManager",
+                    &format!(
+                        "El proceso de Minecraft (PID: {}) sigue vivo tras cerrarse el cliente y 20s sin actividad de log (hilos zombi de mods). Forzando cierre...",
+                        pid
+                    ),
+                );
+                let _ = child.kill();
+                let exit_code = child.wait().ok().and_then(|s| s.code());
+                *lock = None;
+                drop(lock);
+
+                // El usuario ya cerró el juego: se notifica como cierre correcto para no abrir
+                // el modal de crash por el código de salida que deja el kill.
+                notify_game_stopped(app_handle, pid, exit_code, true, post_exit_cmd, game_dir);
+                PollResult::Exited
+            } else {
+                PollResult::Running
+            }
+        }
         Err(e) => {
             *lock = None;
             drop(lock);
@@ -765,10 +852,17 @@ fn spawn_process_monitor(
     pid: u32,
     post_exit_cmd: Option<String>,
     game_dir: String,
+    shutdown_signal: Arc<Mutex<Option<std::time::Instant>>>,
 ) {
     thread::spawn(move || loop {
         thread::sleep(Duration::from_millis(500));
-        match poll_child_status(&app_handle, pid, post_exit_cmd.as_deref(), &game_dir) {
+        match poll_child_status(
+            &app_handle,
+            pid,
+            post_exit_cmd.as_deref(),
+            &game_dir,
+            &shutdown_signal,
+        ) {
             PollResult::Running => continue,
             PollResult::Exited | PollResult::Stop => break,
         }
@@ -878,11 +972,13 @@ pub fn launch_minecraft_process(
     let (log_tx, log_rx) = std::sync::mpsc::channel::<GameLogPayload>();
     spawn_log_batcher(app_handle.clone(), log_rx);
 
+    let shutdown_signal = Arc::new(Mutex::new(None));
+
     if let Some(stdout) = child.stdout.take() {
-        spawn_stdout_streamer(log_tx.clone(), stdout);
+        spawn_stdout_streamer(log_tx.clone(), stdout, shutdown_signal.clone());
     }
     if let Some(stderr) = child.stderr.take() {
-        spawn_stderr_streamer(log_tx, stderr);
+        spawn_stderr_streamer(log_tx, stderr, shutdown_signal.clone());
     }
 
     {
@@ -898,7 +994,13 @@ pub fn launch_minecraft_process(
     }
 
     let _ = app_handle.emit("game-started", pid);
-    spawn_process_monitor(app_handle, pid, post_exit_command, game_dir);
+    spawn_process_monitor(
+        app_handle,
+        pid,
+        post_exit_command,
+        game_dir,
+        shutdown_signal,
+    );
 
     Ok(pid)
 }
@@ -1227,6 +1329,45 @@ mod tests {
     #[ignore = "Modifica la prioridad de proceso y afinidad del runner de tests. Requiere aislamiento."]
     fn test_apply_os_optimizations_smoke() {
         apply_os_optimizations(std::process::id());
+    }
+
+    #[test]
+    fn test_is_client_shutdown_line() {
+        assert!(is_client_shutdown_line(
+            "[12:00:01] [Render thread/INFO]: Stopping!"
+        ));
+        assert!(is_client_shutdown_line(
+            "[12:00:01] [Render thread/INFO] [minecraft/Minecraft]: Stopping!\r"
+        ));
+        // Chat: un jugador escribiendo "Stopping!" no debe disparar el cierre forzado
+        assert!(!is_client_shutdown_line(
+            "[12:00:01] [Render thread/INFO]: [System] [CHAT] <Steve> Stopping!"
+        ));
+        assert!(!is_client_shutdown_line(
+            "[12:00:01] [Render thread/INFO]: [CHAT] <Steve> ]: Stopping!"
+        ));
+        assert!(!is_client_shutdown_line(
+            "[12:00:01] [Server thread/INFO]: Stopping server"
+        ));
+        assert!(!is_client_shutdown_line(
+            "[12:00:01] [Render thread/WARN]: Stopping!"
+        ));
+        assert!(!is_client_shutdown_line("Stopping!"));
+    }
+
+    #[test]
+    fn test_record_shutdown_activity_arms_and_refreshes() {
+        let signal = Mutex::new(None);
+        record_shutdown_activity(&signal, "[12:00:00] [Render thread/INFO]: Disconnecting");
+        assert!(signal.lock().unwrap().is_none());
+
+        record_shutdown_activity(&signal, "[12:00:01] [Render thread/INFO]: Stopping!");
+        let armed_at = signal.lock().unwrap().expect("la señal debe armarse");
+
+        thread::sleep(Duration::from_millis(5));
+        record_shutdown_activity(&signal, "[12:00:02] [Server thread/INFO]: Saving worlds");
+        let refreshed_at = signal.lock().unwrap().expect("la señal sigue armada");
+        assert!(refreshed_at > armed_at);
     }
 
     #[test]

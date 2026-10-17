@@ -11,6 +11,7 @@ import {
   GripHorizontal,
   Sliders,
   AlertTriangle,
+  Square,
 } from 'lucide-react';
 import {
   useLauncherStore,
@@ -85,6 +86,8 @@ interface FreeButtonElementProps {
   inspectorTab: InspectorTab;
   onCloseInspector: () => void;
   accentColor?: string;
+  isLaunchHovered?: boolean;
+  onLaunchHover?: (h: boolean) => void;
 }
 
 interface FreeButtonCoordBadgeProps {
@@ -215,6 +218,8 @@ const FreeButtonElement: React.FC<FreeButtonElementProps> = ({
   inspectorTab,
   onCloseInspector,
   accentColor,
+  isLaunchHovered,
+  onLaunchHover,
 }) => {
   const buttonClasses = resolveFreeButtonClasses(isLaunch, isRunning, isLaunching, effectClass);
   const borderStyle = resolveFreeButtonBorder(
@@ -256,6 +261,13 @@ const FreeButtonElement: React.FC<FreeButtonElementProps> = ({
         onDoubleClick={onDoubleClick}
         onContextMenu={onContextMenu}
         onMouseDown={onMouseDown}
+        onMouseEnter={() => {
+          if (isLaunch) onLaunchHover?.(true);
+        }}
+        onMouseLeave={() => {
+          if (isLaunch) onLaunchHover?.(false);
+        }}
+        title={isLaunch && isRunning ? t.dock.runningTooltip : undefined}
         className={buttonClasses}
         style={{
           width: btnW,
@@ -266,12 +278,17 @@ const FreeButtonElement: React.FC<FreeButtonElementProps> = ({
             isLaunch,
             isRunning,
             isLaunching,
-            startHoverBg,
+            startHoverBg: isRunning && isLaunchHovered ? 'rgba(239, 68, 68, 0.25)' : startHoverBg,
             startSubtleBg,
             customBtnColor,
             fallbackBg: `rgba(12, 17, 24, ${dockConfig.bgOpacity})`,
           }),
-          color: resolveButtonColor(btnCustom, isLaunch, startColor, customBtnColor),
+          color: resolveButtonColor(
+            btnCustom,
+            isLaunch,
+            isRunning && isLaunchHovered ? '#ef4444' : startColor,
+            customBtnColor,
+          ),
           border: borderStyle,
           boxShadow: shadowStyle,
           backdropFilter: 'blur(20px)',
@@ -378,6 +395,8 @@ interface FreeButtonsLayoutProps {
   startColor: string;
   getButtonCustomColor: (btnId: DockButtonId) => string | null | undefined;
   accentColor?: string;
+  isLaunchHovered?: boolean;
+  onLaunchHover?: (h: boolean) => void;
 }
 
 const FreeButtonsLayout: React.FC<FreeButtonsLayoutProps> = ({
@@ -413,6 +432,8 @@ const FreeButtonsLayout: React.FC<FreeButtonsLayoutProps> = ({
   startColor,
   getButtonCustomColor,
   accentColor,
+  isLaunchHovered,
+  onLaunchHover,
 }) => {
   const allFreeButtons = useMemo(() => {
     const modButtonIds = (activeModuleButtons || []).map(
@@ -503,6 +524,8 @@ const FreeButtonsLayout: React.FC<FreeButtonsLayoutProps> = ({
             inspectorTab={inspectorTab}
             onCloseInspector={onCloseInspector}
             accentColor={accentColor}
+            isLaunchHovered={isLaunchHovered}
+            onLaunchHover={onLaunchHover}
           />
         );
       })}
@@ -548,6 +571,8 @@ interface GroupedDockLayoutProps {
   showLabels: boolean;
   labelFontSize: string;
   isButtonLabelVisible?: (btnId: DockButtonId) => boolean;
+  isLaunchHovered?: boolean;
+  onLaunchHover?: (h: boolean) => void;
 }
 
 const GroupedDockLayout: React.FC<GroupedDockLayoutProps> = ({
@@ -585,6 +610,8 @@ const GroupedDockLayout: React.FC<GroupedDockLayoutProps> = ({
   showLabels,
   labelFontSize,
   isButtonLabelVisible,
+  isLaunchHovered,
+  onLaunchHover,
 }) => {
   const dockZIndex = resolveButtonZIndex(draggingTarget === 'dock', isEditingHud);
   const dockBorder = resolveDockBorder(isEditingHud, dockConfig.dockBorderColorMode);
@@ -788,6 +815,13 @@ const GroupedDockLayout: React.FC<GroupedDockLayoutProps> = ({
                   onClick={(e) => onButtonClick(btnId, e)}
                   onDoubleClick={(e) => onButtonDoubleClick?.(btnId, e)}
                   onContextMenu={(e) => onButtonContextMenu?.(btnId, e)}
+                  onMouseEnter={() => {
+                    if (isLaunch) onLaunchHover?.(true);
+                  }}
+                  onMouseLeave={() => {
+                    if (isLaunch) onLaunchHover?.(false);
+                  }}
+                  title={isLaunch && isRunning ? t.dock.runningTooltip : undefined}
                   className={`dock-segment ${isLaunch ? 'start-game' : ''} ${resolveStatusClass(
                     isRunning,
                     isLaunching,
@@ -803,13 +837,15 @@ const GroupedDockLayout: React.FC<GroupedDockLayoutProps> = ({
                       isLaunch,
                       isRunning,
                       isLaunching,
-                      startHoverBg,
+                      startHoverBg:
+                        isRunning && isLaunchHovered ? 'rgba(239, 68, 68, 0.25)' : startHoverBg,
                       startSubtleBg,
                       customBtnColor,
                       fallbackBg: 'transparent',
                     }),
                     color: (() => {
                       if (btnCustom?.contentColor) return btnCustom.contentColor;
+                      if (isLaunch && isRunning && isLaunchHovered) return '#ef4444';
                       return isLaunch ? startColor : (customBtnColor ?? '#cbd5e1');
                     })(),
                     cursor: isEditingHud && draggingTarget === 'dock' ? 'grabbing' : 'pointer',
@@ -971,6 +1007,7 @@ export const HomeDock: React.FC = () => {
     null,
   );
   const [inspectorTab, setInspectorTab] = useState<'bg' | 'icon' | 'fx' | 'shape'>('bg');
+  const [isLaunchHovered, setIsLaunchHovered] = useState(false);
 
   const dockRef = useRef<HTMLDivElement>(null);
   const buttonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
@@ -1175,7 +1212,10 @@ export const HomeDock: React.FC = () => {
         const buttonCount = Math.max(1, activeButtons.length + activeModuleButtons.length);
         const hasLaunch = activeButtons.includes('launch');
         const divisor = hasLaunch ? buttonCount - 1 + 1.15 : buttonCount;
-        const finalBtnW = Math.max(minSegmentW, Math.min(maxSegmentW, Math.round(finalW / divisor)));
+        const finalBtnW = Math.max(
+          minSegmentW,
+          Math.min(maxSegmentW, Math.round(finalW / divisor)),
+        );
         const finalDockH = Math.max(minDockH, Math.min(maxDockH, finalH));
 
         launcherActions.setDockConfig({
@@ -1216,7 +1256,13 @@ export const HomeDock: React.FC = () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [resizing, activeButtons.length, activeModuleButtons.length, dockConfig.scale, dockConfig.showLabels]);
+  }, [
+    resizing,
+    activeButtons,
+    activeModuleButtons.length,
+    dockConfig.scale,
+    dockConfig.showLabels,
+  ]);
 
   // Window resize listener to recalculate limits and bounds
   useEffect(() => {
@@ -1353,7 +1399,10 @@ export const HomeDock: React.FC = () => {
     const buttonCount = Math.max(1, activeButtons.length + activeModuleButtons.length);
     const hasLaunch = activeButtons.includes('launch');
     const divisor = hasLaunch ? buttonCount - 1 + 1.15 : buttonCount;
-    effectiveSegmentWidthPx = Math.max(minSegmentW, Math.min(maxSegmentW, Math.round(liveDockDims.width / divisor)));
+    effectiveSegmentWidthPx = Math.max(
+      minSegmentW,
+      Math.min(maxSegmentW, Math.round(liveDockDims.width / divisor)),
+    );
   }
 
   let segmentWidth = `${effectiveSegmentWidthPx}px`;
@@ -1372,7 +1421,10 @@ export const HomeDock: React.FC = () => {
       const buttonCount = Math.max(1, activeButtons.length + activeModuleButtons.length);
       const hasLaunch = activeButtons.includes('launch');
       const divisor = hasLaunch ? buttonCount - 1 + 1.12 : buttonCount;
-      effectiveCompactW = Math.max(minSegmentW, Math.min(maxSegmentW, Math.round(liveDockDims.width / divisor)));
+      effectiveCompactW = Math.max(
+        minSegmentW,
+        Math.min(maxSegmentW, Math.round(liveDockDims.width / divisor)),
+      );
     }
     segmentWidth = `${effectiveCompactW}px`;
     segmentHeight = `${effectiveCompactH}px`;
@@ -1904,6 +1956,9 @@ export const HomeDock: React.FC = () => {
 
   const getLaunchIcon = () => {
     if (isRunning) {
+      if (isLaunchHovered) {
+        return <Square size={iconSize - 2} fill="currentColor" />;
+      }
       return <CheckCircle2 size={iconSize + 2} />;
     }
     if (isLaunching) {
@@ -1913,28 +1968,43 @@ export const HomeDock: React.FC = () => {
   };
 
   const getLaunchLabel = () => {
-    if (isRunning) return t.dock.running;
+    if (isRunning) {
+      return isLaunchHovered ? t.dock.stopGame : t.dock.running;
+    }
     if (isLaunching) return `${launch.progress}%`;
     return t.dock.launch;
   };
 
   const renderLaunchButton = (customColor?: string | null) => {
-    const launchIconColor = customColor ?? startColor;
+    const isStopping = isRunning && isLaunchHovered;
+    const launchIconColor = isStopping ? '#ef4444' : (customColor ?? startColor);
+    const launchLabelColor = isStopping ? '#ef4444' : startColor;
     const shouldShowLabel = isButtonLabelVisible('launch');
     return (
       <>
         {renderIconWithCustomization(
           'launch',
-          <div style={{ color: launchIconColor }}>{getLaunchIcon()}</div>,
+          <div
+            style={{
+              color: launchIconColor,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'color 0.15s ease',
+            }}
+          >
+            {getLaunchIcon()}
+          </div>,
           launchIconColor,
         )}
         {shouldShowLabel && (
           <span
             className="dock-label"
             style={{
-              color: startColor,
+              color: launchLabelColor,
               fontSize: labelFontSize,
               fontWeight: 800,
+              transition: 'color 0.15s ease',
             }}
           >
             {getLaunchLabel()}
@@ -2104,6 +2174,8 @@ export const HomeDock: React.FC = () => {
         startColor={startColor}
         getButtonCustomColor={getButtonCustomColor}
         accentColor={accentColor}
+        isLaunchHovered={isLaunchHovered}
+        onLaunchHover={setIsLaunchHovered}
       />
     );
   }
@@ -2173,6 +2245,8 @@ export const HomeDock: React.FC = () => {
       showLabels={showLabels}
       labelFontSize={labelFontSize}
       isButtonLabelVisible={isButtonLabelVisible}
+      isLaunchHovered={isLaunchHovered}
+      onLaunchHover={setIsLaunchHovered}
     />
   );
 };

@@ -59,6 +59,14 @@ pub fn is_library_allowed_on_current_os(rules: &Option<Vec<serde_json::Value>>) 
         other => other,
     };
 
+    let current_arch = match std::env::consts::ARCH {
+        "x86_64" => "x64",
+        "x86" => "x86",
+        "aarch64" => "arm64",
+        "arm" => "arm32",
+        other => other,
+    };
+
     let mut allowed = false;
     for rule in rules {
         let action = rule
@@ -66,16 +74,138 @@ pub fn is_library_allowed_on_current_os(rules: &Option<Vec<serde_json::Value>>) 
             .and_then(|a| a.as_str())
             .unwrap_or("disallow");
         if let Some(os) = rule.get("os").and_then(|o| o.as_object()) {
+            let mut matches = true;
             if let Some(os_name) = os.get("name").and_then(|n| n.as_str()) {
-                if os_name == current_os {
-                    allowed = action == "allow";
+                if os_name != current_os {
+                    matches = false;
                 }
+            }
+            if let Some(os_arch) = os.get("arch").and_then(|a| a.as_str()) {
+                let arch_matches = match (os_arch, current_arch) {
+                    ("x86", "x86") => true,
+                    ("x64" | "x86_64" | "amd64", "x64") => true,
+                    ("arm64" | "aarch64", "arm64") => true,
+                    ("arm" | "arm32", "arm32") => true,
+                    (a, b) => a == b,
+                };
+                if !arch_matches {
+                    matches = false;
+                }
+            }
+            if matches {
+                allowed = action == "allow";
             }
         } else {
             allowed = action == "allow";
         }
     }
     allowed
+}
+
+fn current_native_arch() -> &'static str {
+    match std::env::consts::ARCH {
+        "x86_64" => "x64",
+        "x86" => "x86",
+        "aarch64" => "arm64",
+        "arm" => "arm32",
+        other => other,
+    }
+}
+
+/// Arquitectura declarada justo después del marcador de SO (`natives-windows-x86`,
+/// `lwjgl-natives-linux-arm64.jar`...). El sufijo se lee como token completo
+/// (`[a-z0-9_]+`), así `x86_64` nunca se confunde con `x86`. Misma lógica que
+/// `isLibraryArchAllowed` en `launcherService.ts`.
+fn explicit_native_arch(raw_lower: &str) -> Option<&'static str> {
+    const OS_MARKERS: [&str; 4] = ["windows", "linux", "osx", "macos"];
+    let mut found: Vec<&'static str> = Vec::new();
+    for marker in OS_MARKERS {
+        for (idx, _) in raw_lower.match_indices(marker) {
+            let Some(rest) = raw_lower[idx + marker.len()..].strip_prefix('-') else {
+                continue;
+            };
+            let token_len = rest
+                .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+                .unwrap_or(rest.len());
+            let arch = match &rest[..token_len] {
+                "arm64" | "aarch64" | "aarch_64" => "arm64",
+                "x86" | "i386" | "i686" => "x86",
+                "arm32" | "armhf" => "arm32",
+                "x86_64" | "amd64" | "x64" => "x64",
+                _ => continue,
+            };
+            found.push(arch);
+        }
+    }
+    // Misma prioridad que el frontend si aparecen varias arquitecturas
+    ["arm64", "x86", "arm32", "x64"]
+        .into_iter()
+        .find(|arch| found.contains(arch))
+}
+
+/// Natives genéricos sin sufijo de arquitectura (`natives-windows`, `-natives-linux.jar`):
+/// Mojang los publica para x64.
+fn is_generic_native(raw_lower: &str) -> bool {
+    [
+        "natives-windows",
+        "natives-macos",
+        "natives-osx",
+        "natives-linux",
+    ]
+    .iter()
+    .any(|marker| {
+        raw_lower.match_indices(marker).any(|(idx, _)| {
+            let rest = &raw_lower[idx + marker.len()..];
+            rest.is_empty()
+                || rest.starts_with(char::is_whitespace)
+                || [".jar", "_jar", "@jar", ".zip", "_zip", "@zip"]
+                    .iter()
+                    .any(|ext| rest.starts_with(ext))
+        })
+    })
+}
+
+fn is_library_arch_allowed(lib: &MojangLibrary) -> bool {
+    is_library_arch_allowed_for(lib, current_native_arch())
+}
+
+fn is_library_arch_allowed_for(lib: &MojangLibrary, current_arch: &str) -> bool {
+    let mut raw_id = String::new();
+    if let Some(name) = &lib.name {
+        raw_id.push_str(name);
+        raw_id.push(' ');
+    }
+    if let Some(downloads) = &lib.downloads {
+        if let Some(artifact) = &downloads.artifact {
+            if let Some(path) = &artifact.path {
+                raw_id.push_str(path);
+            }
+        }
+    }
+    let raw_lower = raw_id.to_lowercase();
+    if raw_lower.trim().is_empty() {
+        return true;
+    }
+
+    let is_native = raw_lower.contains("native")
+        || raw_lower.contains("windows")
+        || raw_lower.contains("osx")
+        || raw_lower.contains("macos")
+        || raw_lower.contains("linux");
+
+    if !is_native {
+        return true;
+    }
+
+    if let Some(arch) = explicit_native_arch(&raw_lower) {
+        return current_arch == arch;
+    }
+
+    if is_generic_native(&raw_lower) {
+        return current_arch == "x64";
+    }
+
+    true
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
@@ -415,6 +545,9 @@ async fn download_missing_libraries(
     let mut missing_libs = Vec::new();
     for lib in libraries {
         if !is_library_allowed_on_current_os(&lib.rules) {
+            continue;
+        }
+        if !is_library_arch_allowed(lib) {
             continue;
         }
         if let Some(downloads) = &lib.downloads {
@@ -1378,6 +1511,54 @@ mod tests {
             }),
         ]);
         assert!(!is_library_allowed_on_current_os(&disallow_current_os));
+    }
+
+    fn native_lib(name: &str, path: &str) -> MojangLibrary {
+        serde_json::from_value(serde_json::json!({
+            "name": name,
+            "downloads": {"artifact": {"path": path}}
+        }))
+        .expect("librería de prueba válida")
+    }
+
+    #[test]
+    fn test_is_library_arch_allowed_for() {
+        let generic = native_lib(
+            "org.lwjgl:lwjgl:3.3.3:natives-windows",
+            "org/lwjgl/lwjgl/3.3.3/lwjgl-3.3.3-natives-windows.jar",
+        );
+        let x86 = native_lib(
+            "org.lwjgl:lwjgl:3.3.3:natives-windows-x86",
+            "org/lwjgl/lwjgl/3.3.3/lwjgl-3.3.3-natives-windows-x86.jar",
+        );
+        let x86_64 = native_lib(
+            "org.lwjgl:lwjgl:3.3.3:natives-windows-x86_64",
+            "org/lwjgl/lwjgl/3.3.3/lwjgl-3.3.3-natives-windows-x86_64.jar",
+        );
+        let arm64 = native_lib(
+            "org.lwjgl:lwjgl:3.3.3:natives-windows-arm64",
+            "org/lwjgl/lwjgl/3.3.3/lwjgl-3.3.3-natives-windows-arm64.jar",
+        );
+        let plain = native_lib(
+            "com.google.guava:guava:32.1.2-jre",
+            "com/google/guava/guava-32.1.2-jre.jar",
+        );
+
+        assert!(is_library_arch_allowed_for(&generic, "x64"));
+        assert!(!is_library_arch_allowed_for(&generic, "arm64"));
+
+        assert!(is_library_arch_allowed_for(&x86, "x86"));
+        assert!(!is_library_arch_allowed_for(&x86, "x64"));
+
+        // Regresión: `natives-windows-x86_64` se trataba como 32 bits y se descartaba en x64
+        assert!(is_library_arch_allowed_for(&x86_64, "x64"));
+        assert!(!is_library_arch_allowed_for(&x86_64, "x86"));
+
+        assert!(is_library_arch_allowed_for(&arm64, "arm64"));
+        assert!(!is_library_arch_allowed_for(&arm64, "x64"));
+
+        assert!(is_library_arch_allowed_for(&plain, "x64"));
+        assert!(is_library_arch_allowed_for(&plain, "arm64"));
     }
 
     #[test]
