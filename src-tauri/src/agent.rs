@@ -431,6 +431,8 @@ const LEGACY_BOOST_JAR_SHA256: &[&str] = &[
     "d667f0b8fa70d1dec49fc546fd3a5a2ce6589ac0ad86d206c1516bdc59568461", // neoforge 1.0.0 (sin agent bridge)
     "9c39a75d0ad8c87c84b1f56522a47575f8ecb5d280aea0e562a1443b6f4740a7", // crystaltides-boost-fabric.jar previo (sync 2026-10-16)
     "e53774d3b5aa9227920d421515a6eae5a4b5ca2ee8e3233203948f6387d739e2", // crystaltides-boost-neoforge.jar previo (sync 2026-10-16)
+    "4512f6021b5af028fec4ceb8e484632b985259d63677eaa5b3ae9481afdeac81", // crystaltides-boost-fabric.jar previo (sync 2026-10-16)
+    "f194c8c377502029a8d58e3f1f66e38c5bf8b2bb374ee20c50d6c54a04d26f2c", // crystaltides-boost-neoforge.jar previo (sync 2026-10-16)
 ];
 
 fn is_known_boost_jar(bytes: &[u8]) -> bool {
@@ -1096,7 +1098,7 @@ mod tests {
         let fabric_boost_hash = hex::encode(sha2::Sha256::digest(EMBEDDED_BOOST_FABRIC_JAR));
         assert_eq!(
             fabric_boost_hash,
-            "4512f6021b5af028fec4ceb8e484632b985259d63677eaa5b3ae9481afdeac81"
+            "155ee7d83e79eab6e1414e428f9dbd71ea15463f600a91447e22506f1303df23"
         );
         assert_eq!(
             manifest_sha256_for("crystaltides-boost-fabric.jar").as_deref(),
@@ -1106,7 +1108,7 @@ mod tests {
         let neoforge_boost_hash = hex::encode(sha2::Sha256::digest(EMBEDDED_BOOST_NEOFORGE_JAR));
         assert_eq!(
             neoforge_boost_hash,
-            "f194c8c377502029a8d58e3f1f66e38c5bf8b2bb374ee20c50d6c54a04d26f2c"
+            "7f4999068fbe0a01c1b3a06aadbcc0501e3d460fb65a21878f028027d16f9130"
         );
         assert_eq!(
             manifest_sha256_for("crystaltides-boost-neoforge.jar").as_deref(),
