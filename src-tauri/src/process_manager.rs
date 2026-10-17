@@ -1275,8 +1275,13 @@ pub fn enforce_high_performance_gpu(java_path: &std::path::Path) {
                 val_data.as_ptr() as *const u8,
                 val_data.len() * std::mem::size_of::<u16>(),
             );
-            let set_res =
-                RegSetValueExW(hkey, PCWSTR(val_name.as_ptr()), None, REG_SZ, Some(data_bytes));
+            let set_res = RegSetValueExW(
+                hkey,
+                PCWSTR(val_name.as_ptr()),
+                None,
+                REG_SZ,
+                Some(data_bytes),
+            );
             if set_res.is_ok() {
                 crate::logger::log(
                     "INFO",
