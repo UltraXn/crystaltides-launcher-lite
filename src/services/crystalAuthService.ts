@@ -173,6 +173,7 @@ export async function loginWithCrystalTides(
     console.error('[CrystalAuth] Network error:', netErr);
     throw new Error(
       'No se pudo conectar con el servidor de CrystalTidesSMP. Revisa tu conexión a internet.',
+      { cause: netErr },
     );
   }
 
@@ -217,7 +218,7 @@ export async function loginWithCrystalTides(
       if (e instanceof Error && e.message.includes('expirado')) {
         throw e;
       }
-      throw new Error('Token de sesión inválido o corrupto.');
+      throw new Error('Token de sesión inválido o corrupto.', { cause: e });
     }
   }
 
