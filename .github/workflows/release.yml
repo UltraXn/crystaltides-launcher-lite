@@ -61,6 +61,18 @@ jobs:
           }
           Write-Host "✓ Supabase environment variables verified."
 
+      # Falla antes del build release (LTO, varios minutos) si no se va a poder firmar el updater.
+      - name: Verify Updater Signing Key
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if (-not $env:TAURI_SIGNING_PRIVATE_KEY) {
+            Write-Error "CRITICAL: TAURI_SIGNING_PRIVATE_KEY es requerida en los Secrets para firmar el AutoUpdater y generar latest.json."
+            exit 1
+          }
+          Write-Host "✓ Updater signing key present."
+
       - name: Verify release tag matches app version
         shell: pwsh
         env:
@@ -118,40 +130,48 @@ jobs:
 
           # 2. Firmar el instalador para el AutoUpdater y generar latest.json.
           #    tauri-plugin-updater lo ejecuta con /P /UPDATE; self_update.rs reemplaza bin/ y relanza.
+          #    Sin firma o sin latest.json no se publica: los usuarios de esa versión
+          #    quedarían sin auto-actualización para siempre.
           $updaterTarget = "release-artifacts/CrystalTides-Setup.exe"
-          if ($env:TAURI_SIGNING_PRIVATE_KEY) {
-            Write-Host "🔐 Firmando instalador para AutoUpdater con Tauri Signer..."
-            pnpm tauri signer sign -k "$env:TAURI_SIGNING_PRIVATE_KEY" -p "$($env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD)" $updaterTarget
-
-            $sigFile = "$updaterTarget.sig"
-            if (Test-Path $sigFile) {
-              $sigContent = (Get-Content -Path $sigFile -Raw).Trim()
-              $tag = if ($env:RELEASE_TAG) { $env:RELEASE_TAG } else { "v0.1.0" }
-              $cleanVersion = $tag -replace '^v', ''
-              $pubDate = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-
-              $latestManifest = @{
-                version = $cleanVersion
-                notes = "Actualización de CrystalTides Launcher ($tag)"
-                pub_date = $pubDate
-                platforms = @{
-                  "windows-x86_64" = @{
-                    signature = $sigContent
-                    url = "https://github.com/UltraXn/crystaltides-launcher-lite/releases/download/$tag/CrystalTides-Setup.exe"
-                  }
-                }
-              }
-
-              $manifestJson = $latestManifest | ConvertTo-Json -Depth 5
-              $manifestJson | Set-Content -Path "release-artifacts/latest.json" -Encoding utf8
-              Write-Host "✓ latest.json generado con éxito:"
-              Write-Host $manifestJson
-            } else {
-              Write-Warning "No se pudo encontrar el archivo de firma $sigFile"
-            }
-          } else {
-            Write-Warning "⚠️ TAURI_SIGNING_PRIVATE_KEY no está configurado en los Secrets. Se omitió la firma y latest.json."
+          if (-not $env:TAURI_SIGNING_PRIVATE_KEY) {
+            Write-Error "CRITICAL: TAURI_SIGNING_PRIVATE_KEY no está configurado en los Secrets. No se puede firmar ni generar latest.json."
+            exit 1
           }
+
+          Write-Host "🔐 Firmando instalador para AutoUpdater con Tauri Signer..."
+          pnpm tauri signer sign -k "$env:TAURI_SIGNING_PRIVATE_KEY" -p "$($env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD)" $updaterTarget
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "CRITICAL: tauri signer sign falló (exit $LASTEXITCODE). ¿Clave o contraseña incorrectas?"
+            exit 1
+          }
+
+          $sigFile = "$updaterTarget.sig"
+          if (-not (Test-Path $sigFile)) {
+            Write-Error "CRITICAL: No se generó el archivo de firma $sigFile"
+            exit 1
+          }
+
+          $sigContent = (Get-Content -Path $sigFile -Raw).Trim()
+          $tag = $env:RELEASE_TAG
+          $cleanVersion = $tag -replace '^v', ''
+          $pubDate = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+
+          $latestManifest = @{
+            version = $cleanVersion
+            notes = "Actualización de CrystalTides Launcher ($tag)"
+            pub_date = $pubDate
+            platforms = @{
+              "windows-x86_64" = @{
+                signature = $sigContent
+                url = "https://github.com/UltraXn/crystaltides-launcher-lite/releases/download/$tag/CrystalTides-Setup.exe"
+              }
+            }
+          }
+
+          $manifestJson = $latestManifest | ConvertTo-Json -Depth 5
+          $manifestJson | Set-Content -Path "release-artifacts/latest.json" -Encoding utf8
+          Write-Host "✓ latest.json generado con éxito:"
+          Write-Host $manifestJson
 
           # 4. Generar Checksums SHA256
           Get-ChildItem -Path release-artifacts -File | ForEach-Object {
