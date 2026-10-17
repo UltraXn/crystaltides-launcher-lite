@@ -13,8 +13,9 @@ interface FlagIconProps {
  * Franjas proporcionales roja-amarilla-roja con escudo heráldico estilizado.
  */
 export const SpainFlag: React.FC<FlagIconProps> = ({
-  width = 18,
-  height = 12,
+  size,
+  width = size ?? 18,
+  height = size ? Math.round((size * 2) / 3) : 12,
   className,
   style,
 }) => (
@@ -53,11 +54,65 @@ export const SpainFlag: React.FC<FlagIconProps> = ({
 );
 
 /**
+ * Bandera vectorial de Estados Unidos (USA) para inglés (EN).
+ */
+export const UsaFlag: React.FC<FlagIconProps> = ({
+  size,
+  width = size ?? 18,
+  height = size ? Math.round((size * 2) / 3) : 12,
+  className,
+  style,
+}) => (
+  <svg
+    viewBox="0 0 20 14"
+    width={width}
+    height={height}
+    style={{
+      borderRadius: '2.5px',
+      overflow: 'hidden',
+      flexShrink: 0,
+      border: '1px solid rgba(255, 255, 255, 0.16)',
+      boxShadow: '0 1px 3px rgba(0, 0, 0, 0.4)',
+      display: 'inline-block',
+      verticalAlign: 'middle',
+      ...style,
+    }}
+    className={className}
+    aria-hidden="true"
+  >
+    {/* Franjas rojas y blancas (13 franjas) */}
+    <rect width="20" height="14" fill="#B22234" />
+    <rect y="1.08" width="20" height="1.08" fill="#FFFFFF" />
+    <rect y="3.24" width="20" height="1.08" fill="#FFFFFF" />
+    <rect y="5.40" width="20" height="1.08" fill="#FFFFFF" />
+    <rect y="7.56" width="20" height="1.08" fill="#FFFFFF" />
+    <rect y="9.72" width="20" height="1.08" fill="#FFFFFF" />
+    <rect y="11.88" width="20" height="1.08" fill="#FFFFFF" />
+    {/* Cantón azul marino */}
+    <rect width="8" height="7.56" fill="#3C3B6E" />
+    {/* Estrellas estilizadas */}
+    <circle cx="1.6" cy="1.5" r="0.45" fill="#FFFFFF" />
+    <circle cx="3.6" cy="1.5" r="0.45" fill="#FFFFFF" />
+    <circle cx="5.6" cy="1.5" r="0.45" fill="#FFFFFF" />
+    <circle cx="2.6" cy="3.0" r="0.45" fill="#FFFFFF" />
+    <circle cx="4.6" cy="3.0" r="0.45" fill="#FFFFFF" />
+    <circle cx="6.6" cy="3.0" r="0.45" fill="#FFFFFF" />
+    <circle cx="1.6" cy="4.5" r="0.45" fill="#FFFFFF" />
+    <circle cx="3.6" cy="4.5" r="0.45" fill="#FFFFFF" />
+    <circle cx="5.6" cy="4.5" r="0.45" fill="#FFFFFF" />
+    <circle cx="2.6" cy="6.0" r="0.45" fill="#FFFFFF" />
+    <circle cx="4.6" cy="6.0" r="0.45" fill="#FFFFFF" />
+    <circle cx="6.6" cy="6.0" r="0.45" fill="#FFFFFF" />
+  </svg>
+);
+
+/**
  * Bandera vectorial de Reino Unido (Union Jack) para inglés (EN).
  */
 export const UkFlag: React.FC<FlagIconProps> = ({
-  width = 18,
-  height = 12,
+  size,
+  width = size ?? 18,
+  height = size ? Math.round((size * 2) / 3) : 12,
   className,
   style,
 }) => (

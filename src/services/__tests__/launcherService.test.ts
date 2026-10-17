@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   isLibraryAllowed,
+  isLibraryArchAllowed,
   resolveLibraryPath,
   resolveActiveGc,
   isConflictingGcArg,
@@ -67,6 +68,37 @@ describe('launcherService pure helpers', () => {
         value: _navigator,
         writable: true,
       });
+    });
+
+    it('filtra nativas según la arquitectura del sistema y rechaza arquitecturas ajenas', () => {
+      // En x64 (arquitectura actual en pruebas)
+      const x64Lib = { name: 'org.lwjgl:lwjgl:3.4.1:natives-windows' };
+      const arm64Lib = { name: 'org.lwjgl:lwjgl:3.4.1:natives-windows-arm64' };
+      const x86Lib = { name: 'org.lwjgl:lwjgl:3.4.1:natives-windows-x86' };
+      const regularLib = { name: 'com.google.code.gson:gson:2.14.0' };
+
+      expect(isLibraryArchAllowed(x64Lib, 'x64')).toBe(true);
+      expect(isLibraryArchAllowed(arm64Lib, 'x64')).toBe(false);
+      expect(isLibraryArchAllowed(x86Lib, 'x64')).toBe(false);
+      expect(isLibraryArchAllowed(regularLib, 'x64')).toBe(true);
+
+      // En arm64
+      expect(isLibraryArchAllowed(arm64Lib, 'arm64')).toBe(true);
+      expect(isLibraryArchAllowed(x64Lib, 'arm64')).toBe(false);
+      expect(isLibraryArchAllowed(x86Lib, 'arm64')).toBe(false);
+
+      // En x86 (32-bit)
+      expect(isLibraryArchAllowed(x86Lib, 'x86')).toBe(true);
+      expect(isLibraryArchAllowed(x64Lib, 'x86')).toBe(false);
+      expect(isLibraryArchAllowed(arm64Lib, 'x86')).toBe(false);
+    });
+
+    it('respeta reglas con os.arch explícito', () => {
+      expect(
+        isLibraryAllowed({
+          rules: [{ action: 'allow', os: { name: 'windows', arch: 'x86' } }],
+        }),
+      ).toBe(false); // Porque el entorno de prueba es x64
     });
   });
 
@@ -369,6 +401,43 @@ describe('launcherService pure helpers', () => {
       expect(jvm).toContain('-Xms2048M');
       expect(jvm).toContain('-javaagent:agent.jar');
       expect(jvm).toContain('-Dtest.prop=1');
+    });
+
+    it('sustituye natives_directory con una ruta única sin punto y coma para evitar fallos de JNA y LWJGL', () => {
+      const versionData = {
+        arguments: {
+          jvm: [
+            '-Djna.tmpdir=${natives_directory}/jna',
+            '-Dorg.lwjgl.system.SharedLibraryExtractPath=${natives_directory}/lwjgl',
+            '-Dio.netty.native.workdir=${natives_directory}/netty',
+          ],
+        },
+      };
+      const params = {
+        username: 'PlayerOne',
+        uuid: 'uuid-123',
+        accessToken: 'token-abc',
+        maxRam: 4096,
+      };
+
+      const jvm = buildJvmArgs(
+        versionData,
+        params as any,
+        'C:/Users/nacho/.crystaltides/instances/inst-1',
+        'quilt-loader-0.31.0',
+        'cp.jar',
+      );
+
+      const jnaArg = jvm.find((a) => a.startsWith('-Djna.tmpdir='));
+      const lwjglArg = jvm.find((a) => a.startsWith('-Dorg.lwjgl.system.SharedLibraryExtractPath='));
+      const nettyArg = jvm.find((a) => a.startsWith('-Dio.netty.native.workdir='));
+
+      expect(jnaArg).toBeDefined();
+      expect(jnaArg).not.toContain(';');
+      expect(lwjglArg).toBeDefined();
+      expect(lwjglArg).not.toContain(';');
+      expect(nettyArg).toBeDefined();
+      expect(nettyArg).not.toContain(';');
     });
 
     it('construye argumentos de juego con sustitución de placeholders', () => {

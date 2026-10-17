@@ -2,12 +2,13 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import React from 'react';
 import { SettingsModal } from '../SettingsModal';
-import { launcherActions } from '../../../store/launcherStore';
+import { useLauncherStore, launcherActions } from '../../../store/launcherStore';
 import { useModuleStore, initializeBuiltinModules } from '../../../modules';
 
 describe('Plugin & Module SDK in SettingsModal', () => {
   beforeEach(() => {
     localStorage.clear();
+    useModuleStore.setState({ modules: [] });
     initializeBuiltinModules();
     launcherActions.openModal('settings');
     useModuleStore.setState({
@@ -62,6 +63,40 @@ describe('Plugin & Module SDK in SettingsModal', () => {
     await waitFor(() => {
       expect(screen.getByText('Mi Discord Oficial')).toBeDefined();
       expect(screen.getByText('Personalizada')).toBeDefined();
+    });
+  });
+
+  it('permite personalizar el botón en dock y desinstalar una extensión personalizada', async () => {
+    render(<SettingsModal />);
+
+    const addBtn = screen.getByRole('button', { name: /Agregar Extensión/i });
+    fireEvent.click(addBtn);
+
+    const nameInput = screen.getByPlaceholderText(/ej: Discord Oficial, Tienda, Mapa/i);
+    fireEvent.change(nameInput, { target: { value: 'Comunidad Pro' } });
+
+    const createBtn = screen.getByRole('button', { name: /Crear e Instalar Extensión/i });
+    fireEvent.click(createBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText('Comunidad Pro')).toBeDefined();
+    });
+
+    // Encontrar botón "Personalizar Botón"
+    const customizeBtns = screen.getAllByRole('button', { name: /Personalizar Botón/i });
+    expect(customizeBtns.length).toBeGreaterThan(0);
+    fireEvent.click(customizeBtns[0]);
+
+    // Verificar que se disparó la acción para abrir el personalizador del dock
+    expect(useLauncherStore.getState().customizingButtonId).toMatch(/^mod:/);
+
+    // Desinstalar extensión
+    const deleteBtns = screen.getAllByTitle(/Desinstalar y eliminar extensión/i);
+    expect(deleteBtns.length).toBeGreaterThan(0);
+    fireEvent.click(deleteBtns[0]);
+
+    await waitFor(() => {
+      expect(screen.queryByText('Comunidad Pro')).toBeNull();
     });
   });
 });
