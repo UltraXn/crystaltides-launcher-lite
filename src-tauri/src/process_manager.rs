@@ -875,7 +875,10 @@ fn spawn_process_monitor(
             &shutdown_signal,
         ) {
             PollResult::Running => continue,
-            PollResult::Exited | PollResult::Stop => break,
+            PollResult::Exited | PollResult::Stop => {
+                crate::game_marker::clear_if(pid);
+                break;
+            }
         }
     });
 }
@@ -906,6 +909,7 @@ pub fn launch_minecraft_process(
     // con la sesión nueva ya guardada (o sin ella si el lanzamiento falló)
     let _launch_slot = LaunchSlot::acquire(&LAUNCH_IN_PROGRESS)?;
     check_running_instance(&GAME_SESSION)?;
+    crate::game_marker::check_no_orphaned_game()?;
     enforce_high_performance_gpu(&validated_java_path);
 
     if let Some(ref pre_cmd) = pre_launch_command {
@@ -995,6 +999,7 @@ pub fn launch_minecraft_process(
         #[cfg(target_os = "windows")]
         job,
     });
+    crate::game_marker::record(pid);
 
     let _ = app_handle.emit("game-started", pid);
     spawn_process_monitor(

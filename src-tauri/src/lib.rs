@@ -6,6 +6,7 @@ mod delta_patch;
 mod discord_rpc;
 pub mod downloader;
 pub mod error;
+mod game_marker;
 mod gpu_preset;
 mod hardware;
 mod importer;
