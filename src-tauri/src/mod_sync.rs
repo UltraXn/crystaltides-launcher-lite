@@ -66,6 +66,47 @@ mod tests {
         assert!(validate_filename("sodium.jar:oculto").is_err());
         assert!(validate_filename("C:mod.jar").is_err());
     }
+
+    fn download_item(name: &str, sha1: &str) -> ModDownloadItem {
+        ModDownloadItem {
+            name: name.to_string(),
+            url: "https://cdn.modrinth.com/data/x/sodium.jar".to_string(),
+            sha1: sha1.to_string(),
+        }
+    }
+
+    #[test]
+    fn test_parse_sha1_requires_40_hex_chars() {
+        let hash = "A94A8FE5CCB19BA61C4C0873D391E987982FBBD3";
+        assert_eq!(
+            parse_sha1("m", &format!(" {hash} ")).unwrap(),
+            hash.to_ascii_lowercase()
+        );
+
+        assert!(parse_sha1("m", "").is_err());
+        assert!(parse_sha1("m", "   ").is_err());
+        assert!(parse_sha1("m", &hash[..39]).is_err());
+        assert!(parse_sha1("m", &format!("{}g", &hash[..39])).is_err());
+        // Un SHA-256 no es un SHA-1
+        assert!(parse_sha1("m", &"a".repeat(64)).is_err());
+    }
+
+    #[test]
+    fn test_download_list_rejects_mod_without_hash_before_downloading() {
+        let valid = "a94a8fe5ccb19ba61c4c0873d391e987982fbbd3";
+        let err = validate_download_list(vec![
+            download_item("sodium.jar", valid),
+            download_item("lithium.jar", ""),
+        ])
+        .unwrap_err();
+        assert!(err.contains("lithium.jar"), "{err}");
+
+        assert!(validate_download_list(vec![download_item("../x.jar", valid)]).is_err());
+
+        let ok = validate_download_list(vec![download_item("sodium.jar", &valid.to_uppercase())])
+            .unwrap();
+        assert_eq!(ok[0].sha1, valid);
+    }
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
@@ -117,6 +158,30 @@ fn write_manifest(target_dir: &Path, files: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+/// Un mod se ejecuta dentro del juego con los permisos del usuario: sin un SHA-1 con el que
+/// comprobar el archivo descargado no se instala.
+fn parse_sha1(mod_name: &str, sha1: &str) -> Result<String, String> {
+    let hex = sha1.trim();
+    if hex.len() == 40 && hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+        Ok(hex.to_ascii_lowercase())
+    } else {
+        Err(format!(
+            "El mod {mod_name} no trae un SHA-1 válido y no se descarga sin verificar."
+        ))
+    }
+}
+
+/// Se valida la lista entera antes de descargar nada, para no dejar la mitad de los mods bajados.
+fn validate_download_list(mods: Vec<ModDownloadItem>) -> Result<Vec<ModDownloadItem>, String> {
+    mods.into_iter()
+        .map(|mod_item| {
+            validate_filename(&mod_item.name)?;
+            let sha1 = parse_sha1(&mod_item.name, &mod_item.sha1)?;
+            Ok(ModDownloadItem { sha1, ..mod_item })
+        })
+        .collect()
+}
+
 async fn process_mod_download(
     app: &tauri::AppHandle,
     client: &reqwest::Client,
@@ -124,14 +189,8 @@ async fn process_mod_download(
     mod_item: ModDownloadItem,
     idx: usize,
 ) -> Result<(), String> {
-    validate_filename(&mod_item.name)?;
     let file_path = Path::new(target_dir).join(&mod_item.name);
-
-    let expected_hash = if !mod_item.sha1.trim().is_empty() {
-        crate::downloader::ExpectedHash::Sha1(mod_item.sha1.trim().to_string())
-    } else {
-        crate::downloader::ExpectedHash::None
-    };
+    let expected_hash = crate::downloader::ExpectedHash::Sha1(mod_item.sha1);
 
     crate::downloader::download_verified(client, &mod_item.url, &file_path, &expected_hash, true)
         .await?;
@@ -149,6 +208,7 @@ pub async fn download_mods_parallel(
     max_concurrent: Option<i32>,
 ) -> Result<(), String> {
     crate::agent::validate_game_dir(&output_dir)?;
+    let mods = validate_download_list(mods)?;
     let out_path = PathBuf::from(&output_dir);
     if !out_path.exists() {
         fs::create_dir_all(&out_path).map_err(|e| e.to_string())?;
