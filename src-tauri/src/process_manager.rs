@@ -1,7 +1,8 @@
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
@@ -23,8 +24,58 @@ pub struct GameStoppedPayload {
     pub success: bool,
 }
 
-static GAME_PROCESS: OnceLock<Arc<Mutex<Option<Child>>>> = OnceLock::new();
-static TIMER_ACTIVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// Una sesión de juego: el proceso hijo y, en Windows, el Job Object que encierra su árbol.
+/// Viven bajo el mismo mutex para que retirar una sesión cierre su propio Job y nunca el de otra.
+struct GameSession {
+    child: Child,
+    #[cfg(target_os = "windows")]
+    job: Option<ProcessJobGuard>,
+}
+
+static GAME_SESSION: Mutex<Option<GameSession>> = Mutex::new(None);
+static TIMER_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+/// Entre comprobar que no hay instancia activa y guardar la sesión nueva pasan el hook
+/// pre-launch (hasta 10 s) y el spawn; sin esta marca dos lanzamientos simultáneos pasaban
+/// ambos la comprobación y el segundo, al sustituir el Job, liquidaba el primer juego.
+static LAUNCH_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
+
+/// Reserva exclusiva de un lanzamiento; se libera al soltarse, tanto con éxito como con error.
+struct LaunchSlot(&'static AtomicBool);
+
+impl LaunchSlot {
+    fn acquire(flag: &'static AtomicBool) -> Result<Self, String> {
+        flag.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .map(|_| Self(flag))
+            .map_err(|_| "Ya hay un lanzamiento de Minecraft en curso.".to_string())
+    }
+}
+
+impl Drop for LaunchSlot {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
+}
+
+fn lock_session(session: &Mutex<Option<GameSession>>) -> MutexGuard<'_, Option<GameSession>> {
+    session.lock().unwrap_or_else(|e| {
+        crate::logger::log(
+            "WARN",
+            "ProcessManager",
+            &format!("Mutex envenenado, recuperando lock... {}", e),
+        );
+        e.into_inner()
+    })
+}
+
+/// Retira la sesión terminada con el lock tomado, para que un lanzamiento nuevo no pueda colarse
+/// entre retirar el proceso y restaurar el estado global (Job, timer, métricas).
+fn end_session(slot: &mut Option<GameSession>) {
+    // En Windows suelta el Job: KILL_ON_JOB_CLOSE liquida los procesos huérfanos del árbol
+    *slot = None;
+    set_high_resolution_timer(false);
+    crate::agent::reset_live_metrics();
+}
 
 #[cfg(target_os = "windows")]
 mod winmm {
@@ -39,7 +90,6 @@ mod winmm {
 pub fn set_high_resolution_timer(enable: bool) {
     #[cfg(target_os = "windows")]
     unsafe {
-        use std::sync::atomic::Ordering;
         if enable {
             if !TIMER_ACTIVE.swap(true, Ordering::SeqCst) {
                 winmm::timeBeginPeriod(1);
@@ -58,10 +108,6 @@ pub fn set_high_resolution_timer(enable: bool) {
             );
         }
     }
-}
-
-fn get_game_process_handle() -> &'static Arc<Mutex<Option<Child>>> {
-    GAME_PROCESS.get_or_init(|| Arc::new(Mutex::new(None)))
 }
 
 #[cfg(target_os = "windows")]
@@ -129,15 +175,6 @@ impl Drop for ProcessJobGuard {
             let _ = CloseHandle(HANDLE(self.job_handle as *mut _));
         }
     }
-}
-
-#[cfg(target_os = "windows")]
-static GAME_JOB_GUARD: std::sync::OnceLock<Arc<Mutex<Option<ProcessJobGuard>>>> =
-    std::sync::OnceLock::new();
-
-#[cfg(target_os = "windows")]
-fn get_game_job_guard() -> &'static Arc<Mutex<Option<ProcessJobGuard>>> {
-    GAME_JOB_GUARD.get_or_init(|| Arc::new(Mutex::new(None)))
 }
 
 pub fn find_java_pid_under_wrapper(wrapper_pid: u32) -> u32 {
@@ -256,21 +293,20 @@ fn split_command_line(cmd: &str) -> Vec<String> {
     args
 }
 
-fn check_running_instance(process_lock: &Arc<Mutex<Option<Child>>>) -> Result<(), String> {
-    let mut lock = process_lock.lock().unwrap_or_else(|e| {
-        crate::logger::log(
-            "WARN",
-            "ProcessManager",
-            &format!("Mutex envenenado, recuperando lock... {}", e),
-        );
-        e.into_inner()
-    });
-    if let Some(ref mut child) = *lock {
-        if let Ok(None) = child.try_wait() {
-            return Err("Ya existe una instancia de Minecraft en ejecución.".to_string());
-        }
+fn check_running_instance(session: &Mutex<Option<GameSession>>) -> Result<(), String> {
+    let mut slot = lock_session(session);
+    let Some(ref mut current) = *slot else {
+        return Ok(());
+    };
+    match current.child.try_wait() {
+        Ok(None) => Err("Ya existe una instancia de Minecraft en ejecución.".to_string()),
+        // Terminó, pero el monitor (sondea cada 500 ms) aún no la retiró: sustituirla dejaría su
+        // cierre sin notificar y al monitor viejo vigilando el proceso nuevo.
+        _ => Err(
+            "La sesión anterior de Minecraft aún se está cerrando. Inténtalo de nuevo en unos segundos."
+                .to_string(),
+        ),
     }
-    Ok(())
 }
 
 /// Shells, intérpretes de scripts y descargadores que no se aceptan como hook ni wrapper.
@@ -722,14 +758,6 @@ fn notify_game_stopped(
             pid, exit_code, success
         ),
     );
-    set_high_resolution_timer(false);
-    crate::agent::reset_live_metrics();
-    #[cfg(target_os = "windows")]
-    {
-        if let Ok(mut job_lock) = get_game_job_guard().lock() {
-            *job_lock = None;
-        }
-    }
 
     if let Some(post_cmd) = post_exit_cmd {
         handle_post_exit_command(post_cmd, game_dir, pid, exit_code, success);
@@ -756,15 +784,14 @@ fn handle_child_exit(
 }
 
 fn handle_child_error(app_handle: &AppHandle, err: std::io::Error) {
-    println!("[ProcessManager] Error checking process status: {}", err);
-    set_high_resolution_timer(false);
-    crate::agent::reset_live_metrics();
-    #[cfg(target_os = "windows")]
-    {
-        if let Ok(mut job_lock) = get_game_job_guard().lock() {
-            *job_lock = None;
-        }
-    }
+    crate::logger::log(
+        "ERROR",
+        "ProcessManager",
+        &format!(
+            "Error comprobando el estado del proceso de Minecraft: {}",
+            err
+        ),
+    );
     let _ = app_handle.emit(
         "game-stopped",
         GameStoppedPayload {
@@ -787,25 +814,17 @@ fn poll_child_status(
     game_dir: &str,
     shutdown_signal: &Arc<Mutex<Option<std::time::Instant>>>,
 ) -> PollResult {
-    let process_lock = get_game_process_handle();
-    let mut lock = process_lock.lock().unwrap_or_else(|e| {
-        crate::logger::log(
-            "WARN",
-            "ProcessManager",
-            &format!("Mutex envenenado, recuperando lock... {}", e),
-        );
-        e.into_inner()
-    });
+    let mut slot = lock_session(&GAME_SESSION);
 
-    let Some(ref mut child) = *lock else {
-        set_high_resolution_timer(false);
+    // Sin sesión no hay nada que vigilar: solo la retira este monitor, así que no debería pasar
+    let Some(ref mut session) = *slot else {
         return PollResult::Stop;
     };
 
-    match child.try_wait() {
+    match session.child.try_wait() {
         Ok(Some(status)) => {
-            *lock = None;
-            drop(lock);
+            end_session(&mut slot);
+            drop(slot);
             handle_child_exit(app_handle, pid, status, post_exit_cmd, game_dir);
             PollResult::Exited
         }
@@ -825,10 +844,10 @@ fn poll_child_status(
                         pid
                     ),
                 );
-                let _ = child.kill();
-                let exit_code = child.wait().ok().and_then(|s| s.code());
-                *lock = None;
-                drop(lock);
+                let _ = session.child.kill();
+                let exit_code = session.child.wait().ok().and_then(|s| s.code());
+                end_session(&mut slot);
+                drop(slot);
 
                 // El usuario ya cerró el juego: se notifica como cierre correcto para no abrir
                 // el modal de crash por el código de salida que deja el kill.
@@ -839,8 +858,8 @@ fn poll_child_status(
             }
         }
         Err(e) => {
-            *lock = None;
-            drop(lock);
+            end_session(&mut slot);
+            drop(slot);
             handle_child_error(app_handle, e);
             PollResult::Exited
         }
@@ -891,10 +910,11 @@ pub fn launch_minecraft_process(
             return Err(err_msg);
         }
     }
+    // Se reserva antes de comprobar la instancia activa y se libera al salir de esta función,
+    // con la sesión nueva ya guardada (o sin ella si el lanzamiento falló)
+    let _launch_slot = LaunchSlot::acquire(&LAUNCH_IN_PROGRESS)?;
+    check_running_instance(&GAME_SESSION)?;
     enforce_high_performance_gpu(&validated_java_path);
-    let process_lock = get_game_process_handle();
-
-    check_running_instance(process_lock)?;
 
     if let Some(ref pre_cmd) = pre_launch_command {
         execute_pre_launch_hook(pre_cmd, &game_dir)?;
@@ -933,16 +953,13 @@ pub fn launch_minecraft_process(
     );
 
     #[cfg(target_os = "windows")]
-    {
+    let job = {
         use std::os::windows::io::AsRawHandle;
-        if let Some(guard) = ProcessJobGuard::new() {
+        ProcessJobGuard::new().inspect(|guard| {
             let win_handle = windows::Win32::Foundation::HANDLE(child.as_raw_handle() as _);
             guard.assign_process(win_handle);
-            if let Ok(mut job_lock) = get_game_job_guard().lock() {
-                *job_lock = Some(guard);
-            }
-        }
-    }
+        })
+    };
 
     #[cfg(target_os = "windows")]
     {
@@ -981,17 +998,11 @@ pub fn launch_minecraft_process(
         spawn_stderr_streamer(log_tx, stderr, shutdown_signal.clone());
     }
 
-    {
-        let mut lock = process_lock.lock().unwrap_or_else(|e| {
-            crate::logger::log(
-                "WARN",
-                "ProcessManager",
-                &format!("Mutex envenenado, recuperando lock... {}", e),
-            );
-            e.into_inner()
-        });
-        *lock = Some(child);
-    }
+    *lock_session(&GAME_SESSION) = Some(GameSession {
+        child,
+        #[cfg(target_os = "windows")]
+        job,
+    });
 
     let _ = app_handle.emit("game-started", pid);
     spawn_process_monitor(
@@ -1006,49 +1017,32 @@ pub fn launch_minecraft_process(
 }
 
 pub fn kill_minecraft_process() -> Result<bool, String> {
+    let mut slot = lock_session(&GAME_SESSION);
+    let Some(ref mut session) = *slot else {
+        return Ok(false);
+    };
+    crate::logger::log(
+        "WARN",
+        "ProcessManager",
+        &format!(
+            "Forzando el cierre del proceso de Minecraft PID: {}",
+            session.child.id()
+        ),
+    );
+    // El Job liquida el árbol completo (wrapper incluido). La sesión la retira el monitor al
+    // detectar la salida, que es quien notifica `game-stopped`.
     #[cfg(target_os = "windows")]
-    {
-        if let Ok(mut job_lock) = get_game_job_guard().lock() {
-            if let Some(ref guard) = *job_lock {
-                guard.terminate(1);
-            }
-            *job_lock = None;
-        }
+    if let Some(ref job) = session.job {
+        job.terminate(1);
     }
-
-    let process_lock = get_game_process_handle();
-    let mut lock = process_lock.lock().unwrap_or_else(|e| {
-        crate::logger::log(
-            "WARN",
-            "ProcessManager",
-            &format!("Mutex envenenado, recuperando lock... {}", e),
-        );
-        e.into_inner()
-    });
-    if let Some(ref mut child) = *lock {
-        println!(
-            "[ProcessManager] Forcefully killing active game process PID: {}",
-            child.id()
-        );
-        let _ = child.kill();
-        Ok(true)
-    } else {
-        Ok(false)
-    }
+    let _ = session.child.kill();
+    Ok(true)
 }
 
 pub fn is_game_running() -> bool {
-    let process_lock = get_game_process_handle();
-    let mut lock = process_lock.lock().unwrap_or_else(|e| {
-        crate::logger::log(
-            "WARN",
-            "ProcessManager",
-            &format!("Mutex envenenado, recuperando lock... {}", e),
-        );
-        e.into_inner()
-    });
-    lock.as_mut()
-        .is_some_and(|child| matches!(child.try_wait(), Ok(None)))
+    lock_session(&GAME_SESSION)
+        .as_mut()
+        .is_some_and(|session| matches!(session.child.try_wait(), Ok(None)))
 }
 
 #[cfg(target_os = "windows")]
@@ -1329,6 +1323,80 @@ mod tests {
     #[ignore = "Modifica la prioridad de proceso y afinidad del runner de tests. Requiere aislamiento."]
     fn test_apply_os_optimizations_smoke() {
         apply_os_optimizations(std::process::id());
+    }
+
+    #[test]
+    fn test_launch_slot_admits_one_of_many_concurrent_launches() {
+        static FLAG: AtomicBool = AtomicBool::new(false);
+        const LAUNCHES: usize = 8;
+        let start = Arc::new(std::sync::Barrier::new(LAUNCHES));
+        // Nadie suelta su reserva hasta que todos lo hayan intentado
+        let attempted = Arc::new(std::sync::Barrier::new(LAUNCHES));
+
+        let handles: Vec<_> = (0..LAUNCHES)
+            .map(|_| {
+                let (start, attempted) = (start.clone(), attempted.clone());
+                thread::spawn(move || {
+                    start.wait();
+                    let slot = LaunchSlot::acquire(&FLAG);
+                    attempted.wait();
+                    slot.is_ok()
+                })
+            })
+            .collect();
+        let admitted = handles
+            .into_iter()
+            .map(|h| h.join().unwrap())
+            .filter(|ok| *ok)
+            .count();
+        assert_eq!(admitted, 1);
+
+        // Todas las reservas se soltaron: el siguiente lanzamiento vuelve a entrar
+        assert!(LaunchSlot::acquire(&FLAG).is_ok());
+    }
+
+    /// No es un test: proceso hijo que sigue vivo para `test_check_running_instance_states`.
+    #[test]
+    #[ignore = "helper: lo lanza test_check_running_instance_states como proceso hijo"]
+    fn sleeping_child_helper() {
+        thread::sleep(Duration::from_secs(30));
+    }
+
+    fn spawn_sleeping_child() -> Child {
+        Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "process_manager::tests::sleeping_child_helper",
+                "--ignored",
+            ])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap()
+    }
+
+    #[test]
+    fn test_check_running_instance_states() {
+        let empty = Mutex::new(None);
+        assert!(check_running_instance(&empty).is_ok());
+
+        let session = Mutex::new(Some(GameSession {
+            child: spawn_sleeping_child(),
+            #[cfg(target_os = "windows")]
+            job: None,
+        }));
+        let err = check_running_instance(&session).unwrap_err();
+        assert!(err.contains("en ejecución"), "{err}");
+
+        // Terminada pero aún sin retirar por el monitor: no se puede sustituir
+        {
+            let mut slot = session.lock().unwrap();
+            let current = slot.as_mut().unwrap();
+            current.child.kill().unwrap();
+            current.child.wait().unwrap();
+        }
+        let err = check_running_instance(&session).unwrap_err();
+        assert!(err.contains("cerrando"), "{err}");
     }
 
     #[test]
