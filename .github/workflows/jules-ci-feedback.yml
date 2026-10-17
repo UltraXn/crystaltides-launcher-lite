@@ -1,0 +1,84 @@
+name: Jules CI Feedback & Review
+
+# Tras el CI de un PR de Jules: si falla, devuelve el log a la sesión (1 reintento, luego cierra);
+# si pasa y el alcance es correcto, Claude hace el code review. El merge siempre es humano.
+on:
+  workflow_run:
+    workflows: ['CI (Quality, Vitest & Rust Safety)']
+    types: [completed]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+  actions: read
+
+jobs:
+  feedback:
+    name: CI -> Jules
+    if: github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      review: ${{ steps.guard.outputs.review }}
+      pr: ${{ steps.guard.outputs.pr }}
+      issue: ${{ steps.guard.outputs.issue }}
+    steps:
+      - name: Checkout (rama por defecto)
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - id: guard
+        name: Evaluar resultado del CI
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JULES_API_KEY: ${{ secrets.JULES_API_KEY }}
+        run: node scripts/jules/guard.mjs ci
+
+  review:
+    name: Claude Code Review
+    needs: feedback
+    if: needs.feedback.outputs.review == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: read
+      id-token: write
+    steps:
+      # Solo lectura del código del PR: Claude no ejecuta nada de él (ver allowedTools)
+      - name: Checkout PR
+        uses: actions/checkout@v4
+        with:
+          ref: refs/pull/${{ needs.feedback.outputs.pr }}/head
+          fetch-depth: 1
+
+      - name: Review
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ needs.feedback.outputs.pr }}
+            TAREA: issue #${{ needs.feedback.outputs.issue }}
+
+            Este PR lo escribió Jules (agente de código) para resolver la tarea del issue. El CI ya
+            pasó y el guardián validó que solo toca los archivos permitidos. Haz un code review:
+
+            1. Lee la tarea (`gh issue view`) y el diff (`gh pr diff`).
+            2. Verifica que el cambio resuelve el problema descrito y cumple el criterio de aceptación.
+            3. Busca bugs reales: lógica incorrecta, casos borde, regresiones, manejo de errores,
+               seguridad. Ignora estilo salvo que oculte un bug.
+            4. Revisa que los tests prueben de verdad el comportamiento (no solo que "no lance").
+            5. Las reglas del repo están en .github/jules/RULES.md.
+
+            Deja comentarios inline solo para problemas concretos. Termina con un comentario de resumen
+            en el PR con un veredicto: "✅ Listo para merge", "🟡 Cambios menores" o "❌ No mergear",
+            y el motivo. No apruebes ni mergees el PR.
+          claude_args: |
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh issue view:*)"
