@@ -63,7 +63,6 @@ export interface LauncherSettings {
   maxRamGb: number;
   javaPath: string;
   javaDistribution?: 'adoptium' | 'graalvm';
-  defenderExclusionAdded?: boolean;
   resolution: string;
   autoCloseLauncher: boolean;
   discordRpc: boolean;
@@ -464,7 +463,6 @@ const defaultSettings: LauncherSettings = {
   maxRamGb: 8,
   javaPath: 'Auto (Java 21 OpenJDK)',
   javaDistribution: 'adoptium',
-  defenderExclusionAdded: false,
   resolution: '1280x720',
   autoCloseLauncher: true,
   discordRpc: true,
@@ -566,7 +564,6 @@ export const sanitizeLauncherSettings = (raw: unknown): LauncherSettings => {
     ),
     telemetryCapsuleEnabled: sanitizeBoolean(s.telemetryCapsuleEnabled, false) ?? false,
     showBetaLoaders: sanitizeBoolean(s.showBetaLoaders, false) ?? false,
-    defenderExclusionAdded: sanitizeBoolean(s.defenderExclusionAdded, false) ?? false,
     disableBgAnim: sanitizeBoolean(s.disableBgAnim, false) ?? false,
     disableAnimations: sanitizeBoolean(s.disableAnimations, false) ?? false,
   };

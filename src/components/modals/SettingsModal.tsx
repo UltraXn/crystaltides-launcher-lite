@@ -1505,29 +1505,6 @@ export const SettingsModal: React.FC = () => {
                     Eclipse Temurin (Adoptium)
                   </button>
                 </div>
-
-                <div style={{ marginTop: '6px' }}>
-                  <p
-                    style={{
-                      fontSize: '11px',
-                      color: 'var(--text-muted, #888)',
-                      margin: '0 0 6px 0',
-                      lineHeight: 1.4,
-                    }}
-                  >
-                    Añade la carpeta de instalación de CrystalTides a las exclusiones de Windows
-                    Defender para optimizar el rendimiento de I/O al cargar mods. Requiere
-                    confirmación de Administrador (UAC).
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => invoke('exclude_windows_defender').catch(() => {})}
-                    className="settings-action-btn"
-                    style={{ fontSize: '11px', padding: '6px 12px' }}
-                  >
-                    Excluir Carpeta en Windows Defender
-                  </button>
-                </div>
               </div>
               <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                 <button

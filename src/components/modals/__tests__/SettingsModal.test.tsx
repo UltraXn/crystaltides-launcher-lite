@@ -830,19 +830,6 @@ describe('SettingsModal Component & Helpers Suite', () => {
       });
     });
 
-    it('permite activar la exclusión de Windows Defender 1-Click', async () => {
-      render(<SettingsModal />);
-      const defenderBtn = screen.getByRole('button', {
-        name: /Excluir Carpeta en Windows Defender/i,
-      });
-      expect(defenderBtn).toBeDefined();
-      fireEvent.click(defenderBtn);
-
-      await waitFor(() => {
-        expect(defenderBtn).toBeDefined();
-      });
-    });
-
     it('permite comprobar actualizaciones del sistema y mostrar feedback', async () => {
       render(<SettingsModal />);
       const updateBtn = screen.getByRole('button', {

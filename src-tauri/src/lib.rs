@@ -488,29 +488,6 @@ fn close_app(window: tauri::Window) {
     let _ = window.close();
 }
 
-pub fn add_windows_defender_exclusion_sync(folder_path: &str) -> Result<(), String> {
-    if folder_path.trim().is_empty() {
-        return Err("Ruta de exclusión vacía.".to_string());
-    }
-    let path = Path::new(folder_path);
-    if path
-        .components()
-        .any(|c| c == std::path::Component::ParentDir)
-    {
-        return Err("Ruta no autorizada: secuencias relativas '..' prohibidas.".to_string());
-    }
-
-    let verified_dir = is_authorized_uninstall_target(path)?;
-    sys::add_defender_exclusion(&verified_dir)
-}
-
-#[tauri::command]
-async fn add_windows_defender_exclusion(folder_path: String) -> Result<(), String> {
-    tokio::task::spawn_blocking(move || add_windows_defender_exclusion_sync(&folder_path))
-        .await
-        .map_err(|e| e.to_string())?
-}
-
 fn chrono_now() -> String {
     logger::format_timestamp()
 }
@@ -1549,7 +1526,6 @@ pub fn run() {
             is_game_running,
             check_java_status,
             install_java_runtime,
-            add_windows_defender_exclusion,
             http_post,
             http_get,
             http_put,
@@ -1760,7 +1736,6 @@ mod tests {
                 .to_string();
             assert!(perform_self_uninstall_sync(&traversal_path, None).is_err());
             assert!(schedule_self_deletion_sync(&traversal_path).is_err());
-            assert!(add_windows_defender_exclusion_sync(&traversal_path).is_err());
         }
     }
 
