@@ -1,0 +1,55 @@
+name: Jules Orchestrator
+
+# Alertas de seguridad -> issues "jules" -> sesiones de Jules (máx. 3 activas, sin pisar archivos).
+# Flujo completo y secrets necesarios: .github/jules/README.md
+on:
+  schedule:
+    - cron: '0 */3 * * *' # rellena huecos libres cada 3 h
+  issues:
+    types: [opened, labeled, unlabeled, edited, reopened]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Solo mostrar qué haría (sin crear issues ni sesiones)'
+        type: boolean
+        default: false
+
+# Un solo despacho a la vez: evita superar el cupo por ejecuciones simultáneas
+concurrency:
+  group: jules-orchestrator
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+  security-events: read
+
+jobs:
+  orchestrate:
+    name: Intake & Dispatch
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # En eventos de issues, solo los que tienen la etiqueta "jules"
+    if: github.event_name != 'issues' || contains(github.event.issue.labels.*.name, 'jules')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Intake (alertas -> issues)
+        if: github.event_name != 'issues'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JULES_ALERTS_TOKEN: ${{ secrets.JULES_ALERTS_TOKEN }}
+        run: node scripts/jules/intake.mjs ${{ inputs.dry_run && '--dry-run' || '' }}
+
+      - name: Dispatch (issues -> Jules)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JULES_API_KEY: ${{ secrets.JULES_API_KEY }}
+        run: node scripts/jules/dispatch.mjs ${{ inputs.dry_run && '--dry-run' || '' }}
