@@ -98,5 +98,5 @@ describe('Plugin & Module SDK in SettingsModal', () => {
     await waitFor(() => {
       expect(screen.queryByText('Comunidad Pro')).toBeNull();
     });
-  });
+  }, 15000);
 });

@@ -796,8 +796,8 @@ const readVersionManifest = async (
           normalizedHome,
         );
         return mergeParentManifest(JSON.parse(parentContent) as VersionManifest, parsed, versionId);
-      } catch {
-        // Parent not found, use parsed directly
+      } catch (parentErr) {
+        logFrontend('WARN', `No se pudo leer el manifest padre ${parsed.inheritsFrom}: ${parentErr}`);
       }
     }
     return {
@@ -805,7 +805,8 @@ const readVersionManifest = async (
       effectiveVersionId: versionId,
       baseMcVersion: parsed.inheritsFrom ?? mcVersion,
     };
-  } catch {
+  } catch (err) {
+    logFrontend('WARN', `No se pudo leer el manifest de la versión ${versionId}: ${err}`);
     if (versionId !== mcVersion) {
       try {
         const vanillaContent = await readJsonFileWithFallbacks(
@@ -818,10 +819,11 @@ const readVersionManifest = async (
           effectiveVersionId: mcVersion,
           baseMcVersion: mcVersion,
         };
-      } catch {
-        // Fallback minimal manifest
+      } catch (vanillaErr) {
+        logFrontend('WARN', `Tampoco se pudo leer el manifest base de ${mcVersion}: ${vanillaErr}`);
       }
     }
+    logFrontend('ERROR', `Usando manifest mínimo de emergencia para ${mcVersion} (sin librerías).`);
     return {
       versionData: {
         mainClass: 'net.minecraft.client.main.Main',
