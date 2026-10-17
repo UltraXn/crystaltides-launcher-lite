@@ -2,12 +2,23 @@ import { execSync } from 'node:child_process';
 
 console.log('Running React Doctor score verification (minimum: 68)...');
 
+let output = '';
 try {
-  const output = execSync('npx react-doctor --json', {
+  output = execSync('npx react-doctor --json', {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
     maxBuffer: 10 * 1024 * 1024,
   });
+} catch (err) {
+  if (err.stdout) {
+    output = typeof err.stdout === 'string' ? err.stdout : err.stdout.toString('utf8');
+  } else {
+    console.error('Error running React Doctor score check:', err.message);
+    process.exit(1);
+  }
+}
+
+try {
 
   const jsonStart = output.indexOf('{');
   const jsonEnd = output.lastIndexOf('}');
