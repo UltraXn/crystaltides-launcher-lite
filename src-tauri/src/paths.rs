@@ -309,7 +309,11 @@ fn canonicalize_lenient(path: &Path) -> std::io::Result<PathBuf> {
         }
     }
     let relative = path.strip_prefix(ancestor).unwrap_or(Path::new(""));
-    Ok(ancestor.canonicalize()?.join(relative))
+    if relative.as_os_str().is_empty() {
+        ancestor.canonicalize()
+    } else {
+        Ok(ancestor.canonicalize()?.join(relative))
+    }
 }
 
 /// Quita el prefijo verbatim que añade `canonicalize` en Windows (`\\?\C:\` y `\\?\UNC\`).
@@ -491,6 +495,20 @@ mod tests {
         let test_file = temp.path().join("config.json");
         let validated = validate_safe_file_path(&test_file.to_string_lossy());
         assert!(validated.is_ok());
+    }
+
+    #[test]
+    fn test_validate_safe_file_path_does_not_add_trailing_slash_to_existing_file() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let test_file = temp.path().join("version.json");
+        std::fs::write(&test_file, b"{\"id\":\"test\"}").expect("write test file");
+        let validated = validate_safe_file_path(&test_file.to_string_lossy()).expect("valid path");
+        assert!(
+            !validated.to_string_lossy().ends_with('\\')
+                && !validated.to_string_lossy().ends_with('/')
+        );
+        let content = std::fs::read_to_string(&validated);
+        assert!(content.is_ok());
     }
 
     #[test]
