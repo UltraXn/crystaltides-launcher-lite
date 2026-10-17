@@ -33,7 +33,10 @@ import {
   getEffectiveActiveButtons,
 } from '../utils/collisionSystem';
 import { isVideoSource, clearDockPanorama, clearButtonMedia } from '../utils/wallpaperStorage';
-import { extractLoaderVersionFromCompound } from '../utils/settingsUtils';
+import {
+  extractCleanMinecraftVersion,
+  extractLoaderVersionFromCompound,
+} from '../utils/settingsUtils';
 import { Language, getTranslation, TranslationDictionary } from '../i18n';
 
 export type { Language };
@@ -759,11 +762,14 @@ const syncInstanceAssets = async (
       console.warn('[Launcher] Error sincronizando stack de rendimiento:', perfErr);
     }
 
-    if (BOOST_ENABLED && shouldDeployBoost(activeInst.loaderType, activeInst.mcVersion)) {
+    const boostMcVersion = resolveBoostMcVersion(activeInst.loaderType, activeInst.mcVersion);
+    if (BOOST_ENABLED && boostMcVersion) {
       try {
+        // El backend elige el jar del grupo de esa versión; si no tiene build, retira el desplegado
         await invoke('deploy_crystaltides_boost', {
           gameDir: effectiveGameDir,
           loaderType: activeInst.loaderType,
+          mcVersion: boostMcVersion,
         });
       } catch (boostErr) {
         console.warn('[Launcher] Error inyectando crystaltides-boost:', boostErr);
@@ -801,14 +807,25 @@ const syncInstanceAssets = async (
 // Flag maestro para habilitar/deshabilitar el despliegue automático de crystaltides-boost
 export const BOOST_ENABLED = true;
 
-export const shouldDeployBoost = (loaderType?: string, mcVersion?: string): boolean => {
-  if (!loaderType || !mcVersion) {
-    return false;
+// Loaders con build de crystaltides-boost; Quilt ejecuta el de Fabric
+const BOOST_LOADERS = new Set(['fabric', 'quilt', 'neoforge']);
+
+/**
+ * Versión de Minecraft que se pasa a deploy_crystaltides_boost, o undefined si el loader no tiene
+ * build de crystaltides-boost. Qué versiones tienen jar lo decide el backend con los jars embebidos.
+ * Normaliza identificadores compuestos: quilt-loader-0.31.0-beta.4-26.2 -> 26.2.
+ */
+export const resolveBoostMcVersion = (
+  loaderType?: string,
+  mcVersion?: string,
+): string | undefined => {
+  if (!loaderType || !mcVersion?.trim()) {
+    return undefined;
   }
-  const normalizedLoader = loaderType.toLowerCase().trim();
-  const normalizedVersion = mcVersion.trim();
-  const allowedLoaders = ['fabric', 'quilt', 'neoforge'];
-  return allowedLoaders.includes(normalizedLoader) && normalizedVersion === '1.21.1';
+  if (!BOOST_LOADERS.has(loaderType.toLowerCase().trim())) {
+    return undefined;
+  }
+  return extractCleanMinecraftVersion(mcVersion);
 };
 
 export const resolveEffectiveResolution = (activeInst: GameInstance): string => {

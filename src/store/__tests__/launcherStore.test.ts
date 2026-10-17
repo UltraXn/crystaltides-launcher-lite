@@ -6,7 +6,7 @@ import {
   sanitizeLauncherSettings,
   launcherActions,
   getLauncherState,
-  shouldDeployBoost,
+  resolveBoostMcVersion,
   useLauncherStore,
 } from '../launcherStore';
 import type { GameInstance } from '../../services/instanceService';
@@ -516,38 +516,37 @@ describe('launcherStore helpers & actions', () => {
     });
   });
 
-  describe('shouldDeployBoost', () => {
-    it('debe devolver true para fabric 1.21.1', () => {
-      expect(shouldDeployBoost('fabric', '1.21.1')).toBe(true);
+  describe('resolveBoostMcVersion', () => {
+    it('devuelve la versión de Minecraft en fabric, quilt y neoforge', () => {
+      expect(resolveBoostMcVersion('fabric', '1.21.1')).toBe('1.21.1');
+      expect(resolveBoostMcVersion('neoforge', '1.21.4')).toBe('1.21.4');
+      expect(resolveBoostMcVersion('quilt', '26.2')).toBe('26.2');
+      expect(resolveBoostMcVersion(' Fabric ', ' 1.21.11 ')).toBe('1.21.11');
     });
 
-    it('debe devolver true para neoforge 1.21.1', () => {
-      expect(shouldDeployBoost('neoforge', '1.21.1')).toBe(true);
+    it('deja al backend decidir si la versión tiene jar', () => {
+      expect(resolveBoostMcVersion('fabric', '1.20.1')).toBe('1.20.1');
     });
 
-    it('debe devolver true para quilt 1.21.1', () => {
-      expect(shouldDeployBoost('quilt', '1.21.1')).toBe(true);
+    it('extrae la versión de Minecraft de los identificadores compuestos', () => {
+      expect(resolveBoostMcVersion('quilt', 'quilt-loader-0.31.0-beta.4-26.2')).toBe('26.2');
+      expect(resolveBoostMcVersion('fabric', 'fabric-loader-0.19.5-1.21.8')).toBe('1.21.8');
+      expect(resolveBoostMcVersion('neoforge', 'neoforge-21.1.252')).toBe('1.21.1');
+      expect(resolveBoostMcVersion('neoforge', 'neoforge-26.1.2.122')).toBe('26.1.2');
     });
 
-    it('debe devolver false para fabric 1.20.1', () => {
-      expect(shouldDeployBoost('fabric', '1.20.1')).toBe(false);
+    it('debe devolver undefined para loaders sin build de crystaltides-boost', () => {
+      expect(resolveBoostMcVersion('forge', '1.21.1')).toBeUndefined();
+      expect(resolveBoostMcVersion('vanilla', '1.21.1')).toBeUndefined();
     });
 
-    it('debe devolver false para forge 1.21.1', () => {
-      expect(shouldDeployBoost('forge', '1.21.1')).toBe(false);
-    });
-
-    it('debe devolver false para neoforge 1.21.4', () => {
-      expect(shouldDeployBoost('neoforge', '1.21.4')).toBe(false);
-    });
-
-    it('debe devolver false para cadenas vacías o undefined', () => {
-      expect(shouldDeployBoost('', '1.21.1')).toBe(false);
-      expect(shouldDeployBoost('fabric', '')).toBe(false);
-      expect(shouldDeployBoost('', '')).toBe(false);
-      expect(shouldDeployBoost(undefined, '1.21.1')).toBe(false);
-      expect(shouldDeployBoost('fabric', undefined)).toBe(false);
-      expect(shouldDeployBoost(undefined, undefined)).toBe(false);
+    it('debe devolver undefined para cadenas vacías o undefined', () => {
+      expect(resolveBoostMcVersion('', '1.21.1')).toBeUndefined();
+      expect(resolveBoostMcVersion('fabric', '')).toBeUndefined();
+      expect(resolveBoostMcVersion('fabric', '   ')).toBeUndefined();
+      expect(resolveBoostMcVersion(undefined, '1.21.1')).toBeUndefined();
+      expect(resolveBoostMcVersion('fabric', undefined)).toBeUndefined();
+      expect(resolveBoostMcVersion(undefined, undefined)).toBeUndefined();
     });
   });
 });
