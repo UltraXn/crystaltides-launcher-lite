@@ -12,12 +12,15 @@ pub const ALLOWED_HOST_SUFFIXES: &[&str] = &[
     "live.com",
     "fabricmc.net",
     "quiltmc.net",
+    "quiltmc.org",
     "neoforged.net",
     "minecraftforge.net",
     "bangbang93.com",
     "modrinth.com",
     "curseforge.com",
     "adoptium.net",
+    // Solo el subdominio de descargas de GraalVM, no todo oracle.com
+    "download.oracle.com",
     "github.com",
     "githubusercontent.com",
     "mcstatus.io",
@@ -139,5 +142,27 @@ mod tests {
         assert!(validate_allowed_https_url("https://meta.fabricmc.net/v2/versions/loader").is_ok());
         assert!(validate_allowed_https_url("https://api.crystaltides.net/v1/auth").is_ok());
         assert!(validate_allowed_https_url("https://api.modrinth.com/v2/project").is_ok());
+    }
+
+    #[test]
+    fn test_accepts_hardcoded_installer_and_runtime_hosts() {
+        // URLs fijas del backend que ahora pasan por validación en el downloader
+        for url in [
+            "https://resources.download.minecraft.net/ab/abcdef",
+            "https://maven.fabricmc.net/net/fabricmc/fabric-installer/1.0.1/fabric-installer-1.0.1.jar",
+            "https://maven.quiltmc.org/repository/release/org/quiltmc/quilt-installer/0.9.2/quilt-installer-0.9.2.jar",
+            "https://maven.neoforged.net/releases/net/neoforged/neoforge/x/y.jar",
+            "https://maven.minecraftforge.net/net/minecraftforge/forge/x/y.jar",
+            "https://api.adoptium.net/v3/assets/latest/21/hotspot",
+            "https://download.oracle.com/graalvm/25/latest/graalvm-jdk-25_windows-x64_bin.zip",
+            "https://cdn.modrinth.com/data/AANobbMI/versions/x/sodium.jar",
+        ] {
+            assert!(validate_allowed_https_url(url).is_ok(), "debe aceptar {url}");
+        }
+        // El resto de oracle.com sigue fuera
+        assert!(validate_allowed_https_url("https://www.oracle.com/x").is_err());
+        assert!(
+            validate_allowed_https_url("https://evil-download.oracle.com.attacker.net/x").is_err()
+        );
     }
 }

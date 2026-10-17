@@ -5,27 +5,10 @@ use std::io::Cursor;
 
 const MAX_PATCH_TARGET_SIZE: u64 = 512 * 1024 * 1024; // 512 MB límite anti-OOM
 
+/// Origen, parche y destino tienen que estar en raíces autorizadas: con un parche vacío,
+/// `apply_binary_patch` copia el origen al destino tal cual.
 fn validate_patch_path(file_path: &str, param_name: &str) -> Result<std::path::PathBuf, String> {
-    let trimmed = file_path.trim();
-    if trimmed.is_empty() {
-        return Err(format!("La ruta de {} no puede estar vacía", param_name));
-    }
-    let path = std::path::PathBuf::from(trimmed);
-    if !path.is_absolute() {
-        return Err(format!(
-            "Ruta no autorizada: {} debe ser una ruta absoluta",
-            param_name
-        ));
-    }
-    for component in path.components() {
-        if let std::path::Component::ParentDir = component {
-            return Err(format!(
-                "Ruta no autorizada: Detectada navegación relativa hacia directorios padres en {}",
-                param_name
-            ));
-        }
-    }
-    Ok(path)
+    crate::paths::validate_safe_file_path(file_path).map_err(|e| format!("{}: {}", param_name, e))
 }
 
 #[cfg(test)]
@@ -42,6 +25,27 @@ mod tests {
             None,
         );
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_delta_patch_rejects_paths_outside_authorized_roots() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let inside = |name: &str| temp.path().join(name).to_string_lossy().to_string();
+        std::fs::write(inside("base.jar"), b"base").expect("write base");
+        std::fs::write(inside("p.patch"), b"patch").expect("write patch");
+
+        #[cfg(target_os = "windows")]
+        let outside = r"C:\Windows\System32\drivers\etc\hosts";
+        #[cfg(not(target_os = "windows"))]
+        let outside = "/etc/hosts";
+
+        // Leer un archivo del sistema como origen o escribirlo como destino
+        let err = apply_binary_patch_sync(outside, &inside("p.patch"), &inside("out.jar"), None)
+            .unwrap_err();
+        assert!(err.starts_with("source_file:"), "{err}");
+        let err = apply_binary_patch_sync(&inside("base.jar"), &inside("p.patch"), outside, None)
+            .unwrap_err();
+        assert!(err.starts_with("target_file:"), "{err}");
     }
 }
 

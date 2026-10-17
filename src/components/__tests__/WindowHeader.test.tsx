@@ -72,7 +72,9 @@ describe('WindowHeader Component', () => {
     await act(async () => {
       fireEvent.click(minBtn);
     });
-    expect(minimizeCalled).toBe(true);
+    await waitFor(() => {
+      expect(minimizeCalled).toBe(true);
+    });
   });
 
   it('permite maximizar y alternar el estado de la ventana', async () => {
@@ -83,7 +85,9 @@ describe('WindowHeader Component', () => {
       fireEvent.click(maxBtn);
     });
 
-    expect(toggleMaximizeCalled).toBe(true);
+    await waitFor(() => {
+      expect(toggleMaximizeCalled).toBe(true);
+    });
     await waitFor(() => {
       expect(screen.getByTitle('Restaurar')).toBeInTheDocument();
     });
@@ -95,6 +99,8 @@ describe('WindowHeader Component', () => {
     await act(async () => {
       fireEvent.click(closeBtn);
     });
-    expect(closeCalled).toBe(true);
+    await waitFor(() => {
+      expect(closeCalled).toBe(true);
+    });
   });
 });

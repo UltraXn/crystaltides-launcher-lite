@@ -37,7 +37,7 @@ It features the proprietary **Papyrus UI Engine**—an interactive glassmorphic 
 | 🦀 **Rust Core Engine** | Powered by **Tauri v2** with non-blocking async process lifecycle management, strict path sandboxing, and sub-millisecond IPC communication. |
 | 🎨 **Papyrus UI (v1.2.0)** | Glassmorphic design system featuring **interactive HUD Editor Mode**, drag-and-drop dock repositioning, dynamic collision dodging, and split-screen panoramic media. |
 | 🩺 **Crash Doctor AI** | Automated stack trace analysis that pinpoints offending mods, offers one-click isolation/disabling, options.txt reset, and Out-of-Memory (OOM) recovery. |
-| 📦 **Smart Dual-Boot Binary** | A single executable acts as a **Smart Self-Installer**, **Portable Client** (`--portable`), or **Clean Uninstaller** (`--uninstall`) with Windows Defender auto-exclusions. |
+| 📦 **Smart Dual-Boot Binary** | A single executable acts as a **Smart Self-Installer**, **Portable Client** (`--portable`), or **Clean Uninstaller** (`--uninstall`). |
 | 🔄 **Delta Patching & Fast Sync** | High-speed multi-threaded mod synchronization featuring **qbsdiff binary delta-patches** to minimize download sizes when updating modpacks. |
 | ☕ **Intelligent Java Manager** | Automatic detection and 1-click provisioning of Adoptium / Temurin OpenJDK (8, 17, 21) tailored to the exact system architecture (x64 / ARM64). |
 | 🎮 **Multi-Loader & Multi-Instance** | Native support for **NeoForge**, **Forge**, **Fabric**, **Quilt**, and vanilla Minecraft. Includes an importer for CurseForge, Modrinth, Prism, and MultiMC. |

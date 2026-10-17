@@ -1,304 +1,272 @@
 use std::path::{Component, Path, PathBuf};
 
-/// Retorna la lista de raíces autorizadas en el sistema para CrystalTides.
-/// Cualquier acceso a disco (lectura/escritura/borrado/instancias) debe vivir
-/// estrictamente dentro de una de estas raíces para evitar evasiones de ruta o path traversal.
+/// Retorna la lista de raíces autorizadas en el sistema para CrystalTides, ya normalizadas
+/// (ver `normalize_for_compare`). Cualquier acceso a disco (lectura/escritura/borrado/instancias)
+/// debe vivir estrictamente dentro de una de estas raíces para evitar evasiones de ruta o path
+/// traversal. Se descarta cualquier raíz demasiado amplia o protegida (`DirPolicy`), venga de un
+/// perfil, del registro o de `CRYSTALTIDES_HOME`.
 pub fn get_authorized_file_roots() -> Vec<PathBuf> {
-    let mut roots = Vec::new();
-
-    // 1. Directorio de instalación predeterminado (.crystaltides)
-    if let Some(install_dir) = crate::sys::get_default_install_dir() {
-        if let Ok(c) = install_dir.canonicalize() {
-            roots.push(c);
-        } else {
-            roots.push(install_dir);
-        }
-    }
-
-    // 2. ~/.crystaltides explícito o CUSTOM vía CRYSTALTIDES_HOME
-    if let Some(custom) = std::env::var_os("CRYSTALTIDES_HOME") {
-        let trimmed = custom.to_string_lossy().trim().to_string();
-        if !trimmed.is_empty() {
-            let ct_dir = PathBuf::from(trimmed);
-            if let Ok(c) = ct_dir.canonicalize() {
-                roots.push(c);
-            } else {
-                roots.push(ct_dir);
-            }
-        }
-    }
-
-    // 2.1 Ubicación registrada en el sistema operativo (si existe)
-    if let Some(reg_dir) = crate::sys::get_registered_install_location() {
-        if let Ok(c) = reg_dir.canonicalize() {
-            roots.push(c);
-        } else {
-            roots.push(reg_dir);
-        }
-    }
-
-    // 2.2 Directorio de instancias del launcher (en ubicación registrada o por defecto)
-    let inst_dir = get_launcher_instances_dir();
-    if let Ok(c) = inst_dir.canonicalize() {
-        roots.push(c);
-    } else {
-        roots.push(inst_dir);
-    }
-
-    if let Some(home) = dirs::home_dir() {
-        let ct_dir = home.join(".crystaltides");
-        if let Ok(c) = ct_dir.canonicalize() {
-            roots.push(c);
-        } else {
-            roots.push(ct_dir);
-        }
-
-        // 3. Directorio de Minecraft estándar
-        #[cfg(target_os = "windows")]
-        if let Some(appdata) = dirs::data_dir() {
-            let mc_dir = appdata.join(".minecraft");
-            if let Ok(c) = mc_dir.canonicalize() {
-                roots.push(c);
-            } else {
-                roots.push(mc_dir);
-            }
-        }
-        #[cfg(target_os = "linux")]
-        {
-            let mc_dir = home.join(".minecraft");
-            if let Ok(c) = mc_dir.canonicalize() {
-                roots.push(c);
-            } else {
-                roots.push(mc_dir);
-            }
-        }
-        #[cfg(target_os = "macos")]
-        {
-            let mc_dir = home.join("Library/Application Support/minecraft");
-            if let Ok(c) = mc_dir.canonicalize() {
-                roots.push(c);
-            } else {
-                roots.push(mc_dir);
-            }
-        }
-
-        // 3.1 Carpetas de instancias de launchers externos conocidos
-        let mut external_dirs = vec![home.join("curseforge").join("minecraft").join("Instances")];
-
-        #[cfg(target_os = "windows")]
-        {
-            let roaming = home.join("AppData").join("Roaming");
-            external_dirs.push(
-                roaming
-                    .join("curseforge")
-                    .join("minecraft")
-                    .join("Instances"),
-            );
-            external_dirs.push(roaming.join("ModrinthApp").join("profiles"));
-            external_dirs.push(roaming.join("com.modrinth.theseus").join("profiles"));
-            external_dirs.push(roaming.join("PrismLauncher").join("instances"));
-            external_dirs.push(roaming.join("MultiMC").join("instances"));
-        }
-
-        #[cfg(target_os = "macos")]
-        {
-            let app_sup = home.join("Library").join("Application Support");
-            external_dirs.push(
-                app_sup
-                    .join("curseforge")
-                    .join("minecraft")
-                    .join("Instances"),
-            );
-            external_dirs.push(app_sup.join("ModrinthApp").join("profiles"));
-            external_dirs.push(app_sup.join("com.modrinth.theseus").join("profiles"));
-            external_dirs.push(app_sup.join("PrismLauncher").join("instances"));
-            external_dirs.push(app_sup.join("MultiMC").join("instances"));
-        }
-
-        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-        {
-            let local_share = home.join(".local").join("share");
-            external_dirs.push(
-                local_share
-                    .join("curseforge")
-                    .join("minecraft")
-                    .join("Instances"),
-            );
-            external_dirs.push(local_share.join("ModrinthApp").join("profiles"));
-            external_dirs.push(local_share.join("com.modrinth.theseus").join("profiles"));
-            external_dirs.push(local_share.join("PrismLauncher").join("instances"));
-            external_dirs.push(local_share.join("MultiMC").join("instances"));
-        }
-
-        for ext in external_dirs {
-            if ext.exists() {
-                if let Ok(c) = ext.canonicalize() {
-                    roots.push(c);
-                } else {
-                    roots.push(ext);
-                }
-            }
-        }
-    }
-
-    // 4. Agregar carpetas de juego autorizadas desde los perfiles guardados en BD
-    //    (se revalidan aquí por si hay perfiles guardados antes de validar al guardar)
-    if let Ok(profiles) = crate::db::get_profiles_sync() {
-        for p in profiles {
-            if let Some(path) = p
-                .game_dir
-                .and_then(|gd| validate_profile_game_dir(&gd).ok())
-            {
-                if let Ok(c) = path.canonicalize() {
-                    roots.push(c);
-                } else {
-                    roots.push(path);
-                }
-            }
-        }
-    }
-
-    // 5. Permitir directorios temporales durante pruebas unitarias si temp_dir está aislado
-    #[cfg(test)]
-    {
-        if let Ok(c) = std::env::temp_dir().canonicalize() {
-            roots.push(c);
-        } else {
-            roots.push(std::env::temp_dir());
-        }
-    }
-
-    roots
+    authorized_roots(&DirPolicy::current())
 }
 
-/// Valida el `game_dir` de un perfil. Cada perfil se convierte en raíz autorizada, así que se
-/// rechazan las carpetas demasiado amplias: la raíz de un disco, el home del usuario o cualquier
-/// carpeta que lo contenga, y las carpetas del sistema. Se comprueban la ruta y su destino real,
-/// porque un symlink podría apuntar a una de ellas.
-pub fn validate_profile_game_dir(game_dir: &str) -> Result<PathBuf, String> {
-    let path = PathBuf::from(game_dir.trim());
-    if !path.is_absolute() || path.components().any(|c| c == Component::ParentDir) {
-        return Err(
-            "Directorio de perfil no autorizado: debe ser una ruta absoluta sin '..'.".to_string(),
+fn authorized_roots(policy: &DirPolicy) -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+
+    // 1. Directorio de instalación predeterminado (.crystaltides o CRYSTALTIDES_HOME)
+    roots.extend(crate::sys::get_default_install_dir());
+
+    // 2. Ubicación registrada en el sistema operativo (si existe)
+    roots.extend(crate::sys::get_registered_install_location());
+
+    // 3. Directorio de instancias del launcher (en ubicación registrada o por defecto)
+    roots.push(get_launcher_instances_dir());
+
+    if let Some(home) = dirs::home_dir() {
+        roots.push(home.join(".crystaltides"));
+        roots.extend(minecraft_dir(&home));
+        roots.extend(
+            external_launcher_dirs(&home)
+                .into_iter()
+                .filter(|dir| dir.exists()),
         );
     }
-    let resolved = path.canonicalize().ok();
-    if std::iter::once(path.as_path())
-        .chain(resolved.as_deref())
-        .any(is_too_broad_game_dir)
-    {
+
+    // 4. Carpetas de juego de los perfiles guardados en BD (la política se aplica más abajo,
+    //    también a los perfiles guardados antes de validarse al guardar)
+    if let Ok(profiles) = crate::db::get_profiles_sync() {
+        roots.extend(
+            profiles
+                .into_iter()
+                .filter_map(|p| p.game_dir)
+                .filter_map(|gd| require_absolute_path(&gd).ok()),
+        );
+    }
+
+    // 5. Permitir directorios temporales durante pruebas unitarias
+    #[cfg(test)]
+    roots.push(std::env::temp_dir());
+
+    roots
+        .iter()
+        .map(|root| normalize_for_compare(root))
+        .filter(|root| policy.check_dedicated(root).is_ok())
+        .collect()
+}
+
+/// Directorio de Minecraft estándar de la plataforma.
+fn minecraft_dir(home: &Path) -> Option<PathBuf> {
+    if cfg!(target_os = "windows") {
+        dirs::data_dir().map(|appdata| appdata.join(".minecraft"))
+    } else if cfg!(target_os = "macos") {
+        Some(home.join("Library/Application Support/minecraft"))
+    } else {
+        Some(home.join(".minecraft"))
+    }
+}
+
+/// Carpetas de instancias de launchers externos conocidos.
+fn external_launcher_dirs(home: &Path) -> Vec<PathBuf> {
+    let base = if cfg!(target_os = "windows") {
+        home.join("AppData").join("Roaming")
+    } else if cfg!(target_os = "macos") {
+        home.join("Library").join("Application Support")
+    } else {
+        home.join(".local").join("share")
+    };
+
+    vec![
+        home.join("curseforge").join("minecraft").join("Instances"),
+        base.join("curseforge").join("minecraft").join("Instances"),
+        base.join("ModrinthApp").join("profiles"),
+        base.join("com.modrinth.theseus").join("profiles"),
+        base.join("PrismLauncher").join("instances"),
+        base.join("MultiMC").join("instances"),
+    ]
+}
+
+/// Ruta absoluta, no vacía y sin `..`: base común de toda ruta recibida del frontend.
+pub(crate) fn require_absolute_path(raw: &str) -> Result<PathBuf, String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err("La ruta no puede estar vacía.".to_string());
+    }
+    let path = PathBuf::from(trimmed);
+    if !path.is_absolute() {
         return Err(format!(
-            "Directorio de perfil no autorizado: '{}' es demasiado amplio (raíz del disco, carpeta personal o del sistema).",
-            path.display()
+            "Ruta no autorizada: debe ser una ruta absoluta ('{}').",
+            trimmed
         ));
+    }
+    if path.components().any(|c| c == Component::ParentDir) {
+        return Err(
+            "Ruta no autorizada: Detectada navegación relativa hacia directorios padres."
+                .to_string(),
+        );
     }
     Ok(path)
 }
 
-fn is_too_broad_game_dir(path: &Path) -> bool {
-    // Comparable entre rutas canónicas (`\\?\C:\`) y normales; sin mayúsculas en Windows
-    let fold = |p: &Path| -> PathBuf {
-        let s = p.to_string_lossy();
-        let s = s.strip_prefix(r"\\?\").unwrap_or(&s);
-        if cfg!(target_os = "windows") {
-            PathBuf::from(s.to_lowercase())
-        } else {
-            PathBuf::from(s)
-        }
-    };
-    let path = fold(path);
-
-    if path.parent().is_none() {
-        return true;
-    }
-    if let Some(home) = dirs::home_dir() {
-        if fold(&home).starts_with(&path) {
-            return true;
-        }
-    }
-
-    #[cfg(target_os = "windows")]
-    let system_dirs = [PathBuf::from(
-        std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".to_string()),
-    )];
-    #[cfg(not(target_os = "windows"))]
-    let system_dirs = [
-        "/etc", "/usr", "/bin", "/sbin", "/lib", "/boot", "/dev", "/proc", "/sys",
-    ]
-    .map(PathBuf::from);
-
-    system_dirs.iter().any(|d| path.starts_with(fold(d)))
+/// Forma comparable de una ruta: symlinks resueltos (aunque no exista todavía) y sin el prefijo
+/// `\\?\` que añade `canonicalize` en Windows. Raíces, rutas y carpetas protegidas se normalizan
+/// igual antes de compararse con `is_within_root`.
+pub(crate) fn normalize_for_compare(path: &Path) -> PathBuf {
+    let resolved = canonicalize_lenient(path).unwrap_or_else(|_| path.to_path_buf());
+    strip_verbatim_prefix(&resolved)
 }
 
-/// Valida y normaliza una ruta de archivo asegurando que esté dentro de una raíz autorizada.
-/// Protege estrictamente contra:
-/// - Rutas relativas
-/// - Path traversal (`..`)
-/// - Prefijos de dispositivos no autorizados
-/// - Simbólicos que apunten fuera de las raíces seguras
-pub fn validate_safe_file_path(path_str: &str) -> Result<PathBuf, String> {
-    let trimmed = path_str.trim();
-    if trimmed.is_empty() {
-        return Err("Ruta de archivo vacía.".to_string());
+/// Carpetas en las que el launcher nunca escribe ni borra, aunque una raíz autorizada las
+/// contuviera: las del sistema y las que el SO usa para arrancar programas o guardar credenciales
+/// del usuario (p. ej. la carpeta Startup, dentro de `%APPDATA%\Microsoft`).
+fn protected_dirs() -> Vec<PathBuf> {
+    let mut protected = Vec::new();
+
+    #[cfg(target_os = "windows")]
+    {
+        let env_dir = |var: &str, default: &str| {
+            std::env::var_os(var)
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from(default))
+        };
+        protected.push(env_dir("SystemRoot", r"C:\Windows"));
+        protected.push(env_dir("ProgramFiles", r"C:\Program Files"));
+        protected.push(env_dir("ProgramFiles(x86)", r"C:\Program Files (x86)"));
+        protected.push(env_dir("ProgramData", r"C:\ProgramData"));
+        protected.extend(
+            [dirs::data_dir(), dirs::data_local_dir()]
+                .into_iter()
+                .flatten()
+                .map(|dir| dir.join("Microsoft")),
+        );
     }
 
-    let raw_path = PathBuf::from(trimmed);
-    if !raw_path.is_absolute() {
-        return Err(format!(
-            "Ruta no autorizada: debe ser una ruta absoluta ('{}')",
-            trimmed
-        ));
-    }
-
-    for component in raw_path.components() {
-        if let Component::ParentDir = component {
-            return Err(
-                "Ruta no autorizada: Detectada navegación relativa hacia directorios padres."
-                    .to_string(),
+    #[cfg(not(target_os = "windows"))]
+    {
+        protected.extend(
+            [
+                "/etc", "/usr", "/bin", "/sbin", "/lib", "/lib64", "/boot", "/dev", "/proc",
+                "/sys", "/System",
+            ]
+            .map(PathBuf::from),
+        );
+        if let Some(home) = dirs::home_dir() {
+            protected.extend(
+                [
+                    ".ssh",
+                    ".gnupg",
+                    ".config/autostart",
+                    "Library/LaunchAgents",
+                ]
+                .map(|dir| home.join(dir)),
             );
         }
     }
 
-    // Resolver ruta canónica para evitar evasiones con symlinks o aliasing
-    let target_canonical = if raw_path.exists() {
-        raw_path
-            .canonicalize()
-            .map_err(|e| format!("Error canonicalizando ruta: {}", e))?
-    } else {
-        let mut ancestor = raw_path.as_path();
-        while !ancestor.exists() {
-            match ancestor.parent() {
-                Some(p) => ancestor = p,
-                None => return Err("Ruta no válida: ancestro inexistente.".to_string()),
-            }
-        }
-        let canonical_ancestor = ancestor
-            .canonicalize()
-            .map_err(|e| format!("Error canonicalizando ancestro: {}", e))?;
-        let relative = raw_path.strip_prefix(ancestor).unwrap_or(Path::new(""));
-        canonical_ancestor.join(relative)
-    };
-
-    let authorized_roots = get_authorized_file_roots();
-    let is_authorized = authorized_roots
+    protected
         .iter()
-        .any(|root| target_canonical.starts_with(root));
+        .map(|dir| normalize_for_compare(dir))
+        .collect()
+}
 
+/// Qué carpetas no puede tocar el launcher. Se calcula una vez por validación: cada carpeta
+/// se normaliza, lo que cuesta un acceso a disco.
+struct DirPolicy {
+    /// No se escribe dentro de ellas.
+    protected: Vec<PathBuf>,
+    /// Un directorio dedicado no puede ser ninguna de ellas ni contenerla: autorizarlo abriría
+    /// de golpe todo lo que cuelga de ella. Incluye las protegidas.
+    broad: Vec<PathBuf>,
+}
+
+impl DirPolicy {
+    fn current() -> Self {
+        let protected = protected_dirs();
+        let user_dirs = [
+            dirs::home_dir(),
+            dirs::desktop_dir(),
+            dirs::document_dir(),
+            dirs::download_dir(),
+            dirs::data_dir(),
+            dirs::data_local_dir(),
+            dirs::config_dir(),
+        ];
+        let broad = user_dirs
+            .into_iter()
+            .flatten()
+            .map(|dir| normalize_for_compare(&dir))
+            .chain(protected.iter().cloned())
+            .collect();
+        Self { protected, broad }
+    }
+
+    /// `target` ya normalizada.
+    fn is_protected(&self, target: &Path) -> bool {
+        self.protected.iter().any(|dir| is_within_root(target, dir))
+    }
+
+    /// Un directorio dedicado (instancia, perfil, instalación) no es la raíz de un disco, no está
+    /// dentro de una carpeta protegida y no es ni contiene una carpeta amplia. `target` ya
+    /// normalizada.
+    fn check_dedicated(&self, target: &Path) -> Result<(), String> {
+        if self.is_protected(target) {
+            return Err(format!(
+                "Directorio no autorizado: '{}' está dentro de una carpeta protegida del sistema.",
+                target.display()
+            ));
+        }
+        let is_too_broad =
+            target.parent().is_none() || self.broad.iter().any(|dir| is_within_root(dir, target));
+        if is_too_broad {
+            return Err(format!(
+                "Directorio no autorizado: '{}' es demasiado amplio (raíz del disco, carpeta personal o del sistema).",
+                target.display()
+            ));
+        }
+        Ok(())
+    }
+}
+
+/// Valida que `path` sirva como directorio dedicado de CrystalTides (ver `DirPolicy`).
+pub(crate) fn check_dedicated_dir(path: &Path) -> Result<(), String> {
+    DirPolicy::current().check_dedicated(&normalize_for_compare(path))
+}
+
+/// Valida el `game_dir` de un perfil. Cada perfil se convierte en raíz autorizada, así que tiene
+/// que ser un directorio dedicado: ni la raíz de un disco, ni el home del usuario o una carpeta
+/// que lo contenga, ni Escritorio/Documentos/AppData, ni nada dentro de las carpetas del
+/// sistema. Se comprueba su destino real, porque un symlink podría apuntar a una de ellas.
+pub fn validate_profile_game_dir(game_dir: &str) -> Result<PathBuf, String> {
+    let path = require_absolute_path(game_dir)?;
+    check_dedicated_dir(&path)?;
+    Ok(path)
+}
+
+/// Normaliza `raw` y exige que quede dentro de una raíz autorizada y fuera de las carpetas
+/// protegidas. Ruta y raíces se normalizan igual y se comparan por componentes: así
+/// `.crystaltides-otra` no cuela como `.crystaltides`, ni un symlink dentro de una raíz que
+/// apunte fuera de ella. Devuelve la ruta normalizada.
+fn authorize_path(raw: &str) -> Result<PathBuf, String> {
+    let target = normalize_for_compare(&require_absolute_path(raw)?);
+    let policy = DirPolicy::current();
+    if policy.is_protected(&target) {
+        return Err(
+            "Acceso denegado: la ruta está dentro de una carpeta protegida del sistema."
+                .to_string(),
+        );
+    }
+    let is_authorized = authorized_roots(&policy)
+        .iter()
+        .any(|root| is_within_root(&target, root));
     if !is_authorized {
         return Err("Acceso denegado: La ruta se encuentra fuera de los directorios autorizados de CrystalTides (.crystaltides, .minecraft o perfiles registrados).".to_string());
     }
+    Ok(target)
+}
 
-    #[cfg(target_os = "windows")]
-    let target_canonical = {
-        let s = target_canonical.to_string_lossy();
-        if let Some(stripped) = s.strip_prefix(r"\\?\") {
-            PathBuf::from(stripped)
-        } else {
-            target_canonical
-        }
-    };
-
-    Ok(target_canonical)
+/// Valida y normaliza la ruta de un archivo asegurando que esté dentro de una raíz autorizada.
+/// Protege contra rutas relativas, path traversal (`..`), carpetas del sistema y symlinks que
+/// apunten fuera de las raíces seguras.
+pub fn validate_safe_file_path(path_str: &str) -> Result<PathBuf, String> {
+    authorize_path(path_str)
 }
 
 /// Obtiene el directorio de instancias del launcher, respetando si la instalación
@@ -358,7 +326,7 @@ fn strip_verbatim_prefix(path: &Path) -> PathBuf {
 
 /// `path` está dentro de `root` (o es `root`), comparando componente a componente. En Windows y
 /// macOS el sistema de archivos no distingue mayúsculas, así que la comparación tampoco.
-fn is_within_root(path: &Path, root: &Path) -> bool {
+pub(crate) fn is_within_root(path: &Path, root: &Path) -> bool {
     let same = |a: Component, b: Component| {
         if cfg!(any(target_os = "windows", target_os = "macos")) {
             a.as_os_str().to_string_lossy().to_lowercase()
@@ -376,81 +344,11 @@ fn is_within_root(path: &Path, root: &Path) -> bool {
         .all(|r| parts.next().is_some_and(|p| same(p, r)))
 }
 
-/// Valida un directorio de juego de Minecraft o instancia.
-/// Debe ser una ruta absoluta, sin componentes `..`, y no vacía.
+/// Valida un directorio de juego, de instancia o de runtimes: mismas reglas que
+/// `validate_safe_file_path` (ruta absoluta, sin `..`, dentro de una raíz autorizada y fuera de
+/// las carpetas protegidas). Devuelve la ruta normalizada.
 pub fn validate_game_dir(game_dir: &str) -> Result<PathBuf, String> {
-    let trimmed = game_dir.trim();
-    if trimmed.is_empty() {
-        return Err("El directorio del juego no puede estar vacío".to_string());
-    }
-    let path = PathBuf::from(trimmed);
-    if !path.is_absolute() {
-        return Err(
-            "Ruta no autorizada: El directorio del juego debe ser una ruta absoluta".to_string(),
-        );
-    }
-    for component in path.components() {
-        if let Component::ParentDir = component {
-            return Err(
-                "Ruta no autorizada: Detectada navegación relativa hacia directorios padres"
-                    .to_string(),
-            );
-        }
-    }
-
-    // Prohibir explícitamente directorios protegidos del sistema operativo
-    #[cfg(target_os = "windows")]
-    {
-        let lower = trimmed.to_lowercase();
-        if lower.starts_with("c:\\windows") || lower.starts_with("c:/windows") {
-            return Err(
-                "Ruta no autorizada: Directorio protegido del sistema operativo.".to_string(),
-            );
-        }
-        if let Ok(sys_drive) = std::env::var("SystemDrive") {
-            let win_dir = PathBuf::from(format!("{}\\Windows", sys_drive));
-            if path.starts_with(&win_dir) {
-                return Err(
-                    "Ruta no autorizada: Directorio protegido del sistema operativo.".to_string(),
-                );
-            }
-        }
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        let forbidden = [
-            Path::new("/etc"),
-            Path::new("/usr"),
-            Path::new("/bin"),
-            Path::new("/sbin"),
-        ];
-        for f in &forbidden {
-            if path.starts_with(f) {
-                return Err(
-                    "Ruta no autorizada: Directorio protegido del sistema operativo.".to_string(),
-                );
-            }
-        }
-    }
-
-    let target_canonical = canonicalize_lenient(&path)
-        .map_err(|e| format!("Error canonicalizando ruta de juego: {}", e))?;
-
-    // Ruta y raíces se normalizan igual (symlinks resueltos, sin `\\?\`) y se comparan por
-    // componentes: así `.crystaltides-otra` no cuela como `.crystaltides`, ni un symlink
-    // dentro de una raíz que apunte fuera de ella.
-    let target_cmp = strip_verbatim_prefix(&target_canonical);
-    let is_authorized = get_authorized_file_roots().iter().any(|root| {
-        canonicalize_lenient(root)
-            .map(|r| is_within_root(&target_cmp, &strip_verbatim_prefix(&r)))
-            .unwrap_or(false)
-    });
-
-    if !is_authorized {
-        return Err("Acceso denegado: El directorio del juego se encuentra fuera de las raíces autorizadas (.crystaltides, .minecraft o instancias registradas).".to_string());
-    }
-
-    Ok(target_canonical)
+    authorize_path(game_dir)
 }
 
 /// Newtype `SafeId` para garantizar que los identificadores (instancias, perfiles, mods)
@@ -714,6 +612,96 @@ mod tests {
             .to_string_lossy()
             .to_uppercase();
         assert!(validate_game_dir(&upper).is_ok());
+    }
+
+    #[test]
+    fn test_require_absolute_path() {
+        assert!(require_absolute_path("").is_err());
+        assert!(require_absolute_path("   ").is_err());
+        assert!(require_absolute_path("relativa/x").is_err());
+        let temp = tempfile::tempdir().expect("tempdir");
+        assert!(require_absolute_path(&temp.path().join("..").to_string_lossy()).is_err());
+        assert_eq!(
+            require_absolute_path(&format!("  {}  ", temp.path().display())).unwrap(),
+            temp.path()
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_perfil_rechaza_carpetas_protegidas_y_amplias_de_windows() {
+        let roaming = dirs::data_dir().expect("APPDATA");
+        let startup = roaming.join(r"Microsoft\Windows\Start Menu\Programs\Startup");
+        let program_files = std::env::var("ProgramFiles").unwrap_or(r"C:\Program Files".into());
+
+        for dir in [
+            startup.clone(),
+            PathBuf::from(&program_files).join("CrystalTides"),
+            PathBuf::from(r"c:\windows\temp\x"),
+            roaming.clone(),
+            roaming.parent().unwrap().to_path_buf(), // AppData
+            dirs::desktop_dir().expect("desktop"),
+            dirs::document_dir().expect("documents"),
+        ] {
+            assert!(
+                validate_profile_game_dir(&dir.to_string_lossy()).is_err(),
+                "debe rechazar {}",
+                dir.display()
+            );
+        }
+
+        // Carpetas dedicadas dentro de las amplias sí valen
+        let desktop_instance = dirs::desktop_dir().unwrap().join("MiInstancia");
+        assert!(validate_profile_game_dir(&desktop_instance.to_string_lossy()).is_ok());
+        assert!(validate_profile_game_dir(&roaming.join(".minecraft").to_string_lossy()).is_ok());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_perfil_rechaza_carpetas_protegidas_de_unix() {
+        let home = dirs::home_dir().expect("home");
+        for dir in [
+            home.join(".ssh"),
+            home.join(".config/autostart/x"),
+            "/usr/lib/x".into(),
+        ] {
+            assert!(
+                validate_profile_game_dir(&dir.to_string_lossy()).is_err(),
+                "debe rechazar {}",
+                dir.display()
+            );
+        }
+    }
+
+    #[test]
+    fn test_politica_descarta_raices_amplias() {
+        let policy = DirPolicy::current();
+        let home = normalize_for_compare(&dirs::home_dir().expect("home"));
+        // Una raíz que llegara por el registro o por un perfil antiguo nunca se acepta
+        assert!(policy.check_dedicated(&home).is_err());
+        assert!(policy
+            .check_dedicated(home.ancestors().last().unwrap())
+            .is_err());
+        assert!(policy.check_dedicated(&home.join(".crystaltides")).is_ok());
+        // Las raíces autorizadas actuales cumplen la política
+        for root in get_authorized_file_roots() {
+            assert!(policy.check_dedicated(&root).is_ok(), "{}", root.display());
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_validate_safe_file_path_ignora_mayusculas_y_prefijo_verbatim() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let file = temp.path().join("Config.json");
+        std::fs::write(&file, b"{}").expect("write");
+
+        let upper = file.to_string_lossy().to_uppercase();
+        let validated = validate_safe_file_path(&upper).expect("misma ruta en mayúsculas");
+        assert!(!validated.to_string_lossy().starts_with(r"\\?\"));
+
+        let verbatim = format!(r"\\?\{}", file.display());
+        assert!(validate_safe_file_path(&verbatim).is_ok());
     }
 
     #[cfg(unix)]

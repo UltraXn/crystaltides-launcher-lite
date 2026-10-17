@@ -137,6 +137,10 @@ describe('SettingsModal Component & Helpers Suite', () => {
       expect(extractCleanMinecraftVersion('fabric-loader-0.16.10-1.21.1')).toBe('1.21.1');
       expect(extractCleanMinecraftVersion('1.20.1-forge-47.3.0')).toBe('1.20.1');
       expect(extractCleanMinecraftVersion('neoforge-21.1.252')).toBe('1.21.1');
+      expect(extractCleanMinecraftVersion('neoforge-21.0.12')).toBe('1.21');
+      expect(extractCleanMinecraftVersion('neoforge-20.4.80')).toBe('1.20.4');
+      expect(extractCleanMinecraftVersion('neoforge-26.1.2.122')).toBe('26.1.2');
+      expect(extractCleanMinecraftVersion('neoforge-26.2.0.93')).toBe('26.2');
       expect(extractCleanMinecraftVersion('1.21.1 (Vanilla)')).toBe('1.21.1');
       expect(extractCleanMinecraftVersion('1.21.4')).toBe('1.21.4');
     });
@@ -823,19 +827,6 @@ describe('SettingsModal Component & Helpers Suite', () => {
 
       await waitFor(() => {
         expect(useLauncherStore.getState().settings.javaDistribution).toBe('graalvm');
-      });
-    });
-
-    it('permite activar la exclusión de Windows Defender 1-Click', async () => {
-      render(<SettingsModal />);
-      const defenderBtn = screen.getByRole('button', {
-        name: /Excluir Carpeta en Windows Defender/i,
-      });
-      expect(defenderBtn).toBeDefined();
-      fireEvent.click(defenderBtn);
-
-      await waitFor(() => {
-        expect(defenderBtn).toBeDefined();
       });
     });
 

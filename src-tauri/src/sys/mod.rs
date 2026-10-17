@@ -51,11 +51,6 @@ pub fn is_app_installed(install_dir: &Path) -> bool {
     }
 }
 
-#[cfg(not(target_os = "windows"))]
-pub fn add_defender_exclusion(_folder_path: &Path) -> Result<(), String> {
-    Ok(())
-}
-
 /// El registro del sistema (clave de desinstalación y accesos directos) es único y global.
 /// Una instalación solo puede retirarlo si es la registrada (o si no hay ninguna registrada),
 /// para que desinstalar una copia secundaria o aislada no desregistre la principal.

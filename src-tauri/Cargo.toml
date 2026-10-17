@@ -18,19 +18,18 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
-tauri-plugin-updater = "~2.11.0"
+tauri-plugin-updater = "~2.13.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 reqwest = { version = "0.12", features = ["json", "rustls-tls", "stream"] }
-zip = "8.1.0"
+zip = "9.0.3"
 walkdir = "2.3"
 dirs = "6.0"
-sysinfo = "0.30"
+sysinfo = "0.39"
 sha2 = "0.10"
 sha1 = "0.10"
 hex = "0.4"
-windows = { version = "0.58", features = ["Win32_System_Threading", "Win32_System_JobObjects", "Win32_Security", "Win32_Foundation", "Win32_System_Registry", "Win32_UI_Shell", "Win32_System_Com"] }
 fastnbt = "2.6.3"
 flate2 = "1.1.10"
 rusqlite = { version = "0.32", features = ["bundled"] }
@@ -40,6 +39,9 @@ tar = "0.4"
 keyring = "3"
 thiserror = "2"
 base64 = "0.22"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = ["Win32_System_Threading", "Win32_System_JobObjects", "Win32_Security", "Win32_Foundation", "Win32_System_Registry", "Win32_UI_Shell", "Win32_System_Com"] }
 
 [dev-dependencies]
 tempfile = "3"

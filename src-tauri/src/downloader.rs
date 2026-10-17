@@ -83,6 +83,10 @@ pub async fn download_verified_with_progress<F>(
 where
     F: FnMut(f32) + Send,
 {
+    // La política de redirecciones del cliente solo valida los saltos, no la URL de partida
+    let safe_url = crate::network::validate_allowed_https_url(url)?;
+    let url = safe_url.as_str();
+
     if dest_path.exists() {
         if let Ok(true) = verify_file_hash(dest_path, expected_hash) {
             if repair_mode || !matches!(expected_hash, ExpectedHash::None) {
@@ -272,5 +276,23 @@ mod tests {
         assert!(!verify_file_hash(&test_file, &ExpectedHash::Sha256("0000".to_string())).unwrap());
         assert!(!verify_file_hash(&test_file, &ExpectedHash::Sha1("0000".to_string())).unwrap());
         assert!(verify_file_hash(&test_file, &ExpectedHash::None).unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_download_verified_rejects_unsafe_urls_before_touching_disk() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let dest = temp_dir.path().join("sub").join("mod.jar");
+        let client = reqwest::Client::new();
+
+        for url in [
+            "http://cdn.modrinth.com/data/x/mod.jar",
+            "https://malicious-site.com/mod.jar",
+            "https://127.0.0.1/mod.jar",
+            "file:///etc/passwd",
+        ] {
+            let res = download_verified(&client, url, &dest, &ExpectedHash::None, false).await;
+            assert!(res.is_err(), "debe rechazar {url}");
+        }
+        assert!(!dest.parent().unwrap().exists());
     }
 }

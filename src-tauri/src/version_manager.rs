@@ -414,8 +414,9 @@ async fn fetch_mojang_version_detail(
         "[VersionManager] Found version entry URL: {}",
         version_entry.url
     );
+    let detail_url = crate::network::validate_allowed_https_url(&version_entry.url)?;
     let detail_resp = client
-        .get(&version_entry.url)
+        .get(detail_url)
         .send()
         .await
         .map_err(|e| format!("Error descargando json de versión: {}", e))?
@@ -446,8 +447,9 @@ async fn download_client_jar(
     let sha1_expected = client_download.and_then(|c| c.sha1.as_deref());
 
     println!("[VersionManager] Downloading client.jar from {}...", url);
+    let safe_url = crate::network::validate_allowed_https_url(url)?;
     let jar_resp = client
-        .get(url)
+        .get(safe_url)
         .send()
         .await
         .map_err(|e| format!("Error descargando client.jar: {}", e))?
@@ -617,7 +619,18 @@ async fn download_asset_index_content(
         "[VersionManager] Downloading asset index {} from {}...",
         asset_ref.id, asset_ref.url
     );
-    let resp = client.get(&asset_ref.url).send().await.ok()?;
+    let safe_url = match crate::network::validate_allowed_https_url(&asset_ref.url) {
+        Ok(u) => u,
+        Err(e) => {
+            crate::logger::log(
+                "WARN",
+                "VersionManager",
+                &format!("URL de índice de assets rechazada: {}", e),
+            );
+            return None;
+        }
+    };
+    let resp = client.get(safe_url).send().await.ok()?;
     if !resp.status().is_success() {
         return None;
     }

@@ -22,6 +22,91 @@ mod tests {
         let result = sync_mods_sync(&temp.path().to_string_lossy(), "[]");
         assert!(result.is_ok());
     }
+
+    #[test]
+    fn test_sync_mods_rejects_source_outside_authorized_roots() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        #[cfg(target_os = "windows")]
+        let outside = r"C:\Windows\System32\drivers\etc\hosts";
+        #[cfg(not(target_os = "windows"))]
+        let outside = "/etc/hosts";
+
+        let entries = serde_json::json!([{ "source": outside, "filename": "hosts.jar" }]);
+        let result = sync_mods_sync(&temp.path().to_string_lossy(), &entries.to_string());
+        assert!(result.is_err());
+        assert!(!temp.path().join("hosts.jar").exists());
+    }
+
+    #[test]
+    fn test_cleanup_ignores_traversal_names_in_manifest() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let mods_dir = temp.path().join("mods");
+        fs::create_dir_all(&mods_dir).expect("mods dir");
+        let victim = temp.path().join("victim.txt");
+        fs::write(&victim, b"no me borres").expect("victim");
+        fs::write(mods_dir.join("viejo.jar"), b"jar").expect("old mod");
+        write_manifest(
+            &mods_dir,
+            &["../victim.txt".to_string(), "viejo.jar".to_string()],
+        )
+        .expect("manifest");
+
+        cleanup_stale_mods(&mods_dir, &[]);
+
+        assert!(
+            victim.exists(),
+            "un nombre con '..' no debe borrar fuera de mods/"
+        );
+        assert!(!mods_dir.join("viejo.jar").exists());
+    }
+
+    #[test]
+    fn test_validate_filename_rejects_alternate_data_streams() {
+        assert!(validate_filename("sodium.jar").is_ok());
+        assert!(validate_filename("sodium.jar:oculto").is_err());
+        assert!(validate_filename("C:mod.jar").is_err());
+    }
+
+    fn download_item(name: &str, sha1: &str) -> ModDownloadItem {
+        ModDownloadItem {
+            name: name.to_string(),
+            url: "https://cdn.modrinth.com/data/x/sodium.jar".to_string(),
+            sha1: sha1.to_string(),
+        }
+    }
+
+    #[test]
+    fn test_parse_sha1_requires_40_hex_chars() {
+        let hash = "A94A8FE5CCB19BA61C4C0873D391E987982FBBD3";
+        assert_eq!(
+            parse_sha1("m", &format!(" {hash} ")).unwrap(),
+            hash.to_ascii_lowercase()
+        );
+
+        assert!(parse_sha1("m", "").is_err());
+        assert!(parse_sha1("m", "   ").is_err());
+        assert!(parse_sha1("m", &hash[..39]).is_err());
+        assert!(parse_sha1("m", &format!("{}g", &hash[..39])).is_err());
+        // Un SHA-256 no es un SHA-1
+        assert!(parse_sha1("m", &"a".repeat(64)).is_err());
+    }
+
+    #[test]
+    fn test_download_list_rejects_mod_without_hash_before_downloading() {
+        let valid = "a94a8fe5ccb19ba61c4c0873d391e987982fbbd3";
+        let err = validate_download_list(vec![
+            download_item("sodium.jar", valid),
+            download_item("lithium.jar", ""),
+        ])
+        .unwrap_err();
+        assert!(err.contains("lithium.jar"), "{err}");
+
+        assert!(validate_download_list(vec![download_item("../x.jar", valid)]).is_err());
+
+        let ok = validate_download_list(vec![download_item("sodium.jar", &valid.to_uppercase())])
+            .unwrap();
+        assert_eq!(ok[0].sha1, valid);
+    }
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
@@ -40,12 +125,14 @@ pub struct LocalModItem {
 
 const SYNC_MANIFEST_NAME: &str = ".crystaltides_sync.json";
 
-/// Valida que el nombre de archivo no contenga rutas relativas ni traversal
+/// Valida que el nombre de archivo no contenga rutas relativas ni traversal. `:` se rechaza
+/// porque en Windows `mod.jar:x` escribe en un stream alternativo de `mod.jar`.
 fn validate_filename(filename: &str) -> Result<(), String> {
     if filename.is_empty()
         || filename.contains("..")
         || filename.contains('/')
         || filename.contains('\\')
+        || filename.contains(':')
     {
         return Err(format!(
             "Nombre de archivo inválido o peligroso: {filename}"
@@ -71,6 +158,30 @@ fn write_manifest(target_dir: &Path, files: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+/// Un mod se ejecuta dentro del juego con los permisos del usuario: sin un SHA-1 con el que
+/// comprobar el archivo descargado no se instala.
+fn parse_sha1(mod_name: &str, sha1: &str) -> Result<String, String> {
+    let hex = sha1.trim();
+    if hex.len() == 40 && hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+        Ok(hex.to_ascii_lowercase())
+    } else {
+        Err(format!(
+            "El mod {mod_name} no trae un SHA-1 válido y no se descarga sin verificar."
+        ))
+    }
+}
+
+/// Se valida la lista entera antes de descargar nada, para no dejar la mitad de los mods bajados.
+fn validate_download_list(mods: Vec<ModDownloadItem>) -> Result<Vec<ModDownloadItem>, String> {
+    mods.into_iter()
+        .map(|mod_item| {
+            validate_filename(&mod_item.name)?;
+            let sha1 = parse_sha1(&mod_item.name, &mod_item.sha1)?;
+            Ok(ModDownloadItem { sha1, ..mod_item })
+        })
+        .collect()
+}
+
 async fn process_mod_download(
     app: &tauri::AppHandle,
     client: &reqwest::Client,
@@ -78,14 +189,8 @@ async fn process_mod_download(
     mod_item: ModDownloadItem,
     idx: usize,
 ) -> Result<(), String> {
-    validate_filename(&mod_item.name)?;
     let file_path = Path::new(target_dir).join(&mod_item.name);
-
-    let expected_hash = if !mod_item.sha1.trim().is_empty() {
-        crate::downloader::ExpectedHash::Sha1(mod_item.sha1.trim().to_string())
-    } else {
-        crate::downloader::ExpectedHash::None
-    };
+    let expected_hash = crate::downloader::ExpectedHash::Sha1(mod_item.sha1);
 
     crate::downloader::download_verified(client, &mod_item.url, &file_path, &expected_hash, true)
         .await?;
@@ -103,6 +208,7 @@ pub async fn download_mods_parallel(
     max_concurrent: Option<i32>,
 ) -> Result<(), String> {
     crate::agent::validate_game_dir(&output_dir)?;
+    let mods = validate_download_list(mods)?;
     let out_path = PathBuf::from(&output_dir);
     if !out_path.exists() {
         fs::create_dir_all(&out_path).map_err(|e| e.to_string())?;
@@ -137,7 +243,9 @@ pub async fn download_mods_parallel(
 
 fn link_or_copy_mod_entry(mods_dir: &Path, entry: &ModSyncEntry) -> Result<(), String> {
     validate_filename(&entry.filename)?;
-    let source_path = Path::new(&entry.source);
+    // Sin validar, el origen permitía copiar a mods/ cualquier archivo del sistema
+    let source_path = crate::paths::validate_safe_file_path(&entry.source)?;
+    let source_path = source_path.as_path();
     let dest_path = mods_dir.join(&entry.filename);
     let disabled_path = mods_dir.join(format!("{}.disabled", entry.filename));
 
@@ -163,6 +271,12 @@ fn link_or_copy_mod_entry(mods_dir: &Path, entry: &ModSyncEntry) -> Result<(), S
 fn cleanup_stale_mods(mods_dir: &Path, intended_files: &[String]) {
     let prev_manifest = read_manifest(mods_dir);
     for old_file in prev_manifest {
+        // El manifiesto está en disco y una instancia importada puede traerlo manipulado:
+        // un nombre con `..` borraría archivos fuera de mods/
+        if let Err(e) = validate_filename(&old_file) {
+            crate::logger::log("WARN", "ModSync", &format!("Manifiesto ignorado: {}", e));
+            continue;
+        }
         if !intended_files.contains(&old_file) {
             let stale_path = mods_dir.join(&old_file);
             let stale_disabled = mods_dir.join(format!("{}.disabled", old_file));
@@ -248,7 +362,7 @@ pub fn list_instance_mods_sync(target_dir: &str) -> Result<Vec<LocalModItem>, St
         });
     }
 
-    items.sort_by(|a, b| a.filename.to_lowercase().cmp(&b.filename.to_lowercase()));
+    items.sort_by_key(|a| a.filename.to_lowercase());
     Ok(items)
 }
 

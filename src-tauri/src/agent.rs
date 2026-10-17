@@ -8,6 +8,8 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::net::TcpListener;
 use uuid::Uuid;
 
+use crate::boost_jars::{BoostJar, BOOST_JARS, BOOST_VERSION};
+
 pub const DEFAULT_GAME_IPC_PORT: u16 = 28195;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -419,12 +421,12 @@ pub async fn start_game_ipc_server(app_handle: AppHandle) -> Result<u16, String>
 const EMBEDDED_AGENT_JAR: &[u8] = include_bytes!("../assets/game-bridge.jar");
 #[cfg(target_os = "windows")]
 const EMBEDDED_CT_AGENT_DLL: &[u8] = include_bytes!("../assets/ct-agent.dll");
-const EMBEDDED_BOOST_FABRIC_JAR: &[u8] = include_bytes!("../assets/crystaltides-boost-fabric.jar");
-const EMBEDDED_BOOST_NEOFORGE_JAR: &[u8] =
-    include_bytes!("../assets/crystaltides-boost-neoforge.jar");
+/// Nombre con el que se despliega CrystalTides Boost en mods/, sea cual sea el jar: al cambiar la
+/// versión de Minecraft de la instancia se sustituye en vez de quedar dos copias del mod.
+const BOOST_MOD_FILE: &str = "crystaltides-boost.jar";
 /// SHA-256 de builds de crystaltides-boost.jar desplegados por versiones anteriores del launcher.
-/// Al reemplazar los jars embebidos, añadir aquí los hashes previos para que
-/// `remove_crystaltides_boost` pueda seguir limpiándolos de instancias existentes.
+/// scripts/sync-launcher-assets.mjs (monorepo) añade aquí el hash de cada jar embebido que sustituye
+/// o retira, para que el launcher pueda seguir retirándolos de instancias existentes.
 const LEGACY_BOOST_JAR_SHA256: &[&str] = &[
     "8b87d7242e7e37b57dde2997914bb69884fd253378c8856bddbcfbff27bfcfd8",
     "55fbe3a673d0efdc614464c996d5a57d1c36b8a6afcb4f5b09bfd52a1f68917a", // fabric 1.0.0 (sin agent bridge)
@@ -433,16 +435,31 @@ const LEGACY_BOOST_JAR_SHA256: &[&str] = &[
     "e53774d3b5aa9227920d421515a6eae5a4b5ca2ee8e3233203948f6387d739e2", // crystaltides-boost-neoforge.jar previo (sync 2026-10-16)
     "4512f6021b5af028fec4ceb8e484632b985259d63677eaa5b3ae9481afdeac81", // crystaltides-boost-fabric.jar previo (sync 2026-10-16)
     "f194c8c377502029a8d58e3f1f66e38c5bf8b2bb374ee20c50d6c54a04d26f2c", // crystaltides-boost-neoforge.jar previo (sync 2026-10-16)
+    "155ee7d83e79eab6e1414e428f9dbd71ea15463f600a91447e22506f1303df23", // crystaltides-boost-fabric.jar previo (sync 2026-10-17)
+    "7f4999068fbe0a01c1b3a06aadbcc0501e3d460fb65a21878f028027d16f9130", // crystaltides-boost-neoforge.jar previo (sync 2026-10-17)
 ];
 
 fn is_known_boost_jar(bytes: &[u8]) -> bool {
     use sha2::Digest;
 
-    if bytes == EMBEDDED_BOOST_FABRIC_JAR || bytes == EMBEDDED_BOOST_NEOFORGE_JAR {
-        return true;
-    }
     let sha256 = hex::encode(sha2::Sha256::digest(bytes));
-    LEGACY_BOOST_JAR_SHA256.contains(&sha256.as_str())
+    BOOST_JARS.iter().any(|jar| jar.sha256 == sha256)
+        || LEGACY_BOOST_JAR_SHA256.contains(&sha256.as_str())
+}
+
+/// Jar embebido de CrystalTides Boost para el loader y la versión de Minecraft de una instancia.
+/// Quilt usa el de Fabric. La versión tiene que ser una de las de un grupo: una posterior a las
+/// soportadas (p. ej. 26.4) o un snapshot no recibe ningún jar.
+fn boost_jar_for(loader_type: &str, mc_version: &str) -> Option<&'static BoostJar> {
+    let loader = match loader_type.trim().to_lowercase().as_str() {
+        "fabric" | "quilt" => "fabric",
+        "neoforge" => "neoforge",
+        _ => return None,
+    };
+    let mc_version = mc_version.trim();
+    BOOST_JARS
+        .iter()
+        .find(|jar| jar.loader == loader && jar.mc_releases.contains(&mc_version))
 }
 
 fn file_sha256_matches(path: &Path, expected_bytes: &[u8]) -> bool {
@@ -478,117 +495,122 @@ fn deploy_agent_jar(base_path: &Path) {
     }
 }
 
-pub fn deploy_boost_mod(base_path: &Path, loader_type: &str) {
-    let loader = loader_type.to_lowercase();
-    let jar_bytes: Option<&[u8]> = match loader.as_str() {
-        "fabric" | "quilt" => Some(EMBEDDED_BOOST_FABRIC_JAR),
-        "neoforge" => Some(EMBEDDED_BOOST_NEOFORGE_JAR),
-        _ => None,
-    };
-
-    let Some(bytes) = jar_bytes else {
+/// Despliega en mods/ el jar de CrystalTides Boost para el loader y la versión de Minecraft de la
+/// instancia y devuelve si queda en su sitio. Si no hay build para esa combinación, retira el que el
+/// launcher hubiera desplegado antes (p. ej. al cambiar la versión de la instancia), nunca uno ajeno.
+pub fn deploy_boost_mod(base_path: &Path, loader_type: &str, mc_version: &str) -> bool {
+    let Some(jar) = boost_jar_for(loader_type, mc_version) else {
         crate::logger::log(
-            "WARN",
+            "INFO",
             "CrystalBoost",
             &format!(
-                "Loader '{}' no es compatible con CrystalTides Boost. Despliegue omitido.",
-                loader_type
+                "CrystalTides Boost no tiene build para {:?} {:?}. Despliegue omitido.",
+                loader_type, mc_version
             ),
         );
-        return;
+        let _ = remove_boost_mod(base_path);
+        return false;
     };
 
     let mods_dir = base_path.join("mods");
-    let target_jar = mods_dir.join("crystaltides-boost.jar");
+    let target_jar = mods_dir.join(BOOST_MOD_FILE);
     if !mods_dir.exists() {
         let _ = fs::create_dir_all(&mods_dir);
     }
-    let needs_deploy = !target_jar.exists() || !file_sha256_matches(&target_jar, bytes);
-
-    if needs_deploy {
-        if let Err(e) = fs::write(&target_jar, bytes) {
-            crate::logger::log(
-                "WARN",
-                "CrystalBoost",
-                &format!("No se pudo escribir crystaltides-boost.jar embebido: {}", e),
-            );
-        } else {
-            crate::logger::log(
-                "INFO",
-                "CrystalBoost",
-                &format!(
-                    "crystaltides-boost.jar ({}) desplegado automáticamente en mods/.",
-                    loader_type
-                ),
-            );
-        }
+    if target_jar.exists() && file_sha256_matches(&target_jar, jar.bytes) {
+        return true;
     }
+
+    if let Err(e) = fs::write(&target_jar, jar.bytes) {
+        crate::logger::log(
+            "WARN",
+            "CrystalBoost",
+            &format!("No se pudo escribir crystaltides-boost.jar embebido: {}", e),
+        );
+        return false;
+    }
+    crate::logger::log(
+        "INFO",
+        "CrystalBoost",
+        &format!(
+            "crystaltides-boost.jar desplegado automáticamente en mods/ ({}, CrystalTides Boost {}).",
+            jar.file_name, BOOST_VERSION
+        ),
+    );
+    true
 }
 
+/// Devuelve si el jar de CrystalTides Boost queda en mods/: false si no hay build para esa versión
+/// de Minecraft (ver `deploy_boost_mod`).
 #[tauri::command]
 pub async fn deploy_crystaltides_boost(
     game_dir: String,
     loader_type: Option<String>,
+    mc_version: String,
 ) -> Result<bool, String> {
     tokio::task::spawn_blocking(move || {
         let base_path = validate_game_dir(&game_dir)?;
         let loader = loader_type.unwrap_or_else(|| "fabric".to_string());
-        deploy_boost_mod(&base_path, &loader);
-        Ok(true)
+        Ok(deploy_boost_mod(&base_path, &loader, &mc_version))
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// Retira mods/crystaltides-boost.jar si lo desplegó el launcher (el jar embebido de cualquier grupo
+/// o el de una versión anterior) y devuelve si lo retiró. Uno ajeno con ese nombre se deja.
+fn remove_boost_mod(base_path: &Path) -> Result<bool, String> {
+    let target_jar = base_path.join("mods").join(BOOST_MOD_FILE);
+
+    if !target_jar.exists() {
+        return Ok(false);
+    }
+
+    let existing_bytes = match fs::read(&target_jar) {
+        Ok(b) => b,
+        Err(e) => {
+            crate::logger::log(
+                "WARN",
+                "CrystalBoost",
+                &format!(
+                    "No se pudo leer crystaltides-boost.jar para verificar antes de borrar: {}",
+                    e
+                ),
+            );
+            return Err(format!("No se pudo leer crystaltides-boost.jar: {}", e));
+        }
+    };
+
+    if is_known_boost_jar(&existing_bytes) {
+        if let Err(e) = fs::remove_file(&target_jar) {
+            crate::logger::log(
+                "WARN",
+                "CrystalBoost",
+                &format!("No se pudo eliminar crystaltides-boost.jar: {}", e),
+            );
+            return Err(format!("No se pudo eliminar crystaltides-boost.jar: {}", e));
+        }
+        crate::logger::log(
+            "INFO",
+            "CrystalBoost",
+            "crystaltides-boost.jar obsoleto/no aplicable eliminado de mods/.",
+        );
+        Ok(true)
+    } else {
+        crate::logger::log(
+            "WARN",
+            "CrystalBoost",
+            "crystaltides-boost.jar detectado en mods/, pero no coincide byte a byte con los binarios embebidos del launcher. No se eliminará.",
+        );
+        Ok(false)
+    }
 }
 
 #[tauri::command]
 pub async fn remove_crystaltides_boost(game_dir: String) -> Result<bool, String> {
     tokio::task::spawn_blocking(move || {
         let base_path = validate_game_dir(&game_dir)?;
-        let mods_dir = base_path.join("mods");
-        let target_jar = mods_dir.join("crystaltides-boost.jar");
-
-        if !target_jar.exists() {
-            return Ok(false);
-        }
-
-        let existing_bytes = match fs::read(&target_jar) {
-            Ok(b) => b,
-            Err(e) => {
-                crate::logger::log(
-                    "WARN",
-                    "CrystalBoost",
-                    &format!(
-                        "No se pudo leer crystaltides-boost.jar para verificar antes de borrar: {}",
-                        e
-                    ),
-                );
-                return Err(format!("No se pudo leer crystaltides-boost.jar: {}", e));
-            }
-        };
-
-        if is_known_boost_jar(&existing_bytes) {
-            if let Err(e) = fs::remove_file(&target_jar) {
-                crate::logger::log(
-                    "WARN",
-                    "CrystalBoost",
-                    &format!("No se pudo eliminar crystaltides-boost.jar: {}", e),
-                );
-                return Err(format!("No se pudo eliminar crystaltides-boost.jar: {}", e));
-            }
-            crate::logger::log(
-                "INFO",
-                "CrystalBoost",
-                "crystaltides-boost.jar obsoleto/no aplicable eliminado de mods/.",
-            );
-            Ok(true)
-        } else {
-            crate::logger::log(
-                "WARN",
-                "CrystalBoost",
-                "crystaltides-boost.jar detectado en mods/, pero no coincide byte a byte con los binarios embebidos del launcher. No se eliminará.",
-            );
-            Ok(false)
-        }
+        remove_boost_mod(&base_path)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -1074,8 +1096,13 @@ mod tests {
 
     #[test]
     fn test_is_known_boost_jar_accepts_embedded_and_previous_builds() {
-        assert!(is_known_boost_jar(EMBEDDED_BOOST_FABRIC_JAR));
-        assert!(is_known_boost_jar(EMBEDDED_BOOST_NEOFORGE_JAR));
+        for jar in BOOST_JARS {
+            assert!(
+                is_known_boost_jar(jar.bytes),
+                "{} no se reconoce",
+                jar.file_name
+            );
+        }
         assert!(!is_known_boost_jar(
             b"some-other-mod-named-crystaltides-boost"
         ));
@@ -1083,6 +1110,95 @@ mod tests {
         for legacy in LEGACY_BOOST_JAR_SHA256 {
             assert_eq!(legacy.len(), 64, "SHA-256 legacy mal formado: {}", legacy);
         }
+    }
+
+    #[test]
+    fn test_boost_jar_for_picks_the_group_of_the_minecraft_version() {
+        let file = |loader: &str, mc: &str| boost_jar_for(loader, mc).map(|jar| jar.file_name);
+        assert_eq!(
+            file("fabric", "1.21"),
+            Some("crystaltides-boost-fabric-1.21.1.jar")
+        );
+        assert_eq!(
+            file("neoforge", "1.21.2"),
+            Some("crystaltides-boost-neoforge-1.21.3.jar")
+        );
+        assert_eq!(
+            file("NeoForge", " 1.21.1 "),
+            Some("crystaltides-boost-neoforge-1.21.1.jar")
+        );
+        // Quilt ejecuta los jars de Fabric
+        assert_eq!(
+            file("quilt", "1.21.1"),
+            Some("crystaltides-boost-fabric-1.21.1.jar")
+        );
+        // Sin build: versiones fuera de los grupos, snapshots y loaders sin soporte
+        assert_eq!(file("fabric", "1.20.1"), None);
+        assert_eq!(file("fabric", "99.1"), None);
+        assert_eq!(file("fabric", "1.21.1-pre1"), None);
+        assert_eq!(file("fabric", ""), None);
+        assert_eq!(file("forge", "1.21.1"), None);
+        assert_eq!(file("vanilla", "1.21.1"), None);
+    }
+
+    #[test]
+    fn test_boost_jars_cover_each_minecraft_version_once_per_loader() {
+        for loader in ["fabric", "neoforge"] {
+            let mut versions = std::collections::HashSet::new();
+            for jar in BOOST_JARS.iter().filter(|jar| jar.loader == loader) {
+                assert!(
+                    !jar.mc_releases.is_empty(),
+                    "{} no cubre ninguna versión",
+                    jar.file_name
+                );
+                for mc in jar.mc_releases {
+                    assert!(versions.insert(*mc), "{} {} está en dos jars", loader, mc);
+                    assert_eq!(
+                        boost_jar_for(loader, mc).map(|found| found.file_name),
+                        Some(jar.file_name)
+                    );
+                }
+            }
+            assert!(
+                versions.contains("1.21.1"),
+                "{}: falta Minecraft 1.21.1",
+                loader
+            );
+        }
+    }
+
+    #[test]
+    fn test_deploy_boost_mod_swaps_and_retires_the_launcher_jar() {
+        let temp = tempfile::tempdir().expect("create temp dir");
+        let base = temp.path();
+        let target = base.join("mods").join(BOOST_MOD_FILE);
+        let embedded = |loader, mc| boost_jar_for(loader, mc).expect("jar embebido").bytes;
+
+        assert!(deploy_boost_mod(base, "fabric", "1.21.1"));
+        assert_eq!(
+            fs::read(&target).expect("read jar"),
+            embedded("fabric", "1.21.1")
+        );
+
+        // Otra versión de Minecraft sustituye el jar en vez de añadir otro
+        assert!(deploy_boost_mod(base, "quilt", "1.21.2"));
+        assert_eq!(
+            fs::read(&target).expect("read jar"),
+            embedded("fabric", "1.21.2")
+        );
+        assert_eq!(
+            fs::read_dir(base.join("mods")).expect("read mods").count(),
+            1
+        );
+
+        // Sin build para la versión se retira el jar del launcher...
+        assert!(!deploy_boost_mod(base, "neoforge", "1.20.1"));
+        assert!(!target.exists());
+
+        // ...pero nunca uno ajeno con el mismo nombre
+        fs::write(&target, b"jar ajeno").expect("write foreign jar");
+        assert!(!deploy_boost_mod(base, "fabric", "1.20.1"));
+        assert_eq!(fs::read(&target).expect("read jar"), b"jar ajeno");
     }
 
     /// Extrae el checksum (última columna) de la fila de `file_name` en assets/MANIFEST.md
@@ -1099,25 +1215,16 @@ mod tests {
     #[test]
     fn test_embedded_assets_sha256_manifest_integrity() {
         use sha2::Digest;
-        let fabric_boost_hash = hex::encode(sha2::Sha256::digest(EMBEDDED_BOOST_FABRIC_JAR));
-        assert_eq!(
-            fabric_boost_hash,
-            "155ee7d83e79eab6e1414e428f9dbd71ea15463f600a91447e22506f1303df23"
-        );
-        assert_eq!(
-            manifest_sha256_for("crystaltides-boost-fabric.jar").as_deref(),
-            Some(fabric_boost_hash.as_str())
-        );
-
-        let neoforge_boost_hash = hex::encode(sha2::Sha256::digest(EMBEDDED_BOOST_NEOFORGE_JAR));
-        assert_eq!(
-            neoforge_boost_hash,
-            "7f4999068fbe0a01c1b3a06aadbcc0501e3d460fb65a21878f028027d16f9130"
-        );
-        assert_eq!(
-            manifest_sha256_for("crystaltides-boost-neoforge.jar").as_deref(),
-            Some(neoforge_boost_hash.as_str())
-        );
+        for jar in BOOST_JARS {
+            let hash = hex::encode(sha2::Sha256::digest(jar.bytes));
+            assert_eq!(hash, jar.sha256, "boost_jars.rs: hash de {}", jar.file_name);
+            assert_eq!(
+                manifest_sha256_for(&format!("boost/{}", jar.file_name)).as_deref(),
+                Some(hash.as_str()),
+                "MANIFEST.md: hash de boost/{}",
+                jar.file_name
+            );
+        }
 
         let bridge_jar_hash = hex::encode(sha2::Sha256::digest(EMBEDDED_AGENT_JAR));
         assert_eq!(

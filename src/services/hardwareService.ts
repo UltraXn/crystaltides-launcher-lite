@@ -29,20 +29,6 @@ export const fetchHardwareProfile = async (javaVersion?: number): Promise<CpuInf
   }
 };
 
-/**
- * Solicita elevación (UAC) para añadir la carpeta de datos del juego a las exclusiones
- * de Windows Defender, reduciendo el I/O overhead de mods y assets hasta en un 60%.
- */
-export const addWindowsDefenderExclusion = async (folderPath: string): Promise<boolean> => {
-  try {
-    await invoke('add_windows_defender_exclusion', { folderPath });
-    return true;
-  } catch (err) {
-    console.warn('[Hardware/Defender] Error al añadir exclusión de Windows Defender:', err);
-    return false;
-  }
-};
-
 export type GpuTier = 'ULTRA' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INTEGRATED';
 
 export interface GpuProfile {
