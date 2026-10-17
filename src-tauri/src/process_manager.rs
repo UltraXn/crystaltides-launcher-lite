@@ -141,13 +141,13 @@ fn get_game_job_guard() -> &'static Arc<Mutex<Option<ProcessJobGuard>>> {
 }
 
 pub fn find_java_pid_under_wrapper(wrapper_pid: u32) -> u32 {
-    use sysinfo::{Pid, System};
+    use sysinfo::{Pid, ProcessesToUpdate, System};
     let mut sys = System::new();
-    sys.refresh_processes();
+    sys.refresh_processes(ProcessesToUpdate::All, true);
     let target_parent = Pid::from_u32(wrapper_pid);
     for (pid, process) in sys.processes() {
         if process.parent() == Some(target_parent) {
-            let name = process.name().to_lowercase();
+            let name = process.name().to_string_lossy().to_lowercase();
             if name.contains("java") {
                 return pid.as_u32();
             }
