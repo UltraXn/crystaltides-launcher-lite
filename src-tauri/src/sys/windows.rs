@@ -4,7 +4,6 @@ use std::process::Command;
 
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 use windows::core::{Interface, PCWSTR};
-use windows::Win32::Foundation::BOOL;
 use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CoUninitialize, IPersistFile, CLSCTX_INPROC_SERVER,
     COINIT_APARTMENTTHREADED,
@@ -81,7 +80,7 @@ fn create_native_shortcut(
         }
 
         persist_file
-            .Save(PCWSTR(lnk_u16.as_ptr()), BOOL(1))
+            .Save(PCWSTR(lnk_u16.as_ptr()), true)
             .map_err(|e| format!("Error guardando archivo .lnk: {}", e))?;
     }
     Ok(())
@@ -119,7 +118,7 @@ fn write_uninstall_registry(target_exe: &Path, install_dir: &Path) -> Result<(),
             RegSetValueExW(
                 key,
                 PCWSTR(name_utf16.as_ptr()),
-                0,
+                None,
                 REG_SZ,
                 Some(data_bytes),
             )

@@ -1151,7 +1151,7 @@ fn disable_windows_power_throttling(handle: windows::Win32::Foundation::HANDLE) 
             ProcessInformationClass: i32,
             ProcessInformation: *const std::ffi::c_void,
             ProcessInformationSize: u32,
-        ) -> windows::Win32::Foundation::BOOL;
+        ) -> windows::core::BOOL;
     }
 
     let state = ProcessPowerThrottlingState {
@@ -1224,7 +1224,7 @@ fn set_process_working_set_hard_min(handle: windows::Win32::Foundation::HANDLE) 
             dwMinimumWorkingSetSize: usize,
             dwMaximumWorkingSetSize: usize,
             Flags: u32,
-        ) -> windows::Win32::Foundation::BOOL;
+        ) -> windows::core::BOOL;
     }
 
     // Flags: QUOTA_LIMITS_HARDWS_MIN_ENABLE (0x1) | QUOTA_LIMITS_HARDWS_MAX_DISABLE (0x8)
@@ -1285,7 +1285,7 @@ pub fn enforce_high_performance_gpu(java_path: &std::path::Path) {
                 val_data.len() * std::mem::size_of::<u16>(),
             );
             let set_res =
-                RegSetValueExW(hkey, PCWSTR(val_name.as_ptr()), 0, REG_SZ, Some(data_bytes));
+                RegSetValueExW(hkey, PCWSTR(val_name.as_ptr()), None, REG_SZ, Some(data_bytes));
             if set_res.is_ok() {
                 crate::logger::log(
                     "INFO",

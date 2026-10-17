@@ -220,7 +220,7 @@ unsafe fn query_gpu_entry(
     if RegOpenKeyExW(
         class_key,
         PCWSTR(subkey_name.as_ptr()),
-        0,
+        None,
         KEY_READ,
         &mut sub_key,
     )
@@ -263,7 +263,7 @@ fn scan_windows_gpus() -> Vec<(String, u64)> {
         if RegOpenKeyExW(
             HKEY_LOCAL_MACHINE,
             PCWSTR(class_path.as_ptr()),
-            0,
+            None,
             KEY_READ,
             &mut class_key,
         )
@@ -280,10 +280,10 @@ fn scan_windows_gpus() -> Vec<(String, u64)> {
             let status = RegEnumKeyExW(
                 class_key,
                 index,
-                windows::core::PWSTR(subkey_name.as_mut_ptr()),
+                Some(windows::core::PWSTR(subkey_name.as_mut_ptr())),
                 &mut name_len,
                 None,
-                windows::core::PWSTR::null(),
+                None,
                 None,
                 None,
             );
