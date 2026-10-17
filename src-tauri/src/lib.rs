@@ -1,4 +1,5 @@
 mod agent;
+mod boost_jars;
 mod crash_doctor;
 mod db;
 mod delta_patch;
