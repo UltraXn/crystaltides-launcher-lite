@@ -95,10 +95,10 @@ export const calculateDefaultButtonPositions = (
   }
 
   // Step between button centers as percentage of screen width.
-  // For 5 standard buttons, total span is 48% (step 12%), yielding 26, 38, 50, 62, 74.
-  // For more buttons (e.g. 7), total span is ~69% (step 11.5%), yielding 15.5, 27, 38.5, 50, 61.5, 73, 84.5.
-  // Clamped so buttons stay nicely centered and within screen margins without any overlap.
-  const maxSpan = Math.min(84, Math.max(48, (total - 1) * 11.5));
+  // For 5 standard buttons, stepX is 15.0%, yielding 20.0, 35.0, 50.0, 65.0, 80.0.
+  // This ensures >= 153px between centers at min-width 1024px, completely preventing
+  // any AABB overlap (buttons with labels are 136px - 152px wide).
+  const maxSpan = Math.min(84, Math.max(56, (total - 1) * 15.0));
   const stepX = Math.round((maxSpan / (total - 1)) * 10) / 10;
   const centerIdx = (total - 1) / 2;
 
@@ -310,10 +310,10 @@ export const getEffectiveHudSide = (
  */
 const getStaticWindowObstacles = (
   winW: number,
-  winH: number,
-  hudContext?: { isEditing: boolean; side: HudPlacementSide },
+  _winH: number,
+  _hudContext?: { isEditing: boolean; side: HudPlacementSide },
 ): Box[] => {
-  const obstacles: Box[] = [
+  return [
     {
       id: 'static:branding',
       x: 160,
@@ -329,36 +329,6 @@ const getStaticWindowObstacles = (
       height: 56,
     },
   ];
-
-  if (hudContext?.isEditing) {
-    if (hudContext.side === 'right') {
-      obstacles.push({
-        id: 'static:hudBar',
-        x: winW - 122,
-        y: winH / 2,
-        width: 216,
-        height: Math.min(winH - 32, 780),
-      });
-    } else if (hudContext.side === 'left') {
-      obstacles.push({
-        id: 'static:hudBar',
-        x: 122,
-        y: winH / 2,
-        width: 216,
-        height: Math.min(winH - 32, 780),
-      });
-    } else {
-      obstacles.push({
-        id: 'static:hudBar',
-        x: winW / 2,
-        y: 84,
-        width: Math.min(winW - 60, 760),
-        height: 54,
-      });
-    }
-  }
-
-  return obstacles;
 };
 
 const getWidgetObstacles = (
@@ -426,7 +396,10 @@ export const getActiveObstacles = (
   currentOverrides?: Record<string, { x: number; y: number }>,
   hudContext?: { isEditing: boolean; side: HudPlacementSide },
 ): Box[] => {
-  const obstacles: Box[] = getStaticWindowObstacles(winW, winH, hudContext);
+  // Bottom toolbar widgets should never be blocked by the temporary editing HUD overlay
+  const isBottomWidget = currentId.startsWith('widget:');
+  const effectiveHudContext = isBottomWidget ? undefined : hudContext;
+  const obstacles: Box[] = getStaticWindowObstacles(winW, winH, effectiveHudContext);
 
   if (dockConfig.layoutMode === 'dock') {
     if (currentId !== 'dock') {
@@ -501,10 +474,16 @@ export const chooseAlternativeSeparation = (
 ): { nextX: number; nextY: number } => {
   const altX = pushes.candX === pushes.pushLeft ? pushes.pushRight : pushes.pushLeft;
   const altY = pushes.candY === pushes.pushUp ? pushes.pushDown : pushes.pushUp;
-  if (curX + altX - halfW >= bounds.padding && curX + altX + halfW <= bounds.winW - bounds.padding) {
+  if (
+    curX + altX - halfW >= bounds.padding &&
+    curX + altX + halfW <= bounds.winW - bounds.padding
+  ) {
     return { nextX: curX + altX, nextY: curY };
   }
-  if (curY + altY - halfH >= bounds.topPadding && curY + altY + halfH <= bounds.winH - bounds.padding) {
+  if (
+    curY + altY - halfH >= bounds.topPadding &&
+    curY + altY + halfH <= bounds.winH - bounds.padding
+  ) {
     return { nextX: curX, nextY: curY + altY };
   }
   return { nextX: curX, nextY: curY };
@@ -542,8 +521,11 @@ const separateAgainstObstacle = (
   const candX = curX < obs.x ? pushLeft : pushRight;
   const candY = curY < obs.y ? pushUp : pushDown;
 
-  const canUseX = curX + candX - halfW >= bounds.padding && curX + candX + halfW <= bounds.winW - bounds.padding;
-  const canUseY = curY + candY - halfH >= bounds.topPadding && curY + candY + halfH <= bounds.winH - bounds.padding;
+  const canUseX =
+    curX + candX - halfW >= bounds.padding && curX + candX + halfW <= bounds.winW - bounds.padding;
+  const canUseY =
+    curY + candY - halfH >= bounds.topPadding &&
+    curY + candY + halfH <= bounds.winH - bounds.padding;
 
   const primary = choosePrimarySeparation(curX, curY, candX, candY, canUseX, canUseY);
   if (primary) return primary;
@@ -581,7 +563,8 @@ export const radialSearchFreeSlot = (
       const testY = Math.round(curY + Math.sin(angle) * r);
 
       if (testX - halfW < bounds.padding || testX + halfW > bounds.winW - bounds.padding) continue;
-      if (testY - halfH < bounds.topPadding || testY + halfH > bounds.winH - bounds.padding) continue;
+      if (testY - halfH < bounds.topPadding || testY + halfH > bounds.winH - bounds.padding)
+        continue;
 
       const testBox: Box = {
         id: 'test',
@@ -602,6 +585,8 @@ export interface CollisionOptions {
   padding?: number;
   topPadding?: number;
   gap?: number;
+  winW?: number;
+  winH?: number;
 }
 
 export const resolveCollisionAndClamp = (
@@ -615,8 +600,8 @@ export const resolveCollisionAndClamp = (
   const padding = options?.padding ?? 14;
   const topPadding = options?.topPadding ?? 64;
   const gap = options?.gap ?? 10;
-  const winW = typeof window !== 'undefined' ? window.innerWidth : 1280;
-  const winH = typeof window !== 'undefined' ? window.innerHeight : 720;
+  const winW = options?.winW ?? (typeof window !== 'undefined' ? window.innerWidth : 1280);
+  const winH = options?.winH ?? (typeof window !== 'undefined' ? window.innerHeight : 720);
 
   const halfW = elementWidth / 2;
   const halfH = elementHeight / 2;
@@ -663,12 +648,7 @@ export const resolveCollisionAndClamp = (
       if (!checkAABBOverlap(currentBox, obs, gap)) continue;
 
       anyCollisionInPass = true;
-      const separated = separateAgainstObstacle(
-        { curX, curY, halfW, halfH },
-        obs,
-        gap,
-        bounds,
-      );
+      const separated = separateAgainstObstacle({ curX, curY, halfW, halfH }, obs, gap, bounds);
       curX = Math.max(minX, Math.min(maxX, separated.nextX));
       curY = Math.max(minY, Math.min(maxY, separated.nextY));
     }
@@ -716,13 +696,10 @@ const sanitizeButtonsLayout = (
     const pxX = (pos.x / 100) * winW;
     const pxY = (pos.y / 100) * winH;
 
-    const resolved = resolveCollisionAndClamp(
-      pxX,
-      pxY,
-      dims.width,
-      dims.height,
-      placedBoxes,
-    );
+    const resolved = resolveCollisionAndClamp(pxX, pxY, dims.width, dims.height, placedBoxes, {
+      winW,
+      winH,
+    });
 
     newConfig.buttonPositions[btnId] = { x: resolved.x, y: resolved.y };
 
@@ -743,6 +720,12 @@ const sanitizeWidgetsLayout = (
   winH: number,
 ): void => {
   const widgetKeys: (keyof WidgetPositions)[] = ['userPill', 'socials', 'serverStatus'];
+  // Widgets are footer toolbar elements (default y: 93%). They must only avoid static boundaries
+  // and other widgets, never get pushed up into the canvas center by buttons or dock.
+  const widgetObstacles = placedBoxes.filter(
+    (b) => b.id.startsWith('static:') || b.id.startsWith('widget:'),
+  );
+
   for (const wKey of widgetKeys) {
     const boxId = `widget:${wKey}`;
     const defaultPos = DEFAULT_WIDGET_COORDS[wKey];
@@ -753,13 +736,10 @@ const sanitizeWidgetsLayout = (
     const pxX = (pos.x / 100) * winW;
     const pxY = (pos.y / 100) * winH;
 
-    const resolved = resolveCollisionAndClamp(
-      pxX,
-      pxY,
-      dims.width,
-      dims.height,
-      placedBoxes,
-    );
+    const resolved = resolveCollisionAndClamp(pxX, pxY, dims.width, dims.height, widgetObstacles, {
+      winW,
+      winH,
+    });
 
     if (!newConfig.widgetPositions) {
       newConfig.widgetPositions = {
@@ -789,7 +769,6 @@ export const sanitizeAllPositions = (
   const placedBoxes: Box[] = [
     { id: 'static:branding', x: 160, y: 28, width: 320, height: 56 },
     { id: 'static:winControls', x: winW - 70, y: 28, width: 140, height: 56 },
-    { id: 'static:topBar', x: winW / 2, y: 72, width: Math.min(winW - 100, 560), height: 52 },
   ];
 
   if (newConfig.layoutMode === 'free_buttons') {
@@ -799,13 +778,10 @@ export const sanitizeAllPositions = (
     const pxX = (newConfig.customCoordinates.x / 100) * winW;
     const pxY = (newConfig.customCoordinates.y / 100) * winH;
 
-    const resolved = resolveCollisionAndClamp(
-      pxX,
-      pxY,
-      dims.width,
-      dims.height,
-      placedBoxes,
-    );
+    const resolved = resolveCollisionAndClamp(pxX, pxY, dims.width, dims.height, placedBoxes, {
+      winW,
+      winH,
+    });
 
     newConfig.customCoordinates = { x: resolved.x, y: resolved.y };
 

@@ -1,6 +1,6 @@
 [package]
 name = "launcher-lite-tauri"
-version = "0.1.1"
+version = "0.1.2"
 description = "CrystalTides Lite Launcher (Tauri v2)"
 authors = ["CrystalTides Engineering"]
 edition = "2021"

@@ -1,15 +1,103 @@
-import React, { useState } from 'react';
-import { Download, RefreshCw, X, Sparkles, AlertCircle } from 'lucide-react';
-import { AppUpdateInfo, applyAppUpdate } from '../../services/updateService';
+import React, { useEffect, useState } from 'react';
+import { Download, RefreshCw, X, AlertCircle } from 'lucide-react';
+import { AppUpdateInfo, applyAppUpdate, fetchRemoteReleaseNotes } from '../../services/updateService';
+import logoImg from '../../assets/logo.webp';
 
 interface UpdaterModalProps {
   updateInfo: AppUpdateInfo;
   onClose: () => void;
 }
 
+const renderFormattedNotes = (rawText: string) => {
+  const lines = rawText.split('\n');
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+      {lines.map((line, idx) => {
+        const trimmed = line.trim();
+        if (!trimmed) {
+          return <div key={idx} style={{ height: '4px' }} />;
+        }
+        if (trimmed.startsWith('#')) {
+          const headerText = trimmed.replace(/^#+\s*/, '');
+          return (
+            <div
+              key={idx}
+              style={{
+                fontSize: '12px',
+                fontWeight: 700,
+                color: '#2DD4BF',
+                marginTop: idx > 0 ? '6px' : '0',
+                letterSpacing: '0.02em',
+                textTransform: 'uppercase',
+              }}
+            >
+              {headerText}
+            </div>
+          );
+        }
+        if (trimmed.startsWith('•') || trimmed.startsWith('-') || trimmed.startsWith('*')) {
+          const bulletText = trimmed.replace(/^[•\-*]\s*/, '');
+          return (
+            <div
+              key={idx}
+              style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: '8px',
+                fontSize: '12px',
+                color: 'rgba(255, 255, 255, 0.88)',
+                lineHeight: 1.45,
+              }}
+            >
+              <span style={{ color: '#2DD4BF', fontSize: '14px', lineHeight: '14px', marginTop: '1px' }}>•</span>
+              <span style={{ flex: 1 }}>{bulletText}</span>
+            </div>
+          );
+        }
+        return (
+          <div key={idx} style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.8)', lineHeight: 1.45 }}>
+            {line}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
 export const UpdaterModal: React.FC<UpdaterModalProps> = ({ updateInfo, onClose }) => {
   const [isUpdating, setIsUpdating] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [releaseNotes, setReleaseNotes] = useState<string | null>(updateInfo.body || null);
+  const [loadingNotes, setLoadingNotes] = useState(false);
+
+  useEffect(() => {
+    // Si ya contamos con notas detalladas en latest.json que no sean el mensaje por defecto
+    const isGenericDefault = !updateInfo.body || updateInfo.body.trim().toLowerCase().startsWith('actualización de crystaltides launcher');
+    if (!isGenericDefault && updateInfo.body) {
+      setReleaseNotes(updateInfo.body);
+      return;
+    }
+
+    const versionTag = updateInfo.version ? `v${updateInfo.version.replace(/^v/, '')}` : null;
+    if (!versionTag) return;
+
+    let isMounted = true;
+    setLoadingNotes(true);
+
+    void fetchRemoteReleaseNotes(versionTag)
+      .then((notes) => {
+        if (isMounted && notes && notes.length > 0) {
+          setReleaseNotes(notes);
+        }
+      })
+      .finally(() => {
+        if (isMounted) setLoadingNotes(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [updateInfo.body, updateInfo.version]);
 
   const handleUpdate = async () => {
     setIsUpdating(true);
@@ -24,6 +112,9 @@ export const UpdaterModal: React.FC<UpdaterModalProps> = ({ updateInfo, onClose 
     }
   };
 
+  const defaultFallbackNotes =
+    '• Corrección en cálculo y posicionamiento de botones del dock\n• Importación automática de RAM, argumentos JVM y resolución\n• Optimización de rendimiento e interfaz gráfica';
+
   return (
     <div className="papyrus-modal-overlay">
       <dialog
@@ -32,7 +123,7 @@ export const UpdaterModal: React.FC<UpdaterModalProps> = ({ updateInfo, onClose 
         aria-labelledby="updater-title"
         style={{
           width: '100%',
-          maxWidth: '460px',
+          maxWidth: '480px',
           background: 'radial-gradient(ellipse at top, #1A1924 0%, #0E0D14 100%)',
           border: '1px solid rgba(45, 212, 191, 0.3)',
           borderRadius: '20px',
@@ -74,15 +165,25 @@ export const UpdaterModal: React.FC<UpdaterModalProps> = ({ updateInfo, onClose 
               width: '48px',
               height: '48px',
               borderRadius: '14px',
-              background: 'rgba(45, 212, 191, 0.15)',
-              border: '1px solid rgba(45, 212, 191, 0.35)',
+              background: 'rgba(45, 212, 191, 0.1)',
+              border: '1px solid rgba(45, 212, 191, 0.3)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              color: '#2DD4BF',
+              flexShrink: 0,
+              boxShadow: '0 4px 14px rgba(45, 212, 191, 0.15)',
             }}
           >
-            <Sparkles style={{ width: '24px', height: '24px' }} />
+            <img
+              src={logoImg}
+              alt="CrystalTides Logo"
+              style={{
+                width: '32px',
+                height: '32px',
+                objectFit: 'contain',
+                filter: 'drop-shadow(0 2px 6px rgba(45, 212, 191, 0.35))',
+              }}
+            />
           </div>
           <div>
             <h2 id="updater-title" style={{ margin: 0, fontSize: '17px', fontWeight: 800, color: '#FFF' }}>
@@ -101,7 +202,7 @@ export const UpdaterModal: React.FC<UpdaterModalProps> = ({ updateInfo, onClose 
         {/* Release Notes */}
         <div
           style={{
-            maxHeight: '140px',
+            maxHeight: '160px',
             overflowY: 'auto',
             padding: '12px 14px',
             borderRadius: '12px',
@@ -109,11 +210,17 @@ export const UpdaterModal: React.FC<UpdaterModalProps> = ({ updateInfo, onClose 
             border: '1px solid rgba(255, 255, 255, 0.08)',
             fontSize: '12px',
             color: 'rgba(255, 255, 255, 0.8)',
-            whiteSpace: 'pre-wrap',
             lineHeight: 1.5,
           }}
         >
-          {updateInfo.body ?? 'Esta actualización incluye mejoras de rendimiento, optimizaciones de red y corrección de errores para betatesters.'}
+          {loadingNotes ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#94A3B8' }}>
+              <RefreshCw style={{ width: '13px', height: '13px', animation: 'spin 1s linear infinite' }} />
+              <span>Cargando notas de la versión...</span>
+            </div>
+          ) : (
+            renderFormattedNotes(releaseNotes || defaultFallbackNotes)
+          )}
         </div>
 
         {/* Error Alert */}

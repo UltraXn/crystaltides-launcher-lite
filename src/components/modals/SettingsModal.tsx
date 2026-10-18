@@ -1575,7 +1575,7 @@ export const SettingsModal: React.FC = () => {
                     fontFamily: 'monospace',
                   }}
                 >
-                  v0.1.1-lite
+                  v0.1.2-lite
                 </span>
               </div>
               <p

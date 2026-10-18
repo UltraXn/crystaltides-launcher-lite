@@ -161,9 +161,23 @@ jobs:
           $cleanVersion = $tag -replace '^v', ''
           $pubDate = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
 
+          $notes = ""
+          if (Test-Path "RELEASE_NOTES.md") {
+            $notes = (Get-Content -Path "RELEASE_NOTES.md" -Raw -Encoding utf8).Trim()
+          } elseif (Test-Path "apps/launcher-lite/RELEASE_NOTES.md") {
+            $notes = (Get-Content -Path "apps/launcher-lite/RELEASE_NOTES.md" -Raw -Encoding utf8).Trim()
+          } else {
+            $recentLog = git log -n 5 --no-merges --pretty=format:"• %s"
+            if ($recentLog) {
+              $notes = "Novedades en esta versión ($tag):`n$recentLog"
+            } else {
+              $notes = "Actualización de CrystalTides Launcher ($tag)"
+            }
+          }
+
           $latestManifest = @{
             version = $cleanVersion
-            notes = "Actualización de CrystalTides Launcher ($tag)"
+            notes = $notes
             pub_date = $pubDate
             platforms = @{
               "windows-x86_64" = @{
@@ -192,6 +206,7 @@ jobs:
           files: release-artifacts/*
           tag_name: ${{ github.ref_name != '' && github.ref_name || inputs.tag_name }}
           name: "CrystalTides Launcher ${{ github.ref_name != '' && github.ref_name || inputs.tag_name }}"
+          body_path: ${{ hashFiles('RELEASE_NOTES.md') != '' && 'RELEASE_NOTES.md' || hashFiles('apps/launcher-lite/RELEASE_NOTES.md') != '' && 'apps/launcher-lite/RELEASE_NOTES.md' || '' }}
           generate_release_notes: true
           draft: false
           prerelease: false

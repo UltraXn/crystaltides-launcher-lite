@@ -173,6 +173,40 @@ describe('collisionSystem', () => {
       expect(result.buttonPositions?.launch).toBeDefined();
       expect(result.buttonPositions?.settings).toBeDefined();
     });
+
+    it('does not eject bottom widgets upwards when buttons or dock exist', () => {
+      const config = {
+        layoutMode: 'free_buttons',
+        buttonOrder: ['instances', 'about', 'accounts', 'settings', 'launch'],
+        visibleButtons: ['instances', 'about', 'accounts', 'settings', 'launch'],
+        buttonPositions: {
+          instances: { x: 20, y: 50 },
+          about: { x: 35, y: 50 },
+          accounts: { x: 50, y: 50 },
+          settings: { x: 65, y: 50 },
+          launch: { x: 80, y: 50 },
+        },
+        widgetPositions: {
+          userPill: { x: 8, y: 93 },
+          socials: { x: 50, y: 93 },
+          serverStatus: { x: 92, y: 93 },
+        },
+      } as unknown as DockConfig;
+
+      const result = sanitizeAllPositions(config, 1280, 720);
+      expect(result.widgetPositions.userPill.y).toBeGreaterThanOrEqual(88);
+      expect(result.widgetPositions.socials.y).toBeGreaterThanOrEqual(88);
+      expect(result.widgetPositions.serverStatus.y).toBeGreaterThanOrEqual(88);
+    });
+
+    it('does not include static:hudBar when evaluating obstacles for bottom widgets', () => {
+      const config = { layoutMode: 'free_buttons' } as any;
+      const obstacles = getActiveObstacles('widget:serverStatus', config, 1280, 720, undefined, {
+        isEditing: true,
+        side: 'right',
+      });
+      expect(obstacles.some((o) => o.id === 'static:hudBar')).toBe(false);
+    });
   });
 
   describe('getElementDimensions', () => {

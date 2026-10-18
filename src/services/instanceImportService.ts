@@ -13,6 +13,11 @@ export interface ImportableInstance {
   game_dir: string;
   mods_count: number;
   icon?: string;
+  min_ram_gb?: number;
+  max_ram_gb?: number;
+  jvm_args?: string;
+  resolution_width?: number;
+  resolution_height?: number;
 }
 
 export const fetchExternalInstances = async (): Promise<ImportableInstance[]> => {
@@ -62,14 +67,20 @@ export const importInstanceToLauncher = async (
     return 'cube';
   };
 
+  const minRamGb = typeof item.min_ram_gb === 'number' && item.min_ram_gb > 0 ? item.min_ram_gb : 4;
+  const maxRamGb = typeof item.max_ram_gb === 'number' && item.max_ram_gb > 0 ? item.max_ram_gb : 8;
+
   const newInst: GameInstance = {
     id,
     name,
     mcVersion: item.mc_version,
     loaderType: item.loader_type,
     loaderVersion: item.loader_version,
-    minRamGb: 4,
-    maxRamGb: 8,
+    minRamGb,
+    maxRamGb,
+    jvmArgs: item.jvm_args,
+    resolutionWidth: item.resolution_width,
+    resolutionHeight: item.resolution_height,
     gameDir: item.game_dir,
     importedSourceId: item.id,
     icon: resolveIcon(),
@@ -87,8 +98,11 @@ export const importInstanceToLauncher = async (
       mc_version: newInst.mcVersion,
       loader_type: newInst.loaderType,
       loader_version: newInst.loaderVersion,
-      min_ram: 4096,
-      max_ram: 8192,
+      min_ram: Math.round(minRamGb * 1024),
+      max_ram: Math.round(maxRamGb * 1024),
+      jvm_args: newInst.jvmArgs,
+      resolution_width: newInst.resolutionWidth,
+      resolution_height: newInst.resolutionHeight,
       game_dir: newInst.gameDir,
       created_at: newInst.createdAt,
       updated_at: newInst.createdAt,

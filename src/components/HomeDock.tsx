@@ -29,7 +29,6 @@ import {
   getElementDimensions,
   getEffectiveDockPosition,
   getEffectiveHudSide,
-  getSafeYBelowHudBar,
 } from '../utils/collisionSystem';
 import { DockButtonInspector, InspectorTab } from './DockButtonInspector';
 import { LoaderLogo } from './common/LoaderIcons';
@@ -361,7 +360,6 @@ interface FreeButtonsLayoutProps {
   draggingTarget: DraggingTargetId;
   tempPos: { x: number; y: number } | null;
   isEditingHud: boolean;
-  effectiveHudSide: string;
   isColliding: boolean;
   t: ReturnType<typeof useT>;
   buttonRefs: React.RefObject<Record<string, HTMLButtonElement | null>>;
@@ -406,7 +404,6 @@ const FreeButtonsLayout: React.FC<FreeButtonsLayoutProps> = ({
   draggingTarget,
   tempPos,
   isEditingHud,
-  effectiveHudSide,
   isColliding,
   t,
   buttonRefs,
@@ -446,18 +443,10 @@ const FreeButtonsLayout: React.FC<FreeButtonsLayoutProps> = ({
     <>
       {allFreeButtons.map((btnId) => {
         const isDraggingThis = draggingTarget === btnId;
-        let pos =
+        const pos =
           isDraggingThis && tempPos
             ? tempPos
             : dockConfig.buttonPositions?.[btnId] || { x: 50, y: 50 };
-
-        if (!isDraggingThis && isEditingHud && effectiveHudSide === 'center') {
-          const winH = typeof window !== 'undefined' ? window.innerHeight : 720;
-          const safeY = getSafeYBelowHudBar(`btn:${btnId}`, dockConfig, winH);
-          if (pos.y < safeY && pos.x > 15 && pos.x < 85) {
-            pos = { x: pos.x, y: safeY };
-          }
-        }
 
         const isLaunch = btnId === 'launch';
         const btnCustom = dockConfig.buttonCustomizations?.[btnId];
@@ -1070,6 +1059,7 @@ export const HomeDock: React.FC = () => {
         dims.width,
         dims.height,
         obstacles,
+        { winW, winH },
       );
 
       setTempPos({ x: resolved.x, y: resolved.y });
@@ -1123,6 +1113,7 @@ export const HomeDock: React.FC = () => {
         dims.width,
         dims.height,
         obstacles,
+        { winW, winH },
       );
 
       if (draggingTarget === 'dock') {
@@ -1271,33 +1262,28 @@ export const HomeDock: React.FC = () => {
       const winH = typeof window !== 'undefined' ? window.innerHeight : 720;
 
       if (dockConfig.positionPreset === 'free' && dockConfig.customCoordinates) {
-        const currentBoxId = 'dock';
-        let dims = getElementDimensions(currentBoxId, dockConfig);
+        let dims = getElementDimensions('dock', dockConfig);
         if (dockRef.current) {
           dims = {
             width: dockRef.current.getBoundingClientRect().width,
             height: dockRef.current.getBoundingClientRect().height,
           };
         }
-        const obstacles = getActiveObstacles(currentBoxId, dockConfig, winW, winH, undefined, {
-          isEditing: isEditingHud,
-          side: effectiveHudSide,
-        });
-        const currentCenterPxX = (dockConfig.customCoordinates.x / 100) * winW;
-        const currentCenterPxY = (dockConfig.customCoordinates.y / 100) * winH;
-        const resolved = resolveCollisionAndClamp(
-          currentCenterPxX,
-          currentCenterPxY,
-          dims.width,
-          dims.height,
-          obstacles,
-        );
+        const halfW = dims.width / 2;
+        const halfH = dims.height / 2;
+        const minXPct = Math.round(((halfW + 14) / winW) * 100 * 10) / 10;
+        const maxXPct = Math.round(((winW - halfW - 14) / winW) * 100 * 10) / 10;
+        const minYPct = Math.round(((halfH + 64) / winH) * 100 * 10) / 10;
+        const maxYPct = Math.round(((winH - halfH - 14) / winH) * 100 * 10) / 10;
+
+        const clampedX = Math.max(minXPct, Math.min(maxXPct, dockConfig.customCoordinates.x));
+        const clampedY = Math.max(minYPct, Math.min(maxYPct, dockConfig.customCoordinates.y));
         if (
-          Math.abs(resolved.x - dockConfig.customCoordinates.x) > 0.5 ||
-          Math.abs(resolved.y - dockConfig.customCoordinates.y) > 0.5
+          Math.abs(clampedX - dockConfig.customCoordinates.x) > 0.5 ||
+          Math.abs(clampedY - dockConfig.customCoordinates.y) > 0.5
         ) {
           launcherActions.setDockConfig({
-            customCoordinates: { x: resolved.x, y: resolved.y },
+            customCoordinates: { x: clampedX, y: clampedY },
           });
         }
       }
@@ -1307,8 +1293,7 @@ export const HomeDock: React.FC = () => {
         for (const btnId of buttons) {
           const pos = dockConfig.buttonPositions?.[btnId];
           if (!pos) continue;
-          const currentBoxId = `btn:${btnId}`;
-          let dims = getElementDimensions(currentBoxId, dockConfig);
+          let dims = getElementDimensions(`btn:${btnId}`, dockConfig);
           const btnEl = buttonRefs.current[btnId];
           if (btnEl) {
             dims = {
@@ -1316,21 +1301,19 @@ export const HomeDock: React.FC = () => {
               height: btnEl.getBoundingClientRect().height,
             };
           }
-          const obstacles = getActiveObstacles(currentBoxId, dockConfig, winW, winH, undefined, {
-            isEditing: isEditingHud,
-            side: effectiveHudSide,
-          });
-          const currentCenterPxX = (pos.x / 100) * winW;
-          const currentCenterPxY = (pos.y / 100) * winH;
-          const resolved = resolveCollisionAndClamp(
-            currentCenterPxX,
-            currentCenterPxY,
-            dims.width,
-            dims.height,
-            obstacles,
-          );
-          if (Math.abs(resolved.x - pos.x) > 0.5 || Math.abs(resolved.y - pos.y) > 0.5) {
-            launcherActions.setButtonPosition(btnId, { x: resolved.x, y: resolved.y });
+          const halfW = dims.width / 2;
+          const halfH = dims.height / 2;
+
+          const minXPct = Math.round(((halfW + 14) / winW) * 100 * 10) / 10;
+          const maxXPct = Math.round(((winW - halfW - 14) / winW) * 100 * 10) / 10;
+          const minYPct = Math.round(((halfH + 64) / winH) * 100 * 10) / 10;
+          const maxYPct = Math.round(((winH - halfH - 14) / winH) * 100 * 10) / 10;
+
+          const clampedX = Math.max(minXPct, Math.min(maxXPct, pos.x));
+          const clampedY = Math.max(minYPct, Math.min(maxYPct, pos.y));
+
+          if (Math.abs(clampedX - pos.x) > 0.5 || Math.abs(clampedY - pos.y) > 0.5) {
+            launcherActions.setButtonPosition(btnId, { x: clampedX, y: clampedY });
           }
         }
       }
@@ -1338,7 +1321,7 @@ export const HomeDock: React.FC = () => {
 
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, [dockConfig, isEditingHud, effectiveHudSide]);
+  }, [dockConfig]);
 
   const handleStartResize = (
     e: React.MouseEvent,
@@ -1543,7 +1526,9 @@ export const HomeDock: React.FC = () => {
     if (btnCustom?.iconType === 'none') {
       return null;
     }
-    const scale = btnCustom?.iconScale ?? 1;
+    const globalScale = dockConfig.iconScale ?? 1;
+    const btnScale = btnCustom?.iconScale ?? 1;
+    const scale = Math.round(globalScale * btnScale * 100) / 100;
     const effectiveSize = Math.round(iconSize * scale);
 
     if (btnCustom?.iconType === 'custom_svg' && btnCustom.customSvg) {
@@ -2132,7 +2117,6 @@ export const HomeDock: React.FC = () => {
         draggingTarget={draggingTarget}
         tempPos={tempPos}
         isEditingHud={isEditingHud}
-        effectiveHudSide={effectiveHudSide}
         isColliding={isColliding}
         t={t}
         buttonRefs={buttonRefs}

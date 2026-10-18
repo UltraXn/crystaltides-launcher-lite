@@ -278,6 +278,7 @@ export interface DockConfig {
   buttonPositions: Record<string, { x: number; y: number }>;
   widgetPositions: WidgetPositions;
   scale: 'normal' | 'compact';
+  iconScale?: number;
   customDockHeight?: number;
   customSegmentWidth?: number;
   showLabels: boolean;
@@ -308,11 +309,11 @@ export const DEFAULT_DOCK_CONFIG: DockConfig = {
   positionPreset: 'center',
   customCoordinates: { x: 50, y: 50 },
   buttonPositions: {
-    instances: { x: 26, y: 50 },
-    about: { x: 38, y: 50 },
+    instances: { x: 20, y: 50 },
+    about: { x: 35, y: 50 },
     accounts: { x: 50, y: 50 },
-    settings: { x: 62, y: 50 },
-    launch: { x: 74, y: 50 },
+    settings: { x: 65, y: 50 },
+    launch: { x: 80, y: 50 },
   },
   widgetPositions: {
     userPill: { x: 8, y: 93 },
@@ -320,6 +321,7 @@ export const DEFAULT_DOCK_CONFIG: DockConfig = {
     serverStatus: { x: 92, y: 93 },
   },
   scale: 'normal',
+  iconScale: 1.0,
   showLabels: true,
   bgOpacity: 0.92,
   borderRadius: 14,
@@ -423,17 +425,44 @@ export const loadInitialDockConfig = (): DockConfig => {
         visibleSet.add(p);
       }
 
+      // Detect legacy overlapping default positions and migrate to non-overlapping spacing
+      const isLegacyDefaultSpacing =
+        parsed.buttonPositions &&
+        parsed.buttonPositions.instances?.x === 26 &&
+        parsed.buttonPositions.launch?.x === 74;
+
+      const effectiveButtonPositions = isLegacyDefaultSpacing
+        ? { ...DEFAULT_DOCK_CONFIG.buttonPositions }
+        : {
+            ...DEFAULT_DOCK_CONFIG.buttonPositions,
+            ...parsed.buttonPositions,
+          };
+
+      // Repair widgets if they were previously ejected into canvas center (y < 80)
+      const rawWidgets = {
+        ...DEFAULT_DOCK_CONFIG.widgetPositions,
+        ...parsed.widgetPositions,
+      };
+      const effectiveWidgetPositions = {
+        userPill:
+          rawWidgets.userPill?.y && rawWidgets.userPill.y < 80
+            ? DEFAULT_DOCK_CONFIG.widgetPositions.userPill
+            : rawWidgets.userPill,
+        socials:
+          rawWidgets.socials?.y && rawWidgets.socials.y < 80
+            ? DEFAULT_DOCK_CONFIG.widgetPositions.socials
+            : rawWidgets.socials,
+        serverStatus:
+          rawWidgets.serverStatus?.y && rawWidgets.serverStatus.y < 80
+            ? DEFAULT_DOCK_CONFIG.widgetPositions.serverStatus
+            : rawWidgets.serverStatus,
+      };
+
       return {
         ...DEFAULT_DOCK_CONFIG,
         ...parsed,
-        buttonPositions: {
-          ...DEFAULT_DOCK_CONFIG.buttonPositions,
-          ...parsed.buttonPositions,
-        },
-        widgetPositions: {
-          ...DEFAULT_DOCK_CONFIG.widgetPositions,
-          ...parsed.widgetPositions,
-        },
+        buttonPositions: effectiveButtonPositions,
+        widgetPositions: effectiveWidgetPositions,
         visibleButtons: Array.from(visibleSet),
         buttonOrder: Array.isArray(parsed.buttonOrder)
           ? parsed.buttonOrder
@@ -1092,11 +1121,11 @@ export const launcherActions = {
       buttonOrder: ['instances', 'about', 'accounts', 'settings', 'launch'],
       visibleButtons: ['instances', 'about', 'accounts', 'settings', 'launch'],
       buttonPositions: {
-        instances: { x: 26, y: 50 },
-        about: { x: 38, y: 50 },
+        instances: { x: 20, y: 50 },
+        about: { x: 35, y: 50 },
         accounts: { x: 50, y: 50 },
-        settings: { x: 62, y: 50 },
-        launch: { x: 74, y: 50 },
+        settings: { x: 65, y: 50 },
+        launch: { x: 80, y: 50 },
       },
       widgetPositions: {
         userPill: { x: 8, y: 93 },
