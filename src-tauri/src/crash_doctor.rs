@@ -158,6 +158,22 @@ fn match_diagnosis_patterns(text: &str, exit_code: Option<i32>) -> CrashDiagnosi
         };
     }
 
+    if text.contains("Failed to read the newly written transform cache")
+        || (text.contains("TransformCacheManager") && text.contains("Not in GZIP format"))
+        || (text.contains("quilt_loader") && text.contains("ZipException: Not in GZIP format"))
+    {
+        return CrashDiagnosis {
+            crash_type: CrashType::CorruptedConfig,
+            title: "Caché de Quilt Loader Corrupta (Auto-reparada)".to_string(),
+            explanation: "La caché de transformaciones de Quilt (.cache/quilt_loader) estaba incompleta o dañada, impidiendo iniciar el juego.".to_string(),
+            offending_mod: None,
+            recommendation: "Crash Doctor ha purgado la caché corrupta automáticamente. Haz clic en 'Reintentar' para iniciar el juego limpiamente.".to_string(),
+            suggested_action: Some(SuggestedAction::ViewLogs),
+            log_snippet: extract_snippet(text, "Failed to read the newly written transform cache")
+                .or_else(|| extract_snippet(text, "Not in GZIP format")),
+        };
+    }
+
     if let Some(offending) = find_offending_mod_in_log(text) {
         return CrashDiagnosis {
             crash_type: CrashType::MixinConflict,
@@ -273,6 +289,12 @@ pub fn analyze_latest_crash_sync(
     }
 
     let diag = match_diagnosis_patterns(&latest_crash_text, exit_code);
+    if diag.title.contains("Quilt") {
+        let quilt_cache = base.join(".cache").join("quilt_loader");
+        if quilt_cache.exists() {
+            let _ = fs::remove_dir_all(&quilt_cache);
+        }
+    }
     if diag.crash_type == CrashType::GenericCrash {
         if let Some(code) = exit_code {
             if let Some(oom_diag) = check_oom_exit_code(code) {
@@ -644,6 +666,14 @@ mod tests {
             diag.suggested_action,
             Some(SuggestedAction::UpdateGpuDriver)
         );
+    }
+
+    #[test]
+    fn test_match_diagnosis_quilt_cache() {
+        let text = "org.quiltmc.loader.impl.discovery.ModResolutionException: Failed to read the newly written transform cache!\nCaused by: java.util.zip.ZipException: Not in GZIP format";
+        let diag = match_diagnosis_patterns(text, Some(1));
+        assert_eq!(diag.crash_type, CrashType::CorruptedConfig);
+        assert!(diag.title.contains("Quilt"));
     }
 
     #[test]
