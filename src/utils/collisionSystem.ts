@@ -25,7 +25,7 @@ export const DEFAULT_WIDGET_COORDS: Record<keyof WidgetPositions, { x: number; y
 /**
  * Returns true if box A and box B overlap factoring in safety gap in pixels.
  */
-export const checkAABBOverlap = (a: Box, b: Box, gap: number = 8): boolean => {
+export const checkAABBOverlap = (a: Box, b: Box, gap: number = 0): boolean => {
   const aLeft = a.x - a.width / 2;
   const aRight = a.x + a.width / 2;
   const aTop = a.y - a.height / 2;
@@ -95,17 +95,17 @@ export const calculateDefaultButtonPositions = (
   }
 
   // Step between button centers as percentage of screen width.
-  // For 5 standard buttons, total span is 48% (step 12%), yielding 26, 38, 50, 62, 74.
-  // For more buttons (e.g. 7), total span is ~69% (step 11.5%), yielding 15.5, 27, 38.5, 50, 61.5, 73, 84.5.
-  // Clamped so buttons stay nicely centered and within screen margins without any overlap.
-  const maxSpan = Math.min(84, Math.max(48, (total - 1) * 11.5));
-  const stepX = Math.round((maxSpan / (total - 1)) * 10) / 10;
+  // For standard 5 buttons, stepX is 17.0%, yielding 16.0, 33.0, 50.0, 67.0, 84.0.
+  // This ensures >= 174px between centers at min-width 1024px, guaranteeing >= 30px
+  // clearance even for the wider launch button (152px) and labelled buttons (136px),
+  // completely preventing false-positive collisions and keeping buttons cleanly spaced.
+  const stepX = total <= 5 ? 17.0 : Math.max(13.5, Math.min(17.0, 80 / (total - 1)));
   const centerIdx = (total - 1) / 2;
 
   buttonIds.forEach((id, idx) => {
     const xPct = Math.round((50 + (idx - centerIdx) * stepX) * 10) / 10;
     positions[id] = {
-      x: Math.max(6, Math.min(94, xPct)),
+      x: Math.max(8, Math.min(92, xPct)),
       y: 50,
     };
   });
@@ -138,47 +138,69 @@ const getBaseButtonDimensions = (
   return BUTTON_DIMENSION_TABLE[`${labelKey}:${typeKey}:${sizeKey}`];
 };
 
+export const getResponsiveDockScale = (winW: number = 1280, winH: number = 720): number => {
+  const widthScale = winW / 1280;
+  const heightScale = winH / 720;
+  return Math.max(0.6, Math.min(1.15, Math.min(widthScale, heightScale)));
+};
+
 const getSegmentWidth = (
   btnId: DockButtonId,
   dockConfig: DockConfig,
   isCompact: boolean,
   showLabels: boolean,
+  winW: number = 1280,
+  winH: number = 720,
 ): number => {
+  const responsiveScale = getResponsiveDockScale(winW, winH);
   if (dockConfig.layoutMode === 'dock' && dockConfig.customSegmentWidth) {
     const isLaunch = btnId === 'launch';
-    return isLaunch
-      ? Math.round(dockConfig.customSegmentWidth * 1.15)
-      : dockConfig.customSegmentWidth;
+    const scaledW = Math.round(
+      dockConfig.customSegmentWidth * (responsiveScale < 1 ? responsiveScale : 1),
+    );
+    return isLaunch ? Math.round(scaledW * 1.15) : scaledW;
   }
   const customW = dockConfig.buttonCustomizations?.[btnId]?.customWidth;
   if (customW) return customW;
-  return getBaseButtonDimensions(btnId === 'launch', isCompact, showLabels).width;
+  const baseW = getBaseButtonDimensions(btnId === 'launch', isCompact, showLabels).width;
+  return Math.round(baseW * responsiveScale);
 };
 
 export const getDockHeight = (
   isCompact: boolean,
   showLabels: boolean,
   customDockHeight?: number,
+  winW: number = 1280,
+  winH: number = 720,
 ): number => {
-  if (customDockHeight) return customDockHeight;
-  if (showLabels) {
-    return isCompact ? 74 : 108;
+  const responsiveScale = getResponsiveDockScale(winW, winH);
+  if (customDockHeight) {
+    return Math.round(customDockHeight * (responsiveScale < 1 ? responsiveScale : 1));
   }
-  return isCompact ? 52 : 62;
+  if (showLabels) {
+    return Math.round((isCompact ? 74 : 108) * responsiveScale);
+  }
+  return Math.round((isCompact ? 52 : 62) * responsiveScale);
 };
 
 const calculateDockDimensions = (
   dockConfig: DockConfig,
   isCompact: boolean,
   showLabels: boolean,
+  winW: number = 1280,
+  winH: number = 720,
 ): { width: number; height: number } => {
+  const responsiveScale = getResponsiveDockScale(winW, winH);
   const activeBtns = getEffectiveActiveButtons(dockConfig);
   const width = activeBtns.reduce(
-    (sum, btnId) => sum + getSegmentWidth(btnId, dockConfig, isCompact, showLabels),
+    (sum, btnId) => sum + getSegmentWidth(btnId, dockConfig, isCompact, showLabels, winW, winH),
     8,
   );
-  const height = getDockHeight(isCompact, showLabels, dockConfig.customDockHeight);
-  return { width: Math.max(280, width), height: Math.max(50, height) };
+  const height = getDockHeight(isCompact, showLabels, dockConfig.customDockHeight, winW, winH);
+  return {
+    width: Math.max(Math.round(280 * responsiveScale), width),
+    height: Math.max(Math.round(50 * responsiveScale), height),
+  };
 };
 
 const calculateButtonDimensions = (
@@ -186,8 +208,13 @@ const calculateButtonDimensions = (
   dockConfig: DockConfig,
   isCompact: boolean,
   showLabels: boolean,
+  winW: number = 1280,
+  winH: number = 720,
 ): { width: number; height: number } => {
+  const responsiveScale = getResponsiveDockScale(winW, winH);
   let { width, height } = getBaseButtonDimensions(btnId === 'launch', isCompact, showLabels);
+  width = Math.round(width * responsiveScale);
+  height = Math.round(height * responsiveScale);
   const btnCustom = dockConfig.buttonCustomizations?.[btnId];
   if (btnCustom?.customWidth) width = btnCustom.customWidth;
   if (btnCustom?.customHeight) height = btnCustom.customHeight;
@@ -208,17 +235,19 @@ const calculateWidgetDimensions = (id: string): { width: number; height: number 
 export const getElementDimensions = (
   id: string,
   dockConfig: DockConfig,
+  winW: number = 1280,
+  winH: number = 720,
 ): { width: number; height: number } => {
   const isCompact = dockConfig.scale === 'compact';
   const showLabels = dockConfig.showLabels;
 
   if (id === 'dock') {
-    return calculateDockDimensions(dockConfig, isCompact, showLabels);
+    return calculateDockDimensions(dockConfig, isCompact, showLabels, winW, winH);
   }
 
   if (id.startsWith('btn:')) {
     const btnId = id.replace('btn:', '') as DockButtonId;
-    return calculateButtonDimensions(btnId, dockConfig, isCompact, showLabels);
+    return calculateButtonDimensions(btnId, dockConfig, isCompact, showLabels, winW, winH);
   }
 
   const widgetDims = calculateWidgetDimensions(id);
@@ -310,10 +339,10 @@ export const getEffectiveHudSide = (
  */
 const getStaticWindowObstacles = (
   winW: number,
-  winH: number,
-  hudContext?: { isEditing: boolean; side: HudPlacementSide },
+  _winH: number,
+  _hudContext?: { isEditing: boolean; side: HudPlacementSide },
 ): Box[] => {
-  const obstacles: Box[] = [
+  return [
     {
       id: 'static:branding',
       x: 160,
@@ -329,36 +358,6 @@ const getStaticWindowObstacles = (
       height: 56,
     },
   ];
-
-  if (hudContext?.isEditing) {
-    if (hudContext.side === 'right') {
-      obstacles.push({
-        id: 'static:hudBar',
-        x: winW - 122,
-        y: winH / 2,
-        width: 216,
-        height: Math.min(winH - 32, 780),
-      });
-    } else if (hudContext.side === 'left') {
-      obstacles.push({
-        id: 'static:hudBar',
-        x: 122,
-        y: winH / 2,
-        width: 216,
-        height: Math.min(winH - 32, 780),
-      });
-    } else {
-      obstacles.push({
-        id: 'static:hudBar',
-        x: winW / 2,
-        y: 84,
-        width: Math.min(winW - 60, 760),
-        height: 54,
-      });
-    }
-  }
-
-  return obstacles;
 };
 
 const getWidgetObstacles = (
@@ -405,7 +404,7 @@ const getButtonObstacles = (
 
     const pos = currentOverrides?.[boxId] ||
       dockConfig.buttonPositions?.[btnId] || { x: 50, y: 50 };
-    const dims = getElementDimensions(boxId, dockConfig);
+    const dims = getElementDimensions(boxId, dockConfig, winW, winH);
 
     obstacles.push({
       id: boxId,
@@ -426,12 +425,15 @@ export const getActiveObstacles = (
   currentOverrides?: Record<string, { x: number; y: number }>,
   hudContext?: { isEditing: boolean; side: HudPlacementSide },
 ): Box[] => {
-  const obstacles: Box[] = getStaticWindowObstacles(winW, winH, hudContext);
+  // Bottom toolbar widgets should never be blocked by the temporary editing HUD overlay
+  const isBottomWidget = currentId.startsWith('widget:');
+  const effectiveHudContext = isBottomWidget ? undefined : hudContext;
+  const obstacles: Box[] = getStaticWindowObstacles(winW, winH, effectiveHudContext);
 
   if (dockConfig.layoutMode === 'dock') {
     if (currentId !== 'dock') {
       const pos = currentOverrides?.['dock'] || getEffectiveDockPosition(dockConfig);
-      const dims = getElementDimensions('dock', dockConfig);
+      const dims = getElementDimensions('dock', dockConfig, winW, winH);
       obstacles.push({
         id: 'dock',
         x: (pos.x / 100) * winW,
@@ -501,10 +503,16 @@ export const chooseAlternativeSeparation = (
 ): { nextX: number; nextY: number } => {
   const altX = pushes.candX === pushes.pushLeft ? pushes.pushRight : pushes.pushLeft;
   const altY = pushes.candY === pushes.pushUp ? pushes.pushDown : pushes.pushUp;
-  if (curX + altX - halfW >= bounds.padding && curX + altX + halfW <= bounds.winW - bounds.padding) {
+  if (
+    curX + altX - halfW >= bounds.padding &&
+    curX + altX + halfW <= bounds.winW - bounds.padding
+  ) {
     return { nextX: curX + altX, nextY: curY };
   }
-  if (curY + altY - halfH >= bounds.topPadding && curY + altY + halfH <= bounds.winH - bounds.padding) {
+  if (
+    curY + altY - halfH >= bounds.topPadding &&
+    curY + altY + halfH <= bounds.winH - bounds.padding
+  ) {
     return { nextX: curX, nextY: curY + altY };
   }
   return { nextX: curX, nextY: curY };
@@ -542,8 +550,11 @@ const separateAgainstObstacle = (
   const candX = curX < obs.x ? pushLeft : pushRight;
   const candY = curY < obs.y ? pushUp : pushDown;
 
-  const canUseX = curX + candX - halfW >= bounds.padding && curX + candX + halfW <= bounds.winW - bounds.padding;
-  const canUseY = curY + candY - halfH >= bounds.topPadding && curY + candY + halfH <= bounds.winH - bounds.padding;
+  const canUseX =
+    curX + candX - halfW >= bounds.padding && curX + candX + halfW <= bounds.winW - bounds.padding;
+  const canUseY =
+    curY + candY - halfH >= bounds.topPadding &&
+    curY + candY + halfH <= bounds.winH - bounds.padding;
 
   const primary = choosePrimarySeparation(curX, curY, candX, candY, canUseX, canUseY);
   if (primary) return primary;
@@ -581,7 +592,8 @@ export const radialSearchFreeSlot = (
       const testY = Math.round(curY + Math.sin(angle) * r);
 
       if (testX - halfW < bounds.padding || testX + halfW > bounds.winW - bounds.padding) continue;
-      if (testY - halfH < bounds.topPadding || testY + halfH > bounds.winH - bounds.padding) continue;
+      if (testY - halfH < bounds.topPadding || testY + halfH > bounds.winH - bounds.padding)
+        continue;
 
       const testBox: Box = {
         id: 'test',
@@ -602,6 +614,8 @@ export interface CollisionOptions {
   padding?: number;
   topPadding?: number;
   gap?: number;
+  winW?: number;
+  winH?: number;
 }
 
 export const resolveCollisionAndClamp = (
@@ -614,9 +628,9 @@ export const resolveCollisionAndClamp = (
 ): CollisionResult => {
   const padding = options?.padding ?? 14;
   const topPadding = options?.topPadding ?? 64;
-  const gap = options?.gap ?? 10;
-  const winW = typeof window !== 'undefined' ? window.innerWidth : 1280;
-  const winH = typeof window !== 'undefined' ? window.innerHeight : 720;
+  const gap = options?.gap ?? 0;
+  const winW = options?.winW ?? (typeof window !== 'undefined' ? window.innerWidth : 1280);
+  const winH = options?.winH ?? (typeof window !== 'undefined' ? window.innerHeight : 720);
 
   const halfW = elementWidth / 2;
   const halfH = elementHeight / 2;
@@ -663,12 +677,7 @@ export const resolveCollisionAndClamp = (
       if (!checkAABBOverlap(currentBox, obs, gap)) continue;
 
       anyCollisionInPass = true;
-      const separated = separateAgainstObstacle(
-        { curX, curY, halfW, halfH },
-        obs,
-        gap,
-        bounds,
-      );
+      const separated = separateAgainstObstacle({ curX, curY, halfW, halfH }, obs, gap, bounds);
       curX = Math.max(minX, Math.min(maxX, separated.nextX));
       curY = Math.max(minY, Math.min(maxY, separated.nextY));
     }
@@ -711,18 +720,16 @@ const sanitizeButtonsLayout = (
   for (const btnId of activeButtons) {
     const boxId = `btn:${btnId}`;
     const pos = newConfig.buttonPositions?.[btnId] || { x: 50, y: 50 };
-    const dims = getElementDimensions(boxId, newConfig);
+    const dims = getElementDimensions(boxId, newConfig, winW, winH);
 
     const pxX = (pos.x / 100) * winW;
     const pxY = (pos.y / 100) * winH;
 
-    const resolved = resolveCollisionAndClamp(
-      pxX,
-      pxY,
-      dims.width,
-      dims.height,
-      placedBoxes,
-    );
+    const resolved = resolveCollisionAndClamp(pxX, pxY, dims.width, dims.height, placedBoxes, {
+      winW,
+      winH,
+      gap: 0,
+    });
 
     newConfig.buttonPositions[btnId] = { x: resolved.x, y: resolved.y };
 
@@ -743,6 +750,12 @@ const sanitizeWidgetsLayout = (
   winH: number,
 ): void => {
   const widgetKeys: (keyof WidgetPositions)[] = ['userPill', 'socials', 'serverStatus'];
+  // Widgets are footer toolbar elements (default y: 93%). They must only avoid static boundaries
+  // and other widgets, never get pushed up into the canvas center by buttons or dock.
+  const widgetObstacles = placedBoxes.filter(
+    (b) => b.id.startsWith('static:') || b.id.startsWith('widget:'),
+  );
+
   for (const wKey of widgetKeys) {
     const boxId = `widget:${wKey}`;
     const defaultPos = DEFAULT_WIDGET_COORDS[wKey];
@@ -753,13 +766,10 @@ const sanitizeWidgetsLayout = (
     const pxX = (pos.x / 100) * winW;
     const pxY = (pos.y / 100) * winH;
 
-    const resolved = resolveCollisionAndClamp(
-      pxX,
-      pxY,
-      dims.width,
-      dims.height,
-      placedBoxes,
-    );
+    const resolved = resolveCollisionAndClamp(pxX, pxY, dims.width, dims.height, widgetObstacles, {
+      winW,
+      winH,
+    });
 
     if (!newConfig.widgetPositions) {
       newConfig.widgetPositions = {
@@ -782,14 +792,13 @@ const sanitizeWidgetsLayout = (
 
 export const sanitizeAllPositions = (
   config: DockConfig,
-  winW: number = typeof window !== 'undefined' && window.innerWidth ? window.innerWidth : 1280,
-  winH: number = typeof window !== 'undefined' && window.innerHeight ? window.innerHeight : 720,
+  winW: number = typeof window !== 'undefined' && window.innerWidth ? window.innerWidth : 1024,
+  winH: number = typeof window !== 'undefined' && window.innerHeight ? window.innerHeight : 576,
 ): DockConfig => {
   const newConfig: DockConfig = structuredClone(config);
   const placedBoxes: Box[] = [
     { id: 'static:branding', x: 160, y: 28, width: 320, height: 56 },
     { id: 'static:winControls', x: winW - 70, y: 28, width: 140, height: 56 },
-    { id: 'static:topBar', x: winW / 2, y: 72, width: Math.min(winW - 100, 560), height: 52 },
   ];
 
   if (newConfig.layoutMode === 'free_buttons') {
@@ -799,13 +808,10 @@ export const sanitizeAllPositions = (
     const pxX = (newConfig.customCoordinates.x / 100) * winW;
     const pxY = (newConfig.customCoordinates.y / 100) * winH;
 
-    const resolved = resolveCollisionAndClamp(
-      pxX,
-      pxY,
-      dims.width,
-      dims.height,
-      placedBoxes,
-    );
+    const resolved = resolveCollisionAndClamp(pxX, pxY, dims.width, dims.height, placedBoxes, {
+      winW,
+      winH,
+    });
 
     newConfig.customCoordinates = { x: resolved.x, y: resolved.y };
 

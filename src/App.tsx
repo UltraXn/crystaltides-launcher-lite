@@ -183,6 +183,13 @@ export const App: React.FC = () => {
     }
   }, [bootContext?.mode]);
 
+  // 2.1 Desactivar modo edición de HUD si surge una notificación de actualización
+  useEffect(() => {
+    if (updateInfo?.available && useLauncherStore.getState().isEditingHud) {
+      launcherActions.setEditingHud(false);
+    }
+  }, [updateInfo?.available]);
+
 interface CrashPayload {
   data: {
     reason: string;
@@ -280,8 +287,24 @@ const buildCrashPayload = async (
   // 3. Listener global de teclado (Escape cierra modales, F8 alterna edición GUI)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      const isF8 = e.key === 'F8' || e.code === 'F8' || e.key === 'f8';
+      const isF8 =
+        e.key === 'F8' ||
+        e.key === 'f8' ||
+        e.code === 'F8' ||
+        e.keyCode === 119 ||
+        e.which === 119;
       if (isF8) {
+        if (e.repeat) return;
+        if (
+          updateInfo?.available ||
+          activeModal !== 'none' ||
+          crashModalOpen ||
+          oomScreenOpen ||
+          customizingButtonId ||
+          useModuleStore.getState().activeModalModuleId
+        ) {
+          return;
+        }
         e.preventDefault();
         e.stopPropagation();
         useModuleStore.getState().closeModal();

@@ -93,6 +93,21 @@ describe('collisionSystem', () => {
       expect(positions.launch.x).toBeLessThan(50);
       expect(positions.settings.x).toBeGreaterThan(50);
     });
+
+    it('symmetrically distributes 5 standard buttons with safe clearance', () => {
+      const positions = calculateDefaultButtonPositions([
+        'instances',
+        'about',
+        'accounts',
+        'settings',
+        'launch',
+      ]);
+      expect(positions.instances).toEqual({ x: 16, y: 50 });
+      expect(positions.about).toEqual({ x: 33, y: 50 });
+      expect(positions.accounts).toEqual({ x: 50, y: 50 });
+      expect(positions.settings).toEqual({ x: 67, y: 50 });
+      expect(positions.launch).toEqual({ x: 84, y: 50 });
+    });
   });
 
   describe('getDockHeight', () => {
@@ -173,6 +188,40 @@ describe('collisionSystem', () => {
       expect(result.buttonPositions?.launch).toBeDefined();
       expect(result.buttonPositions?.settings).toBeDefined();
     });
+
+    it('does not eject bottom widgets upwards when buttons or dock exist', () => {
+      const config = {
+        layoutMode: 'free_buttons',
+        buttonOrder: ['instances', 'about', 'accounts', 'settings', 'launch'],
+        visibleButtons: ['instances', 'about', 'accounts', 'settings', 'launch'],
+        buttonPositions: {
+          instances: { x: 20, y: 50 },
+          about: { x: 35, y: 50 },
+          accounts: { x: 50, y: 50 },
+          settings: { x: 65, y: 50 },
+          launch: { x: 80, y: 50 },
+        },
+        widgetPositions: {
+          userPill: { x: 8, y: 93 },
+          socials: { x: 50, y: 93 },
+          serverStatus: { x: 92, y: 93 },
+        },
+      } as unknown as DockConfig;
+
+      const result = sanitizeAllPositions(config, 1280, 720);
+      expect(result.widgetPositions.userPill.y).toBeGreaterThanOrEqual(88);
+      expect(result.widgetPositions.socials.y).toBeGreaterThanOrEqual(88);
+      expect(result.widgetPositions.serverStatus.y).toBeGreaterThanOrEqual(88);
+    });
+
+    it('does not include static:hudBar when evaluating obstacles for bottom widgets', () => {
+      const config = { layoutMode: 'free_buttons' } as any;
+      const obstacles = getActiveObstacles('widget:serverStatus', config, 1280, 720, undefined, {
+        isEditing: true,
+        side: 'right',
+      });
+      expect(obstacles.some((o) => o.id === 'static:hudBar')).toBe(false);
+    });
   });
 
   describe('getElementDimensions', () => {
@@ -218,10 +267,22 @@ describe('collisionSystem', () => {
     });
 
     it('calculates known widget dimensions and falls back for unknown', () => {
-      expect(getElementDimensions('widget:userPill', baseConfig)).toEqual({ width: 175, height: 48 });
-      expect(getElementDimensions('widget:socials', baseConfig)).toEqual({ width: 155, height: 48 });
-      expect(getElementDimensions('widget:serverStatus', baseConfig)).toEqual({ width: 165, height: 48 });
-      expect(getElementDimensions('unknown_widget', baseConfig)).toEqual({ width: 120, height: 60 });
+      expect(getElementDimensions('widget:userPill', baseConfig)).toEqual({
+        width: 175,
+        height: 48,
+      });
+      expect(getElementDimensions('widget:socials', baseConfig)).toEqual({
+        width: 155,
+        height: 48,
+      });
+      expect(getElementDimensions('widget:serverStatus', baseConfig)).toEqual({
+        width: 165,
+        height: 48,
+      });
+      expect(getElementDimensions('unknown_widget', baseConfig)).toEqual({
+        width: 120,
+        height: 60,
+      });
     });
   });
 
@@ -236,7 +297,11 @@ describe('collisionSystem', () => {
 
   describe('getEffectiveDockPosition', () => {
     it('handles top, bottom, and center presets', () => {
-      const topConfig = { positionPreset: 'top', showLabels: false, scale: 'compact' } as unknown as DockConfig;
+      const topConfig = {
+        positionPreset: 'top',
+        showLabels: false,
+        scale: 'compact',
+      } as unknown as DockConfig;
       expect(getEffectiveDockPosition(topConfig).y).toBe(14);
 
       const bottomConfig = { positionPreset: 'bottom' } as unknown as DockConfig;
@@ -255,7 +320,11 @@ describe('collisionSystem', () => {
     });
 
     it('adjusts position if HUD editing is active at center and top overlap occurs', () => {
-      const topConfig = { positionPreset: 'top', showLabels: true, scale: 'standard' } as unknown as DockConfig;
+      const topConfig = {
+        positionPreset: 'top',
+        showLabels: true,
+        scale: 'standard',
+      } as unknown as DockConfig;
       const pos = getEffectiveDockPosition(topConfig, { isEditing: true, side: 'center' }, 720);
       expect(pos.y).toBeGreaterThanOrEqual(17);
     });
@@ -264,12 +333,24 @@ describe('collisionSystem', () => {
   describe('Separation & Radial Search Helpers', () => {
     it('choosePrimarySeparation evalúa candidatos en X e Y', () => {
       // ambos válidos: menor distancia
-      expect(choosePrimarySeparation(100, 100, 20, 50, true, true)).toEqual({ nextX: 120, nextY: 100 });
-      expect(choosePrimarySeparation(100, 100, 60, 30, true, true)).toEqual({ nextX: 100, nextY: 130 });
+      expect(choosePrimarySeparation(100, 100, 20, 50, true, true)).toEqual({
+        nextX: 120,
+        nextY: 100,
+      });
+      expect(choosePrimarySeparation(100, 100, 60, 30, true, true)).toEqual({
+        nextX: 100,
+        nextY: 130,
+      });
       // solo X
-      expect(choosePrimarySeparation(100, 100, 25, 50, true, false)).toEqual({ nextX: 125, nextY: 100 });
+      expect(choosePrimarySeparation(100, 100, 25, 50, true, false)).toEqual({
+        nextX: 125,
+        nextY: 100,
+      });
       // solo Y
-      expect(choosePrimarySeparation(100, 100, 25, 40, false, true)).toEqual({ nextX: 100, nextY: 140 });
+      expect(choosePrimarySeparation(100, 100, 25, 40, false, true)).toEqual({
+        nextX: 100,
+        nextY: 140,
+      });
       // ninguno
       expect(choosePrimarySeparation(100, 100, 25, 40, false, false)).toBeNull();
     });

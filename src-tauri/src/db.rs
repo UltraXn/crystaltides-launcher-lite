@@ -33,6 +33,8 @@ pub struct AccountRecord {
     pub uuid: String,
     pub account_type: String,
     pub access_token: Option<String>,
+    #[serde(default)]
+    pub refresh_token: Option<String>,
     pub skin_url: Option<String>,
     pub is_active: bool,
     pub created_at: i64,
@@ -315,6 +317,7 @@ pub fn get_accounts(conn: &Connection) -> Result<Vec<AccountRecord>, String> {
                 uuid: row.get(2)?,
                 account_type: row.get(3)?,
                 access_token: row.get(4)?,
+                refresh_token: None,
                 skin_url: row.get(5)?,
                 is_active: active_int == 1,
                 created_at: row.get(7)?,
@@ -328,6 +331,11 @@ pub fn get_accounts(conn: &Connection) -> Result<Vec<AccountRecord>, String> {
         if a.access_token.is_none() || a.access_token.as_deref() == Some("") {
             if let Some(secret) = crate::keyring_store::get_secret(&a.id) {
                 a.access_token = Some(secret);
+            }
+        }
+        if a.refresh_token.is_none() || a.refresh_token.as_deref() == Some("") {
+            if let Some(secret) = crate::keyring_store::get_secret(&format!("{}:refresh", a.id)) {
+                a.refresh_token = Some(secret);
             }
         }
         accounts.push(a);
@@ -354,6 +362,14 @@ pub fn save_account(conn: &Connection, account: &AccountRecord) -> Result<(), St
             && crate::keyring_store::is_keyring_enabled()
         {
             account_to_save.access_token = None;
+        }
+    }
+    if let Some(ref refresh) = account.refresh_token {
+        if !refresh.is_empty()
+            && crate::keyring_store::set_secret(&format!("{}:refresh", account.id), refresh).is_ok()
+            && crate::keyring_store::is_keyring_enabled()
+        {
+            account_to_save.refresh_token = None;
         }
     }
 
@@ -408,6 +424,7 @@ pub async fn db_save_account(account: AccountRecord) -> Result<(), String> {
 
 pub fn delete_account(conn: &Connection, id: &str) -> Result<(), String> {
     let _ = crate::keyring_store::delete_secret(id);
+    let _ = crate::keyring_store::delete_secret(&format!("{}:refresh", id));
     conn.execute("DELETE FROM accounts WHERE id = ?1", params![id])
         .map_err(|e| format!("Error eliminando cuenta: {}", e))?;
     Ok(())
@@ -459,6 +476,7 @@ mod tests {
             uuid: "u1".to_string(),
             account_type: "offline".to_string(),
             access_token: None,
+            refresh_token: None,
             skin_url: None,
             is_active: true,
             created_at: 100,
@@ -469,6 +487,7 @@ mod tests {
             uuid: "u2".to_string(),
             account_type: "offline".to_string(),
             access_token: None,
+            refresh_token: None,
             skin_url: None,
             is_active: false,
             created_at: 200,
@@ -496,6 +515,7 @@ mod tests {
             uuid: "u1".to_string(),
             account_type: "offline".to_string(),
             access_token: None,
+            refresh_token: None,
             skin_url: None,
             is_active: true,
             created_at: 100,
@@ -508,6 +528,7 @@ mod tests {
             uuid: "u2".to_string(),
             account_type: "offline".to_string(),
             access_token: None,
+            refresh_token: None,
             skin_url: None,
             is_active: true,
             created_at: 200,

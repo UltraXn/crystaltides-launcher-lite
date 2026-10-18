@@ -14,6 +14,18 @@ pub struct ImportableInstance {
     pub game_dir: String,
     pub mods_count: usize,
     pub icon: Option<String>,
+    #[serde(default)]
+    pub min_ram_gb: Option<f64>,
+    #[serde(default)]
+    pub max_ram_gb: Option<f64>,
+    #[serde(default)]
+    pub jvm_args: Option<String>,
+    #[serde(default)]
+    pub resolution_width: Option<u32>,
+    #[serde(default)]
+    pub resolution_height: Option<u32>,
+    #[serde(default)]
+    pub has_omitted_jvm_args: Option<bool>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -268,6 +280,203 @@ fn parse_version_string(
     }
 }
 
+pub fn parse_memory_spec(val: &str) -> Option<f64> {
+    let clean = val.trim();
+    if clean.is_empty() {
+        return None;
+    }
+    let last = clean.chars().last()?;
+    if last == 'G' || last == 'g' {
+        clean[..clean.len() - 1].parse::<f64>().ok()
+    } else if last == 'M' || last == 'm' {
+        clean[..clean.len() - 1]
+            .parse::<f64>()
+            .ok()
+            .map(|m| (m / 1024.0 * 10.0).round() / 10.0)
+    } else if let Ok(num) = clean.parse::<f64>() {
+        if num >= 512.0 {
+            Some((num / 1024.0 * 10.0).round() / 10.0)
+        } else {
+            Some(num)
+        }
+    } else {
+        None
+    }
+}
+
+pub fn parse_ram_from_jvm_args(args: &str) -> (Option<f64>, Option<f64>) {
+    let mut min_ram = None;
+    let mut max_ram = None;
+    for token in args.split_whitespace() {
+        if let Some(val_str) = token.strip_prefix("-Xms") {
+            min_ram = parse_memory_spec(val_str);
+        } else if let Some(val_str) = token.strip_prefix("-Xmx") {
+            max_ram = parse_memory_spec(val_str);
+        }
+    }
+    (min_ram, max_ram)
+}
+
+/// Filtra argumentos de JVM importados: solo conserva los inofensivos (-Xmx/-Xms, -XX: de rendimiento, -D…)
+/// y descarta argumentos peligrosos (-javaagent, -agentpath, -agentlib, -Xbootclasspath, jdwp, etc.).
+/// Retorna `(Option<String>, bool)` donde el booleano indica si se omitió algún argumento.
+pub fn sanitize_jvm_args(args: &str) -> (Option<String>, bool) {
+    let mut safe_tokens = Vec::new();
+    let mut has_omitted = false;
+
+    for token in args.split_whitespace() {
+        let lower = token.to_lowercase();
+        if lower.starts_with("-javaagent")
+            || lower.starts_with("-agentpath")
+            || lower.starts_with("-agentlib")
+            || lower.starts_with("-xbootclasspath")
+            || lower.contains("jdwp")
+            || lower.starts_with("-xdebug")
+            || lower.starts_with("-xrunjdwp")
+        {
+            has_omitted = true;
+            continue;
+        }
+
+        // Flags inofensivos permitidos:
+        // -X (ej. -Xmx, -Xms, -Xmn, -Xss)
+        // -XX: (ej. -XX:+UseG1GC, -XX:+UnlockExperimentalVMOptions)
+        // -D (propiedades de sistema Java, ej. -Djava.net.preferIPv4Stack=true)
+        // -server, -client
+        if token.starts_with("-X")
+            || token.starts_with("-XX:")
+            || token.starts_with("-D")
+            || token == "-server"
+            || token == "-client"
+        {
+            safe_tokens.push(token);
+        } else {
+            has_omitted = true;
+        }
+    }
+
+    let sanitized = if safe_tokens.is_empty() {
+        None
+    } else {
+        Some(safe_tokens.join(" "))
+    };
+
+    (sanitized, has_omitted)
+}
+
+#[derive(Default, Debug, Clone)]
+pub struct ImportedConfig {
+    pub min_ram_gb: Option<f64>,
+    pub max_ram_gb: Option<f64>,
+    pub jvm_args: Option<String>,
+    pub resolution_width: Option<u32>,
+    pub resolution_height: Option<u32>,
+    pub has_omitted_jvm_args: Option<bool>,
+}
+
+pub fn parse_prism_config(content: &str) -> ImportedConfig {
+    let mut config = ImportedConfig::default();
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if let Some(val) = trimmed.strip_prefix("MinMemAlloc=") {
+            if let Ok(mb) = val.trim().parse::<f64>() {
+                config.min_ram_gb = Some((mb / 1024.0 * 10.0).round() / 10.0);
+            }
+        } else if let Some(val) = trimmed.strip_prefix("MaxMemAlloc=") {
+            if let Ok(mb) = val.trim().parse::<f64>() {
+                config.max_ram_gb = Some((mb / 1024.0 * 10.0).round() / 10.0);
+            }
+        } else if let Some(val) = trimmed.strip_prefix("JvmArgs=") {
+            let s = val.trim();
+            if !s.is_empty() {
+                let (safe_args, omitted) = sanitize_jvm_args(s);
+                config.jvm_args = safe_args;
+                if omitted {
+                    config.has_omitted_jvm_args = Some(true);
+                }
+            }
+        } else if let Some(val) = trimmed.strip_prefix("WindowWidth=") {
+            if let Ok(w) = val.trim().parse::<u32>() {
+                config.resolution_width = Some(w);
+            }
+        } else if let Some(val) = trimmed.strip_prefix("WindowHeight=") {
+            if let Ok(h) = val.trim().parse::<u32>() {
+                config.resolution_height = Some(h);
+            }
+        }
+    }
+    config
+}
+
+pub fn parse_curseforge_config(content: &str) -> ImportedConfig {
+    let mut config = ImportedConfig::default();
+    if let Ok(val) = serde_json::from_str::<serde_json::Value>(content) {
+        config.max_ram_gb = val
+            .get("allocatedMemory")
+            .and_then(|m| m.as_f64())
+            .map(|mb| (mb / 1024.0 * 10.0).round() / 10.0);
+        if let Some(raw_args) = val
+            .get("customJavaArgs")
+            .or_else(|| val.get("jvmArgs"))
+            .and_then(|a| a.as_str())
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+        {
+            let (safe_args, omitted) = sanitize_jvm_args(raw_args);
+            config.jvm_args = safe_args;
+            if omitted {
+                config.has_omitted_jvm_args = Some(true);
+            }
+        }
+        config.resolution_width = val
+            .get("resolution")
+            .and_then(|r| r.get("width"))
+            .or_else(|| val.get("resolutionWidth"))
+            .and_then(|w| w.as_u64())
+            .map(|w| w as u32);
+        config.resolution_height = val
+            .get("resolution")
+            .and_then(|r| r.get("height"))
+            .or_else(|| val.get("resolutionHeight"))
+            .and_then(|h| h.as_u64())
+            .map(|h| h as u32);
+    }
+    config
+}
+
+pub fn parse_modrinth_config(content: &str) -> ImportedConfig {
+    let mut config = ImportedConfig::default();
+    if let Ok(val) = serde_json::from_str::<serde_json::Value>(content) {
+        config.max_ram_gb = val
+            .get("memory")
+            .and_then(|m| m.as_f64())
+            .map(|mb| (mb / 1024.0 * 10.0).round() / 10.0);
+        if let Some(raw_args) = val
+            .get("java_args")
+            .and_then(|a| a.as_str())
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+        {
+            let (safe_args, omitted) = sanitize_jvm_args(raw_args);
+            config.jvm_args = safe_args;
+            if omitted {
+                config.has_omitted_jvm_args = Some(true);
+            }
+        }
+        config.resolution_width = val
+            .get("resolution")
+            .and_then(|r| r.get("width"))
+            .and_then(|w| w.as_u64())
+            .map(|w| w as u32);
+        config.resolution_height = val
+            .get("resolution")
+            .and_then(|r| r.get("height"))
+            .and_then(|h| h.as_u64())
+            .map(|h| h as u32);
+    }
+    config
+}
+
 /// Escanea perfiles del Launcher Oficial de Minecraft (.minecraft)
 fn scan_mojang_instances(home: &Path, results: &mut Vec<ImportableInstance>) {
     let mc_dir = {
@@ -321,6 +530,29 @@ fn scan_mojang_instances(home: &Path, results: &mut Vec<ImportableInstance>) {
                             name_raw.trim().to_string()
                         };
 
+                        let (sanitized_args, has_omitted) = val
+                            .get("javaArgs")
+                            .and_then(|a| a.as_str())
+                            .map(|s| s.trim())
+                            .filter(|s| !s.is_empty())
+                            .map(sanitize_jvm_args)
+                            .unwrap_or((None, false));
+                        let (min_ram_gb, max_ram_gb) = val
+                            .get("javaArgs")
+                            .and_then(|a| a.as_str())
+                            .map(parse_ram_from_jvm_args)
+                            .unwrap_or((None, None));
+                        let resolution_width = val
+                            .get("resolution")
+                            .and_then(|r| r.get("width"))
+                            .and_then(|w| w.as_u64())
+                            .map(|w| w as u32);
+                        let resolution_height = val
+                            .get("resolution")
+                            .and_then(|r| r.get("height"))
+                            .and_then(|h| h.as_u64())
+                            .map(|h| h as u32);
+
                         let mods_count = count_mods_in_dir(&custom_game_dir);
                         results.push(ImportableInstance {
                             id: format!("mojang-{}", key),
@@ -333,6 +565,12 @@ fn scan_mojang_instances(home: &Path, results: &mut Vec<ImportableInstance>) {
                             game_dir: custom_game_dir.to_string_lossy().to_string(),
                             mods_count,
                             icon: Some("cube".to_string()),
+                            min_ram_gb,
+                            max_ram_gb,
+                            jvm_args: sanitized_args,
+                            resolution_width,
+                            resolution_height,
+                            has_omitted_jvm_args: if has_omitted { Some(true) } else { None },
                         });
                     }
                 }
@@ -392,6 +630,12 @@ fn scan_curseforge_instances(home: &Path, results: &mut Vec<ImportableInstance>)
                                 .unwrap_or("1.21.1")
                                 .to_string();
                             let (loader, loader_ver) = manifest.loader_info();
+                            let cfg = parse_curseforge_config(&content);
+                            let min_ram_gb = cfg.min_ram_gb;
+                            let max_ram_gb = cfg.max_ram_gb;
+                            let jvm_args = cfg.jvm_args;
+                            let resolution_width = cfg.resolution_width;
+                            let resolution_height = cfg.resolution_height;
 
                             let mods_count = count_mods_in_dir(&path);
                             results.push(ImportableInstance {
@@ -408,6 +652,12 @@ fn scan_curseforge_instances(home: &Path, results: &mut Vec<ImportableInstance>)
                                 game_dir: path.to_string_lossy().to_string(),
                                 mods_count,
                                 icon: Some("flame".to_string()),
+                                min_ram_gb,
+                                max_ram_gb,
+                                jvm_args,
+                                resolution_width,
+                                resolution_height,
+                                has_omitted_jvm_args: cfg.has_omitted_jvm_args,
                             });
                         }
                     }
@@ -468,6 +718,13 @@ fn scan_modrinth_instances(home: &Path, results: &mut Vec<ImportableInstance>) {
                 let mut loader = "fabric".to_string();
                 let mut loader_ver = None;
 
+                let mut min_ram_gb = None;
+                let mut max_ram_gb = None;
+                let mut jvm_args = None;
+                let mut resolution_width = None;
+                let mut resolution_height = None;
+                let mut has_omitted_jvm_args = None;
+
                 let profile_json = path.join("profile.json");
                 if profile_json.exists() {
                     if let Ok(content) = fs::read_to_string(&profile_json) {
@@ -477,6 +734,13 @@ fn scan_modrinth_instances(home: &Path, results: &mut Vec<ImportableInstance>) {
                             loader = manifest.resolved_loader();
                             loader_ver = manifest.resolved_loader_version();
                         }
+                        let cfg = parse_modrinth_config(&content);
+                        min_ram_gb = cfg.min_ram_gb;
+                        max_ram_gb = cfg.max_ram_gb;
+                        jvm_args = cfg.jvm_args;
+                        resolution_width = cfg.resolution_width;
+                        resolution_height = cfg.resolution_height;
+                        has_omitted_jvm_args = cfg.has_omitted_jvm_args;
                     }
                 }
 
@@ -492,6 +756,12 @@ fn scan_modrinth_instances(home: &Path, results: &mut Vec<ImportableInstance>) {
                     game_dir: path.to_string_lossy().to_string(),
                     mods_count,
                     icon: Some("feather".to_string()),
+                    min_ram_gb,
+                    max_ram_gb,
+                    jvm_args,
+                    resolution_width,
+                    resolution_height,
+                    has_omitted_jvm_args,
                 });
             }
         }
@@ -556,6 +826,13 @@ fn scan_prism_instances(home: &Path, results: &mut Vec<ImportableInstance>) {
                 let mut loader = "vanilla".to_string();
                 let mut loader_ver = None;
 
+                let mut min_ram_gb = None;
+                let mut max_ram_gb = None;
+                let mut jvm_args = None;
+                let mut resolution_width = None;
+                let mut resolution_height = None;
+                let mut has_omitted_jvm_args = None;
+
                 if let Ok(content) = fs::read_to_string(&cfg_file) {
                     for line in content.lines() {
                         let trimmed = line.trim();
@@ -565,6 +842,13 @@ fn scan_prism_instances(home: &Path, results: &mut Vec<ImportableInstance>) {
                             mc_ver = val.trim().to_string();
                         }
                     }
+                    let cfg = parse_prism_config(&content);
+                    min_ram_gb = cfg.min_ram_gb;
+                    max_ram_gb = cfg.max_ram_gb;
+                    jvm_args = cfg.jvm_args;
+                    resolution_width = cfg.resolution_width;
+                    resolution_height = cfg.resolution_height;
+                    has_omitted_jvm_args = cfg.has_omitted_jvm_args;
                 }
 
                 let mmc_pack = path.join("mmc-pack.json");
@@ -604,6 +888,12 @@ fn scan_prism_instances(home: &Path, results: &mut Vec<ImportableInstance>) {
                     game_dir: effective_game_dir.to_string_lossy().to_string(),
                     mods_count,
                     icon: Some("sword".to_string()),
+                    min_ram_gb,
+                    max_ram_gb,
+                    jvm_args,
+                    resolution_width,
+                    resolution_height,
+                    has_omitted_jvm_args,
                 });
             }
         }
@@ -643,6 +933,13 @@ pub fn inspect_custom_instance_dir(path_str: &str) -> Result<ImportableInstance,
     let mut loader = "vanilla".to_string();
     let mut loader_ver = None;
 
+    let mut min_ram_gb = None;
+    let mut max_ram_gb = None;
+    let mut jvm_args = None;
+    let mut resolution_width = None;
+    let mut resolution_height = None;
+    let mut has_omitted_jvm_args = None;
+
     // 1. Check if CurseForge
     let cf_file = path.join("minecraftinstance.json");
     if cf_file.exists() {
@@ -660,6 +957,25 @@ pub fn inspect_custom_instance_dir(path_str: &str) -> Result<ImportableInstance,
                     mc_ver = v;
                 }
             }
+            let cfg = parse_curseforge_config(&c);
+            if cfg.min_ram_gb.is_some() {
+                min_ram_gb = cfg.min_ram_gb;
+            }
+            if cfg.max_ram_gb.is_some() {
+                max_ram_gb = cfg.max_ram_gb;
+            }
+            if cfg.jvm_args.is_some() {
+                jvm_args = cfg.jvm_args;
+            }
+            if cfg.resolution_width.is_some() {
+                resolution_width = cfg.resolution_width;
+            }
+            if cfg.resolution_height.is_some() {
+                resolution_height = cfg.resolution_height;
+            }
+            if cfg.has_omitted_jvm_args.is_some() {
+                has_omitted_jvm_args = cfg.has_omitted_jvm_args;
+            }
         }
     }
 
@@ -673,6 +989,57 @@ pub fn inspect_custom_instance_dir(path_str: &str) -> Result<ImportableInstance,
                 } else if let Some(val) = line.trim().strip_prefix("IntendedVersion=") {
                     mc_ver = val.trim().to_string();
                 }
+            }
+            let cfg = parse_prism_config(&c);
+            if cfg.min_ram_gb.is_some() {
+                min_ram_gb = cfg.min_ram_gb;
+            }
+            if cfg.max_ram_gb.is_some() {
+                max_ram_gb = cfg.max_ram_gb;
+            }
+            if cfg.jvm_args.is_some() {
+                jvm_args = cfg.jvm_args;
+            }
+            if cfg.resolution_width.is_some() {
+                resolution_width = cfg.resolution_width;
+            }
+            if cfg.resolution_height.is_some() {
+                resolution_height = cfg.resolution_height;
+            }
+            if cfg.has_omitted_jvm_args.is_some() {
+                has_omitted_jvm_args = cfg.has_omitted_jvm_args;
+            }
+        }
+    }
+
+    // 3. Check if Modrinth
+    let mr_file = path.join("profile.json");
+    if mr_file.exists() {
+        if let Ok(c) = fs::read_to_string(&mr_file) {
+            if let Some(manifest) = ModrinthProfileManifest::parse(&c) {
+                name = manifest.resolved_name(&folder_name).to_string();
+                mc_ver = manifest.resolved_mc_version().to_string();
+                loader = manifest.resolved_loader();
+                loader_ver = manifest.resolved_loader_version();
+            }
+            let cfg = parse_modrinth_config(&c);
+            if cfg.min_ram_gb.is_some() {
+                min_ram_gb = cfg.min_ram_gb;
+            }
+            if cfg.max_ram_gb.is_some() {
+                max_ram_gb = cfg.max_ram_gb;
+            }
+            if cfg.jvm_args.is_some() {
+                jvm_args = cfg.jvm_args;
+            }
+            if cfg.resolution_width.is_some() {
+                resolution_width = cfg.resolution_width;
+            }
+            if cfg.resolution_height.is_some() {
+                resolution_height = cfg.resolution_height;
+            }
+            if cfg.has_omitted_jvm_args.is_some() {
+                has_omitted_jvm_args = cfg.has_omitted_jvm_args;
             }
         }
     }
@@ -719,7 +1086,53 @@ pub fn inspect_custom_instance_dir(path_str: &str) -> Result<ImportableInstance,
         game_dir: effective_game_dir.to_string_lossy().to_string(),
         mods_count,
         icon: Some("shield".to_string()),
+        min_ram_gb,
+        max_ram_gb,
+        jvm_args,
+        resolution_width,
+        resolution_height,
+        has_omitted_jvm_args,
     })
+}
+
+/// Copia configuraciones clave del Minecraft principal (.minecraft) hacia la carpeta de la instancia objetivo:
+/// options.txt (teclas, volumen, renderizado, fov, etc.), optionsof.txt, optionsshaders.txt y servers.dat
+pub fn copy_minecraft_settings_to_instance(target_game_dir: &str) -> Result<Vec<String>, String> {
+    let target = Path::new(target_game_dir);
+    if !target.is_dir() {
+        let _ = fs::create_dir_all(target);
+    }
+
+    let home = dirs::home_dir().ok_or_else(|| "No se encontró el directorio de usuario (home)".to_string())?;
+    #[cfg(target_os = "windows")]
+    let default_mc = home.join("AppData").join("Roaming").join(".minecraft");
+    #[cfg(target_os = "macos")]
+    let default_mc = home.join("Library/Application Support/minecraft");
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let default_mc = home.join(".minecraft");
+
+    if !default_mc.is_dir() {
+        return Ok(Vec::new());
+    }
+
+    // Si el destino es la misma carpeta principal .minecraft, no hay nada que copiar
+    if crate::paths::normalize_for_compare(&default_mc) == crate::paths::normalize_for_compare(target) {
+        return Ok(Vec::new());
+    }
+
+    let mut copied_files = Vec::new();
+    let files_to_copy = ["options.txt", "optionsof.txt", "optionsshaders.txt", "servers.dat"];
+
+    for file_name in &files_to_copy {
+        let src_file = default_mc.join(file_name);
+        let dst_file = target.join(file_name);
+
+        if src_file.is_file() && fs::copy(&src_file, &dst_file).is_ok() {
+            copied_files.push(file_name.to_string());
+        }
+    }
+
+    Ok(copied_files)
 }
 
 #[cfg(test)]
@@ -817,5 +1230,69 @@ mod tests {
             manifest.resolved_loader_version(),
             Some("0.16.5".to_string())
         );
+    }
+
+    #[test]
+    fn test_prism_config_parsing() {
+        let cfg = r#"
+name=Custom Modpack
+IntendedVersion=1.20.1
+MinMemAlloc=2048
+MaxMemAlloc=6144
+JvmArgs=-XX:+UseG1GC -Dtest=true
+WindowWidth=1920
+WindowHeight=1080
+"#;
+        let cfg = parse_prism_config(cfg);
+        assert_eq!(cfg.min_ram_gb, Some(2.0));
+        assert_eq!(cfg.max_ram_gb, Some(6.0));
+        assert_eq!(cfg.jvm_args, Some("-XX:+UseG1GC -Dtest=true".to_string()));
+        assert_eq!(cfg.resolution_width, Some(1920));
+        assert_eq!(cfg.resolution_height, Some(1080));
+    }
+
+    #[test]
+    fn test_curseforge_config_parsing() {
+        let json = r#"{
+            "allocatedMemory": 8192,
+            "customJavaArgs": "-XX:+UnlockExperimentalVMOptions",
+            "resolution": { "width": 1600, "height": 900 }
+        }"#;
+        let cfg = parse_curseforge_config(json);
+        assert_eq!(cfg.min_ram_gb, None);
+        assert_eq!(cfg.max_ram_gb, Some(8.0));
+        assert_eq!(
+            cfg.jvm_args,
+            Some("-XX:+UnlockExperimentalVMOptions".to_string())
+        );
+        assert_eq!(cfg.resolution_width, Some(1600));
+        assert_eq!(cfg.resolution_height, Some(900));
+    }
+
+    #[test]
+    fn test_ram_from_jvm_args_parsing() {
+        let (min, max) = parse_ram_from_jvm_args("-Xms3G -Xmx7G -XX:+UseG1GC");
+        assert_eq!(min, Some(3.0));
+        assert_eq!(max, Some(7.0));
+
+        let (min_m, max_m) = parse_ram_from_jvm_args("-Xms1024M -Xmx4096M");
+        assert_eq!(min_m, Some(1.0));
+        assert_eq!(max_m, Some(4.0));
+    }
+
+    #[test]
+    fn test_sanitize_jvm_args() {
+        let dirty = "-Xms2G -Xmx6G -XX:+UseG1GC -javaagent:evil.jar -agentpath:/tmp/hack.so -Dcustom.prop=true --unrecognized-flag";
+        let (safe, omitted) = sanitize_jvm_args(dirty);
+        assert!(omitted);
+        assert_eq!(
+            safe,
+            Some("-Xms2G -Xmx6G -XX:+UseG1GC -Dcustom.prop=true".to_string())
+        );
+
+        let clean = "-Xms4G -Xmx4G -XX:+UseZGC -Dprism=1";
+        let (clean_safe, clean_omitted) = sanitize_jvm_args(clean);
+        assert!(!clean_omitted);
+        assert_eq!(clean_safe, Some(clean.to_string()));
     }
 }

@@ -83,7 +83,7 @@ export const GameLaunchOverlay: React.FC = () => {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        zIndex: 1000,
+        zIndex: 20000,
         userSelect: "none",
         animation: "fadeIn 0.25s ease-out forwards",
       }}

@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   useLauncherStore,
   launcherActions,
@@ -17,10 +17,60 @@ export const HudEditorOverlay: React.FC = () => {
   const accentColor = useLauncherStore((s: LauncherState) => s.accentColor);
   const t = useT();
 
+  const [winDimensions, setWinDimensions] = useState(() => ({
+    width: typeof window !== 'undefined' ? window.innerWidth : 1280,
+    height: typeof window !== 'undefined' ? window.innerHeight : 720,
+  }));
+
+  useEffect(() => {
+    let unlistenTauri: (() => void) | undefined;
+    const handleResize = () => {
+      const w = typeof window !== 'undefined' ? window.innerWidth : 1280;
+      const h = typeof window !== 'undefined' ? window.innerHeight : 720;
+      setWinDimensions((prev) => {
+        if (prev.width === w && prev.height === h) return prev;
+        return { width: w, height: h };
+      });
+    };
+
+    window.addEventListener('resize', handleResize);
+
+    const setupTauri = async () => {
+      try {
+        const { getCurrentWindow } = await import('@tauri-apps/api/window');
+        const appWindow = getCurrentWindow();
+        unlistenTauri = await appWindow.onResized(() => {
+          handleResize();
+        });
+      } catch {
+        // Browser / dev preview
+      }
+    };
+    void setupTauri();
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      if (unlistenTauri) unlistenTauri();
+    };
+  }, []);
+
   useEffect(() => {
     if (!isEditingHud) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.repeat) return;
+      if (
+        e.key === 'F8' ||
+        e.key === 'f8' ||
+        e.code === 'F8' ||
+        e.keyCode === 119 ||
+        e.which === 119
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+        launcherActions.setEditingHud(false);
+        return;
+      }
       if (e.key === 'Escape') {
         const state = getLauncherState();
         if (state.isButtonInspectorOpen) {
@@ -83,14 +133,27 @@ export const HudEditorOverlay: React.FC = () => {
         transform: 'none',
       };
     }
+
+    // Barra de edición horizontal (arriba):
+    // Redimensionado dinámico junto a la ventana para adaptarse a la escala mínima
+    const availableWidth = winDimensions.width - 32;
+    const targetWidth = winDimensions.width < 1200 ? 860 : 1160;
+    const scale =
+      availableWidth < targetWidth
+        ? Math.max(0.68, Math.min(1, Math.round((availableWidth / targetWidth) * 100) / 100))
+        : 1;
+
     return {
-      top: '62px',
+      top: '60px',
       left: '50%',
-      transform: 'translateX(-50%)',
+      transform: scale < 1 ? `translateX(-50%) scale(${scale})` : 'translateX(-50%)',
+      transformOrigin: 'top center',
     };
   };
 
-  const getNextSide = (side: 'auto' | 'left' | 'right' | 'center'): 'auto' | 'left' | 'right' | 'center' => {
+  const getNextSide = (
+    side: 'auto' | 'left' | 'right' | 'center',
+  ): 'auto' | 'left' | 'right' | 'center' => {
     if (side === 'auto') return 'right';
     if (side === 'right') return 'left';
     if (side === 'left') return 'center';
@@ -129,15 +192,16 @@ export const HudEditorOverlay: React.FC = () => {
           display: 'flex',
           flexDirection: isVertical ? 'column' : 'row',
           alignItems: isVertical ? 'stretch' : 'center',
-          gap: '8px',
-          width: isVertical ? '204px' : 'auto',
+          gap: isVertical ? '8px' : winDimensions.width < 1200 ? '5px' : '8px',
+          width: isVertical ? '204px' : 'max-content',
+          boxSizing: 'border-box',
           maxHeight: isVertical ? 'calc(100vh - 32px)' : undefined,
           background: 'rgba(15, 18, 26, 0.96)',
           backdropFilter: 'blur(24px)',
           WebkitBackdropFilter: 'blur(24px)',
           border: '1px solid rgba(255, 255, 255, 0.14)',
           borderRadius: isVertical ? '16px' : '14px',
-          padding: isVertical ? '12px 10px' : '6px 14px',
+          padding: isVertical ? '12px 10px' : winDimensions.width < 1200 ? '4px 10px' : '6px 14px',
           boxShadow:
             dockConfig.positionPreset === 'top'
               ? '0 16px 45px rgba(0, 0, 0, 0.92), 0 0 26px rgba(56, 189, 248, 0.35)'
@@ -145,7 +209,7 @@ export const HudEditorOverlay: React.FC = () => {
           color: '#f8fafc',
           userSelect: 'none',
           transition:
-            'left 0.45s cubic-bezier(0.16, 1, 0.3, 1), top 0.45s cubic-bezier(0.16, 1, 0.3, 1), transform 0.45s cubic-bezier(0.16, 1, 0.3, 1), width 0.35s ease, padding 0.35s ease, box-shadow 0.35s ease, border-color 0.35s ease',
+            'left 0.45s cubic-bezier(0.16, 1, 0.3, 1), top 0.45s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s ease, width 0.35s ease, padding 0.2s ease, box-shadow 0.35s ease, border-color 0.35s ease',
           zIndex: 10000,
         }}
       >
@@ -165,6 +229,7 @@ export const HudEditorOverlay: React.FC = () => {
             hudManualSide={hudManualSide}
             accentColor={accentColor}
             cycleSide={cycleSide}
+            winW={winDimensions.width}
           />
         )}
       </div>

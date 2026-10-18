@@ -29,7 +29,6 @@ import {
   getElementDimensions,
   getEffectiveDockPosition,
   getEffectiveHudSide,
-  getSafeYBelowHudBar,
 } from '../utils/collisionSystem';
 import { DockButtonInspector, InspectorTab } from './DockButtonInspector';
 import { LoaderLogo } from './common/LoaderIcons';
@@ -106,24 +105,26 @@ export const FreeButtonCoordBadge: React.FC<FreeButtonCoordBadgeProps> = ({
   accentColor,
 }) => {
   const isDanger = isDraggingThis && isColliding;
-  const badgeColor = accentColor || '#16A085';
+  const badgeColor = accentColor || '#38bdf8';
   return (
     <div
       style={{
         position: 'absolute',
-        top: '-18px',
+        bottom: 'calc(100% + 6px)',
         left: '50%',
         transform: 'translateX(-50%)',
-        background: isDanger ? 'rgba(239, 68, 68, 0.95)' : 'rgba(10, 14, 22, 0.9)',
-        border: isDanger ? '1px solid #f87171' : `1px solid ${badgeColor}`,
+        background: isDanger ? 'rgba(239, 68, 68, 0.95)' : 'rgba(15, 18, 26, 0.95)',
+        border: isDanger ? '1px solid #f87171' : '1px solid rgba(255, 255, 255, 0.16)',
         borderRadius: '4px',
         padding: '1px 6px',
         fontSize: '9px',
-        fontWeight: 700,
+        fontWeight: 600,
+        fontFamily: 'ui-monospace, monospace',
         color: isDanger ? '#ffffff' : badgeColor,
         whiteSpace: 'nowrap',
         pointerEvents: 'none',
-        boxShadow: isDanger ? '0 0 12px rgba(239, 68, 68, 0.6)' : 'none',
+        boxShadow: isDanger ? '0 0 12px rgba(239, 68, 68, 0.6)' : '0 4px 12px rgba(0, 0, 0, 0.65)',
+        zIndex: 20,
       }}
     >
       {isDanger ? (
@@ -171,6 +172,51 @@ export const FreeButtonInspectorPopup: React.FC<FreeButtonInspectorPopupProps> =
     />
   </div>
 );
+
+interface AnimatedDockLabelProps {
+  show: boolean;
+  children: React.ReactNode;
+  fontSize: string;
+  color?: string;
+  fontWeight?: number | string;
+  transition?: string;
+}
+
+export const AnimatedDockLabel: React.FC<AnimatedDockLabelProps> = ({
+  show,
+  children,
+  fontSize,
+  color,
+  fontWeight,
+  transition,
+}) => {
+  const [shouldRender, setShouldRender] = useState(show);
+  const [isVisible, setIsVisible] = useState(show);
+
+  useEffect(() => {
+    if (show) {
+      setShouldRender(true);
+      setIsVisible(true);
+    } else {
+      setIsVisible(false);
+      const timer = setTimeout(() => setShouldRender(false), 330);
+      return () => clearTimeout(timer);
+    }
+  }, [show]);
+
+  if (!shouldRender) return null;
+
+  return (
+    <div
+      className={`dock-label-wrapper ${isVisible ? 'label-visible' : 'label-hidden'}`}
+      aria-hidden={!isVisible}
+    >
+      <span className="dock-label" style={{ fontSize, color, fontWeight, transition }}>
+        {children}
+      </span>
+    </div>
+  );
+};
 
 const resolveFreeButtonClasses = (
   isLaunch: boolean,
@@ -254,6 +300,16 @@ const FreeButtonElement: React.FC<FreeButtonElementProps> = ({
           : 'top 0.35s cubic-bezier(0.16, 1, 0.3, 1), left 0.35s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease, transform 0.2s ease',
       }}
     >
+      {isEditingHud && (
+        <FreeButtonCoordBadge
+          isDraggingThis={isDraggingThis}
+          isColliding={isColliding}
+          pos={pos}
+          collisionLabel={t.hudEditor.collision}
+          accentColor={accentColor}
+        />
+      )}
+
       <button
         ref={buttonRef}
         type="button"
@@ -309,16 +365,6 @@ const FreeButtonElement: React.FC<FreeButtonElementProps> = ({
           />
         )}
 
-        {isEditingHud && (
-          <FreeButtonCoordBadge
-            isDraggingThis={isDraggingThis}
-            isColliding={isColliding}
-            pos={pos}
-            collisionLabel={t.hudEditor.collision}
-            accentColor={accentColor}
-          />
-        )}
-
         <div
           style={{
             position: 'relative',
@@ -361,7 +407,6 @@ interface FreeButtonsLayoutProps {
   draggingTarget: DraggingTargetId;
   tempPos: { x: number; y: number } | null;
   isEditingHud: boolean;
-  effectiveHudSide: string;
   isColliding: boolean;
   t: ReturnType<typeof useT>;
   buttonRefs: React.RefObject<Record<string, HTMLButtonElement | null>>;
@@ -406,7 +451,6 @@ const FreeButtonsLayout: React.FC<FreeButtonsLayoutProps> = ({
   draggingTarget,
   tempPos,
   isEditingHud,
-  effectiveHudSide,
   isColliding,
   t,
   buttonRefs,
@@ -446,18 +490,10 @@ const FreeButtonsLayout: React.FC<FreeButtonsLayoutProps> = ({
     <>
       {allFreeButtons.map((btnId) => {
         const isDraggingThis = draggingTarget === btnId;
-        let pos =
+        const pos =
           isDraggingThis && tempPos
             ? tempPos
             : dockConfig.buttonPositions?.[btnId] || { x: 50, y: 50 };
-
-        if (!isDraggingThis && isEditingHud && effectiveHudSide === 'center') {
-          const winH = typeof window !== 'undefined' ? window.innerHeight : 720;
-          const safeY = getSafeYBelowHudBar(`btn:${btnId}`, dockConfig, winH);
-          if (pos.y < safeY && pos.x > 15 && pos.x < 85) {
-            pos = { x: pos.x, y: safeY };
-          }
-        }
 
         const isLaunch = btnId === 'launch';
         const btnCustom = dockConfig.buttonCustomizations?.[btnId];
@@ -573,6 +609,7 @@ interface GroupedDockLayoutProps {
   isButtonLabelVisible?: (btnId: DockButtonId) => boolean;
   isLaunchHovered?: boolean;
   onLaunchHover?: (h: boolean) => void;
+  isColliding?: boolean;
 }
 
 const GroupedDockLayout: React.FC<GroupedDockLayoutProps> = ({
@@ -580,6 +617,7 @@ const GroupedDockLayout: React.FC<GroupedDockLayoutProps> = ({
   dockPos,
   draggingTarget,
   isEditingHud,
+  isColliding,
   isHovered,
   setIsHovered,
   dockRef,
@@ -638,6 +676,51 @@ const GroupedDockLayout: React.FC<GroupedDockLayoutProps> = ({
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
+      {/* Dock Coordinate Badge in HUD editing mode */}
+      {isEditingHud && (
+        <div
+          aria-label="Coordenadas del dock"
+          style={{
+            position: 'absolute',
+            bottom: dockPos.y > 10 ? 'calc(100% + 8px)' : 'auto',
+            top: dockPos.y <= 10 ? 'calc(100% + 8px)' : 'auto',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background:
+              draggingTarget === 'dock' && isColliding
+                ? 'rgba(239, 68, 68, 0.95)'
+                : 'rgba(15, 18, 26, 0.95)',
+            border:
+              draggingTarget === 'dock' && isColliding
+                ? '1px solid rgba(248, 113, 113, 0.85)'
+                : '1px solid rgba(255, 255, 255, 0.16)',
+            borderRadius: '4px',
+            padding: '1px 6px',
+            fontSize: '9px',
+            fontWeight: 600,
+            fontFamily: 'ui-monospace, monospace',
+            color: draggingTarget === 'dock' && isColliding ? '#ffffff' : accentColor || '#38bdf8',
+            whiteSpace: 'nowrap',
+            pointerEvents: 'none',
+            boxShadow:
+              draggingTarget === 'dock' && isColliding
+                ? '0 0 12px rgba(239, 68, 68, 0.4)'
+                : '0 4px 12px rgba(0, 0, 0, 0.65)',
+            zIndex: 40,
+          }}
+        >
+          {draggingTarget === 'dock' && isColliding ? (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+              <AlertTriangle size={10} color="#fca5a5" />
+              <span>
+                {t.hudEditor.collision} | X:{dockPos.x}% Y:{dockPos.y}%
+              </span>
+            </span>
+          ) : (
+            `X:${dockPos.x}% Y:${dockPos.y}%`
+          )}
+        </div>
+      )}
       {/* Quick Access Bar */}
       {!isEditingHud && isHovered && (
         <div
@@ -1070,6 +1153,7 @@ export const HomeDock: React.FC = () => {
         dims.width,
         dims.height,
         obstacles,
+        { winW, winH },
       );
 
       setTempPos({ x: resolved.x, y: resolved.y });
@@ -1123,6 +1207,7 @@ export const HomeDock: React.FC = () => {
         dims.width,
         dims.height,
         obstacles,
+        { winW, winH },
       );
 
       if (draggingTarget === 'dock') {
@@ -1271,33 +1356,28 @@ export const HomeDock: React.FC = () => {
       const winH = typeof window !== 'undefined' ? window.innerHeight : 720;
 
       if (dockConfig.positionPreset === 'free' && dockConfig.customCoordinates) {
-        const currentBoxId = 'dock';
-        let dims = getElementDimensions(currentBoxId, dockConfig);
+        let dims = getElementDimensions('dock', dockConfig);
         if (dockRef.current) {
           dims = {
             width: dockRef.current.getBoundingClientRect().width,
             height: dockRef.current.getBoundingClientRect().height,
           };
         }
-        const obstacles = getActiveObstacles(currentBoxId, dockConfig, winW, winH, undefined, {
-          isEditing: isEditingHud,
-          side: effectiveHudSide,
-        });
-        const currentCenterPxX = (dockConfig.customCoordinates.x / 100) * winW;
-        const currentCenterPxY = (dockConfig.customCoordinates.y / 100) * winH;
-        const resolved = resolveCollisionAndClamp(
-          currentCenterPxX,
-          currentCenterPxY,
-          dims.width,
-          dims.height,
-          obstacles,
-        );
+        const halfW = dims.width / 2;
+        const halfH = dims.height / 2;
+        const minXPct = Math.round(((halfW + 14) / winW) * 100 * 10) / 10;
+        const maxXPct = Math.round(((winW - halfW - 14) / winW) * 100 * 10) / 10;
+        const minYPct = Math.round(((halfH + 64) / winH) * 100 * 10) / 10;
+        const maxYPct = Math.round(((winH - halfH - 14) / winH) * 100 * 10) / 10;
+
+        const clampedX = Math.max(minXPct, Math.min(maxXPct, dockConfig.customCoordinates.x));
+        const clampedY = Math.max(minYPct, Math.min(maxYPct, dockConfig.customCoordinates.y));
         if (
-          Math.abs(resolved.x - dockConfig.customCoordinates.x) > 0.5 ||
-          Math.abs(resolved.y - dockConfig.customCoordinates.y) > 0.5
+          Math.abs(clampedX - dockConfig.customCoordinates.x) > 0.5 ||
+          Math.abs(clampedY - dockConfig.customCoordinates.y) > 0.5
         ) {
           launcherActions.setDockConfig({
-            customCoordinates: { x: resolved.x, y: resolved.y },
+            customCoordinates: { x: clampedX, y: clampedY },
           });
         }
       }
@@ -1307,8 +1387,7 @@ export const HomeDock: React.FC = () => {
         for (const btnId of buttons) {
           const pos = dockConfig.buttonPositions?.[btnId];
           if (!pos) continue;
-          const currentBoxId = `btn:${btnId}`;
-          let dims = getElementDimensions(currentBoxId, dockConfig);
+          let dims = getElementDimensions(`btn:${btnId}`, dockConfig);
           const btnEl = buttonRefs.current[btnId];
           if (btnEl) {
             dims = {
@@ -1316,21 +1395,19 @@ export const HomeDock: React.FC = () => {
               height: btnEl.getBoundingClientRect().height,
             };
           }
-          const obstacles = getActiveObstacles(currentBoxId, dockConfig, winW, winH, undefined, {
-            isEditing: isEditingHud,
-            side: effectiveHudSide,
-          });
-          const currentCenterPxX = (pos.x / 100) * winW;
-          const currentCenterPxY = (pos.y / 100) * winH;
-          const resolved = resolveCollisionAndClamp(
-            currentCenterPxX,
-            currentCenterPxY,
-            dims.width,
-            dims.height,
-            obstacles,
-          );
-          if (Math.abs(resolved.x - pos.x) > 0.5 || Math.abs(resolved.y - pos.y) > 0.5) {
-            launcherActions.setButtonPosition(btnId, { x: resolved.x, y: resolved.y });
+          const halfW = dims.width / 2;
+          const halfH = dims.height / 2;
+
+          const minXPct = Math.round(((halfW + 14) / winW) * 100 * 10) / 10;
+          const maxXPct = Math.round(((winW - halfW - 14) / winW) * 100 * 10) / 10;
+          const minYPct = Math.round(((halfH + 64) / winH) * 100 * 10) / 10;
+          const maxYPct = Math.round(((winH - halfH - 14) / winH) * 100 * 10) / 10;
+
+          const clampedX = Math.max(minXPct, Math.min(maxXPct, pos.x));
+          const clampedY = Math.max(minYPct, Math.min(maxYPct, pos.y));
+
+          if (Math.abs(clampedX - pos.x) > 0.5 || Math.abs(clampedY - pos.y) > 0.5) {
+            launcherActions.setButtonPosition(btnId, { x: clampedX, y: clampedY });
           }
         }
       }
@@ -1338,7 +1415,7 @@ export const HomeDock: React.FC = () => {
 
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, [dockConfig, isEditingHud, effectiveHudSide]);
+  }, [dockConfig]);
 
   const handleStartResize = (
     e: React.MouseEvent,
@@ -1543,7 +1620,9 @@ export const HomeDock: React.FC = () => {
     if (btnCustom?.iconType === 'none') {
       return null;
     }
-    const scale = btnCustom?.iconScale ?? 1;
+    const globalScale = dockConfig.iconScale ?? 1;
+    const btnScale = btnCustom?.iconScale ?? 1;
+    const scale = Math.round(globalScale * btnScale * 100) / 100;
     const effectiveSize = Math.round(iconSize * scale);
 
     if (btnCustom?.iconType === 'custom_svg' && btnCustom.customSvg) {
@@ -1561,17 +1640,57 @@ export const HomeDock: React.FC = () => {
   const isButtonLabelVisible = (btnId: DockButtonId) => {
     if (!showLabels) return false;
     const btnCustom = dockConfig.buttonCustomizations?.[btnId];
-    if (btnCustom?.hideLabel) return false;
-    const isCurrentResizing = resizing?.btnId === btnId;
-    const currentW =
-      isCurrentResizing && liveResizeDims ? liveResizeDims.width : btnCustom?.customWidth;
-    const currentH =
-      isCurrentResizing && liveResizeDims ? liveResizeDims.height : btnCustom?.customHeight;
-    if (currentH !== undefined && currentH < 62) return false;
-    if (currentW !== undefined && currentW < 70) return false;
+
     if (dockConfig.layoutMode === 'dock') {
-      if (effectiveSegmentHeightPx < 62 || effectiveSegmentWidthPx < 70) return false;
+      // In unified dock mode, segment dimensions are shared from the dock bar.
+      // Individual button customWidth / customHeight / hideLabel (from free buttons mode) do NOT apply.
+      if (effectiveSegmentHeightPx < 48 || effectiveSegmentWidthPx < 50) return false;
+    } else {
+      if (btnCustom?.hideLabel) return false;
+      const isCurrentResizing = resizing?.btnId === btnId;
+      const currentW =
+        isCurrentResizing && liveResizeDims ? liveResizeDims.width : btnCustom?.customWidth;
+      const currentH =
+        isCurrentResizing && liveResizeDims ? liveResizeDims.height : btnCustom?.customHeight;
+      if (currentH !== undefined && currentH < 62) return false;
+      if (currentW !== undefined && currentW < 70) return false;
     }
+
+    // Dynamic icon clearance: if icon scale pushes the label into clipping territory, hide label automatically
+    if (btnCustom?.iconType !== 'none') {
+      const globalScale = dockConfig.iconScale ?? 1;
+      const btnScale = btnCustom?.iconScale ?? 1;
+      const effectiveScale = Math.round(globalScale * btnScale * 100) / 100;
+      const baseIconSize = iconSize + (btnId === 'launch' ? 2 : btnId === 'accounts' ? 4 : 0);
+      const effectiveIconH = Math.round(baseIconSize * effectiveScale);
+
+      const availableH =
+        dockConfig.layoutMode === 'dock'
+          ? effectiveSegmentHeightPx
+          : (resizing?.btnId === btnId && liveResizeDims
+              ? liveResizeDims.height
+              : (btnCustom?.customHeight ?? (isCompact ? 74 : 108)));
+
+      const availableW =
+        dockConfig.layoutMode === 'dock'
+          ? btnId === 'launch'
+            ? Math.round(effectiveSegmentWidthPx * 1.15)
+            : effectiveSegmentWidthPx
+          : (resizing?.btnId === btnId && liveResizeDims
+              ? liveResizeDims.width
+              : (btnCustom?.customWidth ?? (isCompact ? 96 : 136)));
+
+      // Label needs ~24px of vertical clearance
+      if (availableH - effectiveIconH < 24) {
+        return false;
+      }
+
+      // If icon is extremely wide compared to button width, also avoid text squashing/clipping
+      if (availableW - effectiveIconH < 14) {
+        return false;
+      }
+    }
+
     return true;
   };
 
@@ -1620,7 +1739,9 @@ export const HomeDock: React.FC = () => {
             }}
           >
             {currentDims.width} × {currentDims.height} px
-            {(currentDims.height < 62 || currentDims.width < 70) && (
+            {(currentDims.height < 62 ||
+              currentDims.width < 70 ||
+              !isButtonLabelVisible(btnId)) && (
               <span style={{ opacity: 0.8, fontWeight: 500 }}> • Sin texto</span>
             )}
           </div>
@@ -1832,17 +1953,13 @@ export const HomeDock: React.FC = () => {
     return (
       <>
         {renderIconWithCustomization('instances', defaultIcon, iconColor)}
-        {shouldShowLabel && (
-          <span
-            className="dock-label"
-            style={{
-              fontSize: labelFontSize,
-              color: customColor ?? undefined,
-            }}
-          >
-            {t.dock.instances}
-          </span>
-        )}
+        <AnimatedDockLabel
+          show={shouldShowLabel}
+          fontSize={labelFontSize}
+          color={customColor ?? undefined}
+        >
+          {t.dock.instances}
+        </AnimatedDockLabel>
       </>
     );
   };
@@ -1862,17 +1979,13 @@ export const HomeDock: React.FC = () => {
           />,
           customColor ?? undefined,
         )}
-        {shouldShowLabel && (
-          <span
-            className="dock-label"
-            style={{
-              fontSize: labelFontSize,
-              color: customColor ?? undefined,
-            }}
-          >
-            {t.dock.about}
-          </span>
-        )}
+        <AnimatedDockLabel
+          show={shouldShowLabel}
+          fontSize={labelFontSize}
+          color={customColor ?? undefined}
+        >
+          {t.dock.about}
+        </AnimatedDockLabel>
       </>
     );
   };
@@ -1880,11 +1993,6 @@ export const HomeDock: React.FC = () => {
   const renderAccountsButton = (customColor?: string | null) => {
     const avatarSrc = resolveAccountAvatarSrc(activeAccount);
     const shouldShowLabel = isButtonLabelVisible('accounts');
-    const accountsCustom = dockConfig.buttonCustomizations?.accounts;
-    const hasCustomIcon =
-      accountsCustom?.iconType === 'custom_svg' ||
-      accountsCustom?.iconType === 'custom_image' ||
-      accountsCustom?.iconType === 'none';
 
     const defaultAvatar = (
       <div
@@ -1906,20 +2014,14 @@ export const HomeDock: React.FC = () => {
 
     return (
       <>
-        {hasCustomIcon
-          ? renderIconWithCustomization('accounts', defaultAvatar, customColor ?? undefined)
-          : defaultAvatar}
-        {shouldShowLabel && (
-          <span
-            className="dock-label"
-            style={{
-              fontSize: labelFontSize,
-              color: customColor ?? undefined,
-            }}
-          >
-            {t.dock.accounts}
-          </span>
-        )}
+        {renderIconWithCustomization('accounts', defaultAvatar, customColor ?? undefined)}
+        <AnimatedDockLabel
+          show={shouldShowLabel}
+          fontSize={labelFontSize}
+          color={customColor ?? undefined}
+        >
+          {t.dock.accounts}
+        </AnimatedDockLabel>
       </>
     );
   };
@@ -1939,17 +2041,13 @@ export const HomeDock: React.FC = () => {
           />,
           customColor ?? undefined,
         )}
-        {shouldShowLabel && (
-          <span
-            className="dock-label"
-            style={{
-              fontSize: labelFontSize,
-              color: customColor ?? undefined,
-            }}
-          >
-            {t.dock.settings}
-          </span>
-        )}
+        <AnimatedDockLabel
+          show={shouldShowLabel}
+          fontSize={labelFontSize}
+          color={customColor ?? undefined}
+        >
+          {t.dock.settings}
+        </AnimatedDockLabel>
       </>
     );
   };
@@ -1997,19 +2095,15 @@ export const HomeDock: React.FC = () => {
           </div>,
           launchIconColor,
         )}
-        {shouldShowLabel && (
-          <span
-            className="dock-label"
-            style={{
-              color: launchLabelColor,
-              fontSize: labelFontSize,
-              fontWeight: 800,
-              transition: 'color 0.15s ease',
-            }}
-          >
-            {getLaunchLabel()}
-          </span>
-        )}
+        <AnimatedDockLabel
+          show={shouldShowLabel}
+          fontSize={labelFontSize}
+          color={launchLabelColor}
+          fontWeight={800}
+          transition="color 0.15s ease"
+        >
+          {getLaunchLabel()}
+        </AnimatedDockLabel>
 
         {isLaunching && (
           <div className="dock-launch-progress">
@@ -2053,17 +2147,13 @@ export const HomeDock: React.FC = () => {
             >
               {slot.icon}
             </div>
-            {shouldShowLabel && (
-              <span
-                className="dock-label"
-                style={{
-                  fontSize: labelFontSize,
-                  color: modCustomColor,
-                }}
-              >
-                {slot.label}
-              </span>
-            )}
+            <AnimatedDockLabel
+              show={shouldShowLabel}
+              fontSize={labelFontSize}
+              color={modCustomColor}
+            >
+              {slot.label}
+            </AnimatedDockLabel>
           </>
         );
       }
@@ -2132,7 +2222,6 @@ export const HomeDock: React.FC = () => {
         draggingTarget={draggingTarget}
         tempPos={tempPos}
         isEditingHud={isEditingHud}
-        effectiveHudSide={effectiveHudSide}
         isColliding={isColliding}
         t={t}
         buttonRefs={buttonRefs}
@@ -2200,6 +2289,7 @@ export const HomeDock: React.FC = () => {
       dockPos={dockPos}
       draggingTarget={draggingTarget}
       isEditingHud={isEditingHud}
+      isColliding={isColliding}
       isHovered={isHovered}
       setIsHovered={setIsHovered}
       dockRef={dockRef}

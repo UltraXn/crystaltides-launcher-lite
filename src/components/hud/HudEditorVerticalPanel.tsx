@@ -377,6 +377,7 @@ const VerticalPresetsAndSliders: React.FC<VerticalPresetsProps> = ({
               </div>
             </div>
 
+
             {/* Text Labels Visibility */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
               <span

@@ -26,7 +26,7 @@ import {
   syncOfficialModsForInstance,
   syncPerformanceStackForInstance,
 } from '../services/modService';
-import { fetchLiveServerStatus } from '../services/serverStatusService';
+import { fetchLiveServerStatus, type ServerPlayer } from '../services/serverStatusService';
 import {
   sanitizeAllPositions,
   calculateDefaultButtonPositions,
@@ -79,6 +79,7 @@ export interface LauncherSettings {
   showBetaLoaders?: boolean;
   disableBgAnim?: boolean;
   disableAnimations?: boolean;
+  serverHost?: string;
 }
 
 export type ModalType = 'none' | 'settings' | 'accounts' | 'about' | 'instances';
@@ -278,6 +279,7 @@ export interface DockConfig {
   buttonPositions: Record<string, { x: number; y: number }>;
   widgetPositions: WidgetPositions;
   scale: 'normal' | 'compact';
+  iconScale?: number;
   customDockHeight?: number;
   customSegmentWidth?: number;
   showLabels: boolean;
@@ -308,11 +310,11 @@ export const DEFAULT_DOCK_CONFIG: DockConfig = {
   positionPreset: 'center',
   customCoordinates: { x: 50, y: 50 },
   buttonPositions: {
-    instances: { x: 26, y: 50 },
-    about: { x: 38, y: 50 },
+    instances: { x: 16, y: 50 },
+    about: { x: 33, y: 50 },
     accounts: { x: 50, y: 50 },
-    settings: { x: 62, y: 50 },
-    launch: { x: 74, y: 50 },
+    settings: { x: 67, y: 50 },
+    launch: { x: 84, y: 50 },
   },
   widgetPositions: {
     userPill: { x: 8, y: 93 },
@@ -320,6 +322,7 @@ export const DEFAULT_DOCK_CONFIG: DockConfig = {
     serverStatus: { x: 92, y: 93 },
   },
   scale: 'normal',
+  iconScale: 1.0,
   showLabels: true,
   bgOpacity: 0.92,
   borderRadius: 14,
@@ -369,6 +372,11 @@ export interface LauncherState {
     playersCount: number;
     maxPlayers: number;
     ping: number;
+    version?: string;
+    motd?: string;
+    icon?: string;
+    playersList?: ServerPlayer[];
+    serverHost?: string;
   };
   modSyncPrompt: { error: string } | null;
   accountPersistenceError: string | null;
@@ -423,17 +431,73 @@ export const loadInitialDockConfig = (): DockConfig => {
         visibleSet.add(p);
       }
 
+      // Detect legacy overlapping default positions and migrate to non-overlapping spacing
+      const isLegacyDefaultSpacing =
+        parsed.buttonPositions &&
+        ((parsed.buttonPositions.instances?.x === 26 && parsed.buttonPositions.launch?.x === 74) ||
+          (parsed.buttonPositions.instances?.x === 20 &&
+            (parsed.buttonPositions.launch?.x === 80 ||
+              Math.round(parsed.buttonPositions.launch?.x || 0) === 79)));
+
+      const effectiveButtonPositions = isLegacyDefaultSpacing
+        ? { ...DEFAULT_DOCK_CONFIG.buttonPositions }
+        : {
+            ...DEFAULT_DOCK_CONFIG.buttonPositions,
+            ...parsed.buttonPositions,
+          };
+
+      // Sanitize widget coordinates: only reset if invalid/NaN/out-of-bounds, preserving intentional user placement
+      const sanitizeWidgetCoord = (
+        coord: { x: number; y: number } | undefined,
+        fallback: { x: number; y: number },
+      ) => {
+        if (
+          !coord ||
+          typeof coord.x !== 'number' ||
+          typeof coord.y !== 'number' ||
+          Number.isNaN(coord.x) ||
+          Number.isNaN(coord.y) ||
+          coord.x < 0 ||
+          coord.x > 100 ||
+          coord.y < 0 ||
+          coord.y > 100
+        ) {
+          return fallback;
+        }
+        return coord;
+      };
+
+      const rawWidgets = {
+        ...DEFAULT_DOCK_CONFIG.widgetPositions,
+        ...parsed.widgetPositions,
+      };
+      const effectiveWidgetPositions = {
+        userPill: sanitizeWidgetCoord(
+          rawWidgets.userPill,
+          DEFAULT_DOCK_CONFIG.widgetPositions.userPill,
+        ),
+        socials: sanitizeWidgetCoord(
+          rawWidgets.socials,
+          DEFAULT_DOCK_CONFIG.widgetPositions.socials,
+        ),
+        serverStatus: sanitizeWidgetCoord(
+          rawWidgets.serverStatus,
+          DEFAULT_DOCK_CONFIG.widgetPositions.serverStatus,
+        ),
+      };
+
+      // Clamp iconScale strictly between 0.6 and 1.8
+      const rawScale = typeof parsed.iconScale === 'number' ? parsed.iconScale : 1.0;
+      const clampedIconScale = Number.isNaN(rawScale)
+        ? 1.0
+        : Math.min(1.8, Math.max(0.6, rawScale));
+
       return {
         ...DEFAULT_DOCK_CONFIG,
         ...parsed,
-        buttonPositions: {
-          ...DEFAULT_DOCK_CONFIG.buttonPositions,
-          ...parsed.buttonPositions,
-        },
-        widgetPositions: {
-          ...DEFAULT_DOCK_CONFIG.widgetPositions,
-          ...parsed.widgetPositions,
-        },
+        iconScale: clampedIconScale,
+        buttonPositions: effectiveButtonPositions,
+        widgetPositions: effectiveWidgetPositions,
         visibleButtons: Array.from(visibleSet),
         buttonOrder: Array.isArray(parsed.buttonOrder)
           ? parsed.buttonOrder
@@ -479,6 +543,7 @@ const defaultSettings: LauncherSettings = {
   showBetaLoaders: false,
   disableBgAnim: false,
   disableAnimations: false,
+  serverHost: 'mc.crystaltidessmp.net',
 };
 
 export const isUserAccount = (obj: unknown): obj is UserAccount => {
@@ -566,6 +631,8 @@ export const sanitizeLauncherSettings = (raw: unknown): LauncherSettings => {
     showBetaLoaders: sanitizeBoolean(s.showBetaLoaders, false) ?? false,
     disableBgAnim: sanitizeBoolean(s.disableBgAnim, false) ?? false,
     disableAnimations: sanitizeBoolean(s.disableAnimations, false) ?? false,
+    serverHost:
+      sanitizeString(s.serverHost, defaultSettings.serverHost) ?? defaultSettings.serverHost,
   };
 };
 
@@ -627,6 +694,8 @@ let state: LauncherState = {
     playersCount: 42,
     maxPlayers: 150,
     ping: 28,
+    playersList: [],
+    serverHost: 'mc.crystaltidessmp.net',
   },
   modSyncPrompt: null,
   accountPersistenceError: null,
@@ -737,7 +806,12 @@ const syncInstanceAssets = async (
   }
 
   const isPerfDisabled = Boolean(activeInst.disableOptimization);
-  if (state.settings.useOptimization && !isPerfDisabled && activeInst.loaderType && !activeInst.isOfficial) {
+  if (
+    state.settings.useOptimization &&
+    !isPerfDisabled &&
+    activeInst.loaderType &&
+    !activeInst.isOfficial
+  ) {
     try {
       await syncPerformanceStackForInstance(
         effectiveGameDir,
@@ -1073,8 +1147,21 @@ export const launcherActions = {
   },
 
   setDockConfig: (partial: Partial<DockConfig>) => {
+    if (typeof partial.iconScale === 'number') {
+      partial.iconScale = Number.isNaN(partial.iconScale)
+        ? 1.0
+        : Math.min(1.8, Math.max(0.6, partial.iconScale));
+    }
     setStoreState((prev) => {
-      const nextConfig = { ...prev.dockConfig, ...partial };
+      let nextConfig = { ...prev.dockConfig, ...partial };
+      if (
+        nextConfig.layoutMode === 'free_buttons' &&
+        (partial.scale !== undefined || partial.showLabels !== undefined)
+      ) {
+        const winW = typeof window !== 'undefined' && window.innerWidth ? window.innerWidth : 1024;
+        const winH = typeof window !== 'undefined' && window.innerHeight ? window.innerHeight : 576;
+        nextConfig = sanitizeAllPositions(nextConfig, winW, winH);
+      }
       try {
         localStorage.setItem(DOCK_CONFIG_STORAGE_KEY, JSON.stringify(nextConfig));
       } catch {
@@ -1092,11 +1179,11 @@ export const launcherActions = {
       buttonOrder: ['instances', 'about', 'accounts', 'settings', 'launch'],
       visibleButtons: ['instances', 'about', 'accounts', 'settings', 'launch'],
       buttonPositions: {
-        instances: { x: 26, y: 50 },
-        about: { x: 38, y: 50 },
+        instances: { x: 20, y: 50 },
+        about: { x: 35, y: 50 },
         accounts: { x: 50, y: 50 },
-        settings: { x: 62, y: 50 },
-        launch: { x: 74, y: 50 },
+        settings: { x: 65, y: 50 },
+        launch: { x: 80, y: 50 },
       },
       widgetPositions: {
         userPill: { x: 8, y: 93 },
@@ -1256,6 +1343,11 @@ export const launcherActions = {
     id: DockButtonId,
     customization: Partial<DockButtonCustomization>,
   ) => {
+    if (typeof customization.iconScale === 'number') {
+      customization.iconScale = Number.isNaN(customization.iconScale)
+        ? 1.0
+        : Math.min(5.0, Math.max(0.2, customization.iconScale));
+    }
     setStoreState((prev) => {
       const current = prev.dockConfig.buttonCustomizations?.[id] || {};
       const updated = { ...current, ...customization };
@@ -1602,14 +1694,40 @@ export const launcherActions = {
     }
   },
 
-  updateLiveServerStatus: async () => {
-    const data = await fetchLiveServerStatus();
+  setServerHost: (host: string) => {
+    const trimmed = host.trim();
+    if (!trimmed) return;
+    setStoreState((prev) => {
+      const nextSettings = { ...prev.settings, serverHost: trimmed };
+      try {
+        localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(nextSettings));
+      } catch {}
+      return {
+        settings: nextSettings,
+        serverStatus: {
+          ...prev.serverStatus,
+          serverHost: trimmed,
+          icon: undefined,
+        },
+      };
+    });
+    void launcherActions.updateLiveServerStatus(trimmed);
+  },
+
+  updateLiveServerStatus: async (targetHost?: string) => {
+    const host = targetHost || state.settings.serverHost || 'mc.crystaltidessmp.net';
+    const data = await fetchLiveServerStatus(host);
     setStoreState(() => ({
       serverStatus: {
         online: data.online,
         playersCount: data.playersCount,
         maxPlayers: data.maxPlayers,
         ping: data.ping,
+        version: data.version,
+        motd: data.motd,
+        icon: data.icon,
+        playersList: data.playersList ?? [],
+        serverHost: host,
       },
     }));
   },
@@ -1621,9 +1739,8 @@ export const launcherActions = {
 
       // 1. Prospección en SQLite nativo (crystaltides.db) y carga de bóveda cifrada
       const dbAccounts = await getDatabaseAccounts();
-      const decrypted = await loadSecureItem<UserAccount[]>(
-        ACCOUNTS_VAULT_KEY,
-        (data) => Array.isArray(data),
+      const decrypted = await loadSecureItem<UserAccount[]>(ACCOUNTS_VAULT_KEY, (data) =>
+        Array.isArray(data),
       );
 
       const vaultDecryptionFailed =
@@ -1639,9 +1756,11 @@ export const launcherActions = {
       if (dbAccounts && dbAccounts.length > 0) {
         const mapped: UserAccount[] = dbAccounts.map((a) => {
           const vaultAcc = vaultMap.get(a.id);
+          const effectiveRefreshToken = vaultAcc?.refreshToken || a.refresh_token;
           const hasMissingRefreshToken =
-            a.account_type === 'microsoft' && (!vaultAcc || !vaultAcc.refreshToken);
-          const needsReauth = vaultDecryptionFailed || hasMissingRefreshToken;
+            a.account_type === 'microsoft' && !effectiveRefreshToken;
+          const needsReauth =
+            (vaultDecryptionFailed && !a.refresh_token) || hasMissingRefreshToken;
 
           return {
             id: a.id,
@@ -1650,7 +1769,7 @@ export const launcherActions = {
             type: (a.account_type as UserAccount['type']) ?? 'microsoft',
             skinUrl: a.skin_url,
             accessToken: a.access_token,
-            refreshToken: vaultAcc?.refreshToken,
+            refreshToken: effectiveRefreshToken,
             role: vaultAcc?.role,
             email: vaultAcc?.email,
             capeUrl: vaultAcc?.capeUrl,
@@ -1662,6 +1781,7 @@ export const launcherActions = {
         setStoreState(() => ({
           accounts: mapped,
           activeAccountId: active,
+          currentView: mapped.length > 0 ? 'home' : 'login',
         }));
         return;
       }
@@ -1676,6 +1796,7 @@ export const launcherActions = {
           setStoreState(() => ({
             accounts: sorted,
             activeAccountId: sorted[0].id,
+            currentView: 'home',
           }));
 
           // Migrar automáticamente a SQLite para persistencia atómica
@@ -1687,6 +1808,7 @@ export const launcherActions = {
                 uuid: acc.uuid,
                 account_type: acc.type,
                 access_token: acc.accessToken,
+                refresh_token: acc.refreshToken,
                 skin_url: acc.skinUrl,
                 is_active: acc.id === sorted[0].id,
                 created_at: acc.lastUsed || Date.now(),
@@ -1732,6 +1854,7 @@ export const launcherActions = {
         uuid: account.uuid,
         account_type: account.type,
         access_token: account.accessToken,
+        refresh_token: account.refreshToken,
         skin_url: account.skinUrl,
         is_active: true,
         created_at: account.lastUsed || Date.now(),
@@ -1760,6 +1883,7 @@ export const launcherActions = {
         uuid: target.uuid,
         account_type: target.type,
         access_token: target.accessToken,
+        refresh_token: target.refreshToken,
         skin_url: target.skinUrl,
         is_active: target.id === state.activeAccountId,
         created_at: target.lastUsed || Date.now(),
@@ -1789,7 +1913,11 @@ export const launcherActions = {
   removeAccount: async (id: string) => {
     const wasActive = state.activeAccountId === id;
     const updated = state.accounts.filter((a: UserAccount) => a.id !== id);
-    const nextActive = wasActive ? (updated.length > 0 ? updated[0].id : null) : state.activeAccountId;
+    const nextActive = wasActive
+      ? updated.length > 0
+        ? updated[0].id
+        : null
+      : state.activeAccountId;
     const nextView = updated.length > 0 ? state.currentView : 'login';
     setStoreState(() => ({
       accounts: updated,
@@ -1869,7 +1997,16 @@ export const launcherActions = {
   },
 
   openModal: (modal: ModalType) => {
-    setStoreState(() => ({ activeModal: modal }));
+    setStoreState(() => ({
+      activeModal: modal,
+      ...(modal !== 'none'
+        ? {
+            isEditingHud: false,
+            isButtonInspectorOpen: false,
+            selectedDockButtonId: null,
+          }
+        : {}),
+    }));
   },
 
   closeModal: () => {
@@ -2038,15 +2175,18 @@ export const launcherActions = {
         }
       });
 
-      await registerListener<{ lines: Array<{ line: string; level?: string }> }>('game-log-batch', (event) => {
-        if (Array.isArray(event.payload?.lines)) {
-          for (const item of event.payload.lines) {
-            if (item?.line && item.level === 'ERROR') {
-              console.error('[Minecraft Log]', item.line);
+      await registerListener<{ lines: Array<{ line: string; level?: string }> }>(
+        'game-log-batch',
+        (event) => {
+          if (Array.isArray(event.payload?.lines)) {
+            for (const item of event.payload.lines) {
+              if (item?.line && item.level === 'ERROR') {
+                console.error('[Minecraft Log]', item.line);
+              }
             }
           }
-        }
-      });
+        },
+      );
     } catch {
       // Browser preview mode fallback
     }
@@ -2083,7 +2223,11 @@ export const launcherActions = {
       if (needsTokenRefresh) {
         try {
           setStoreState(() => ({
-            launch: { status: 'VERIFYING', progress: 5, message: 'Validando sesión de Microsoft...' },
+            launch: {
+              status: 'VERIFYING',
+              progress: 5,
+              message: 'Validando sesión de Microsoft...',
+            },
           }));
           const { refreshMicrosoftSession } = await import('../services/microsoftAuthService');
           const refreshed = await refreshMicrosoftSession(activeAcc.refreshToken);
@@ -2102,7 +2246,10 @@ export const launcherActions = {
           }
         } catch (authErr) {
           const errString = String(authErr);
-          logFrontend('WARN', `[Launcher Store] Error refrescando sesión previa de Microsoft: ${errString}`);
+          logFrontend(
+            'WARN',
+            `[Launcher Store] Error refrescando sesión previa de Microsoft: ${errString}`,
+          );
 
           const errorCode =
             authErr && typeof authErr === 'object' && 'code' in authErr

@@ -210,6 +210,38 @@ describe('DockButtonInspectorTabs Suite', () => {
       fireEvent.change(slider, { target: { value: '1.5' } });
       expect(setCustomizationSpy).toHaveBeenCalledWith('play', { iconScale: 1.5 });
     });
+
+    it('permite ajustar la escala del icono hasta 5.0x mediante el slider', () => {
+      const setCustomizationSpy = vi.spyOn(launcherActions, 'setDockButtonCustomization');
+      render(
+        <DockButtonInspectorIconTab
+          buttonId="play"
+          customization={mockCustomization}
+          iconFileInputRef={{ current: null } as any}
+        />
+      );
+
+      const slider = screen.getByRole('slider');
+      expect(slider.getAttribute('max')).toBe('5.0');
+      fireEvent.change(slider, { target: { value: '5' } });
+      expect(setCustomizationSpy).toHaveBeenCalledWith('play', { iconScale: 5 });
+    });
+
+    it('muestra botón de reiniciar escala cuando iconScale está personalizado y lo restablece a 1.0x', () => {
+      const setCustomizationSpy = vi.spyOn(launcherActions, 'setDockButtonCustomization');
+      render(
+        <DockButtonInspectorIconTab
+          buttonId="play"
+          customization={{ ...mockCustomization, iconScale: 2.5 }}
+          iconFileInputRef={{ current: null } as any}
+        />
+      );
+
+      const resetBtn = screen.getByText('Reiniciar Tamaño del Icono (1.0x)');
+      expect(resetBtn).toBeDefined();
+      fireEvent.click(resetBtn);
+      expect(setCustomizationSpy).toHaveBeenCalledWith('play', { iconScale: 1.0 });
+    });
   });
 
   describe('DockButtonInspectorFxTab', () => {

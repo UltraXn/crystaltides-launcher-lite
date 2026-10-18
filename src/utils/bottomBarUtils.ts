@@ -2,48 +2,43 @@ import type { LauncherState } from '../store/launcherStore';
 import {
   getElementDimensions,
   getEffectiveDockPosition,
-  getEffectiveActiveButtons,
 } from './collisionSystem';
 
 export function calculateEffectiveSocialsPosition(
   socPos: { x: number; y: number },
   dockConfig: LauncherState['dockConfig'],
 ): { x: number; y: number } {
+  if (dockConfig.layoutMode !== 'dock') {
+    return socPos;
+  }
+
   const winW = typeof window !== 'undefined' ? window.innerWidth : 1280;
   const winH = typeof window !== 'undefined' ? window.innerHeight : 720;
   const socDims = getElementDimensions('widget:socials', dockConfig);
+  const halfSocW = socDims.width / 2;
   const halfSocH = socDims.height / 2;
-  const socTopPx = (socPos.y / 100) * winH - halfSocH;
   const socCenterXPx = (socPos.x / 100) * winW;
+  const socCenterYPx = (socPos.y / 100) * winH;
 
-  if (dockConfig.layoutMode === 'dock') {
-    const currentDockPos = getEffectiveDockPosition(dockConfig);
-    const dockDims = getElementDimensions('dock', dockConfig);
-    const dockBottomPx = (currentDockPos.y / 100) * winH + dockDims.height / 2;
-    const dockLeftPx = (currentDockPos.x / 100) * winW - dockDims.width / 2;
-    const dockRightPx = (currentDockPos.x / 100) * winW + dockDims.width / 2;
+  const currentDockPos = getEffectiveDockPosition(dockConfig);
+  const dockDims = getElementDimensions('dock', dockConfig);
+  const halfDockW = dockDims.width / 2;
+  const halfDockH = dockDims.height / 2;
+  const dockCenterXPx = (currentDockPos.x / 100) * winW;
+  const dockCenterYPx = (currentDockPos.y / 100) * winH;
 
-    if (dockBottomPx > socTopPx - 4 && socCenterXPx >= dockLeftPx && socCenterXPx <= dockRightPx) {
-      const safeY = Math.min(
-        96,
-        Math.max(94, Math.round(((dockBottomPx + halfSocH + 10) / winH) * 100 * 10) / 10),
-      );
-      return { x: socPos.x, y: safeY };
-    }
-  } else {
-    const activeButtons = getEffectiveActiveButtons(dockConfig);
-    for (const btnId of activeButtons) {
-      const bPos = dockConfig.buttonPositions?.[btnId] || { x: 50, y: 50 };
-      const bDims = getElementDimensions(`btn:${btnId}`, dockConfig);
-      const bBottomPx = (bPos.y / 100) * winH + bDims.height / 2;
-      const bLeftPx = (bPos.x / 100) * winW - bDims.width / 2;
-      const bRightPx = (bPos.x / 100) * winW + bDims.width / 2;
+  const overlapsX = Math.abs(socCenterXPx - dockCenterXPx) < halfSocW + halfDockW + 4;
+  const overlapsY = Math.abs(socCenterYPx - dockCenterYPx) < halfSocH + halfDockH + 4;
 
-      if (bBottomPx > socTopPx - 4 && socCenterXPx >= bLeftPx && socCenterXPx <= bRightPx) {
-        return { x: socPos.x, y: 96 };
-      }
-    }
+  if (overlapsX && overlapsY) {
+    const dockBottomPx = dockCenterYPx + halfDockH;
+    const safeY = Math.min(
+      96,
+      Math.max(94, Math.round(((dockBottomPx + halfSocH + 8) / winH) * 100 * 10) / 10),
+    );
+    return { x: socPos.x, y: safeY };
   }
+
   return socPos;
 }
 

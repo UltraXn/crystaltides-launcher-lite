@@ -9,13 +9,14 @@ import {
   BottomBarServerWidget,
   BottomBarPlayerWidget,
   WidgetCoordinateBadge,
+  ServerLogoIcon,
 } from '../BottomBar';
 import {
   calculateEffectiveSocialsPosition,
   getWidgetCursor,
   getWidgetOutline,
 } from '../../utils/bottomBarUtils';
-import { useLauncherStore } from '../../store/launcherStore';
+import { useLauncherStore, launcherActions } from '../../store/launcherStore';
 import { getTranslation } from '../../i18n';
 
 vi.mock('@tauri-apps/api/core', () => ({
@@ -142,6 +143,118 @@ describe('BottomBar Component & Widgets Suite', () => {
       expect(screen.getByText(/15/)).toBeDefined();
     });
 
+    it('BottomBarServerWidget abre popover al hacer hover mostrando jugadores y permite cambiar IP', () => {
+      const setServerHostSpy = vi.spyOn(launcherActions, 'setServerHost').mockImplementation(() => {});
+      const { container } = render(
+        <BottomBarServerWidget
+          drag={mockDrag}
+          isEditingHud={false}
+          statPos={{ x: 90, y: 93 }}
+          serverStatus={{
+            online: true,
+            playersCount: 2,
+            maxPlayers: 100,
+            ping: 25,
+            serverHost: 'mc.crystaltidessmp.net',
+            playersList: [{ name: 'PlayerOne' }, { name: 'PlayerTwo' }],
+          }}
+          t={mockT}
+        />
+      );
+
+      const widget = container.firstChild as HTMLElement;
+      expect(widget).not.toBeNull();
+      fireEvent.mouseEnter(widget);
+
+      expect(screen.getByTestId('server-status-popover')).toBeDefined();
+      expect(screen.getByText('PlayerOne')).toBeDefined();
+      expect(screen.getByText('PlayerTwo')).toBeDefined();
+
+      const editIpBtn = screen.getByLabelText('Editar IP del servidor');
+      fireEvent.click(editIpBtn);
+
+      const input = screen.getByPlaceholderText('mc.crystaltidessmp.net');
+      fireEvent.change(input, { target: { value: 'play.customserver.net' } });
+
+      const saveBtn = screen.getByLabelText('Guardar nueva IP');
+      fireEvent.click(saveBtn);
+
+      expect(setServerHostSpy).toHaveBeenCalledWith('play.customserver.net');
+    });
+
+    it('ServerLogoIcon renderiza imagen cuando está online y cae en globito al estar offline o fallar', () => {
+      const { rerender } = render(
+        <ServerLogoIcon
+          online={true}
+          icon="data:image/png;base64,iVBORw0KGgoAAAANSUhEUg=="
+          serverHost="mc.hypixel.net"
+        />
+      );
+      const img = screen.getByTestId('server-logo-img');
+      expect(img).toBeDefined();
+      expect(img.getAttribute('src')).toBe('data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==');
+
+      // Si ocurre un error al cargar la imagen, debe caer en el globito fallback
+      fireEvent.error(img);
+      expect(screen.getByTestId('server-globe-fallback')).toBeDefined();
+
+      // Si el servidor pasa a offline, debe mostrar el globito fallback directamente
+      rerender(
+        <ServerLogoIcon
+          online={false}
+          icon="data:image/png;base64,iVBORw0KGgoAAAANSUhEUg=="
+          serverHost="mc.hypixel.net"
+        />
+      );
+      expect(screen.getByTestId('server-globe-fallback')).toBeDefined();
+    });
+
+    it('BottomBarServerWidget renderiza estado offline con luz roja, Sin conexión y ping nulo', () => {
+      const { container } = render(
+        <BottomBarServerWidget
+          drag={mockDrag}
+          isEditingHud={false}
+          statPos={{ x: 90, y: 93 }}
+          serverStatus={{
+            online: false,
+            playersCount: 0,
+            maxPlayers: 100,
+            ping: 0,
+            serverHost: 'mc.hypixel.net',
+            playersList: [],
+          }}
+          t={{
+            ...mockT,
+            bottomBar: {
+              ...mockT.bottomBar,
+              offline: 'Sin conexión',
+            },
+          }}
+        />
+      );
+
+      // Verificamos el chip exterior
+      expect(screen.getByText('Sin conexión')).toBeDefined();
+      expect(screen.getByText('--')).toBeDefined();
+
+      // Abrimos el popover con hover
+      const widget = container.firstChild as HTMLElement;
+      fireEvent.mouseEnter(widget);
+
+      const popover = screen.getByTestId('server-status-popover');
+      expect(popover).toBeDefined();
+
+      // Globito fallback presente en la cabecera del popover
+      expect(screen.getByTestId('server-globe-fallback')).toBeDefined();
+
+      // Indicador de luz roja y texto Sin conexión
+      const dot = screen.getByTestId('server-status-dot');
+      expect(dot.style.backgroundColor).toBe('rgb(239, 68, 68)');
+
+      const statusText = screen.getByTestId('server-status-text');
+      expect(statusText.textContent).toBe('Sin conexión');
+    });
+
     it('BottomBarSocialsWidget gestiona onMouseDown para arrastrar widget', () => {
       const startDrag = vi.fn();
       const mockDragWithFn = {
@@ -199,6 +312,33 @@ describe('BottomBar Component & Widgets Suite', () => {
         fireEvent.mouseDown(hub, { clientX: 300, clientY: 300 });
         expect(startDrag).toHaveBeenCalledWith('serverStatus', expect.anything(), expect.anything());
       }
+    });
+
+    it('permite arrastrar widgets interactuando directamente desde el tirador superior de agarre', () => {
+      const startDrag = vi.fn();
+      const mockDragWithFn = {
+        socialsRef: { current: null },
+        serverStatusRef: { current: null },
+        userPillRef: { current: null },
+        tempPositions: {},
+        draggingWidget: null,
+        isColliding: false,
+        startDrag,
+      };
+
+      render(
+        <BottomBarSocialsWidget
+          drag={mockDragWithFn}
+          isEditingHud={true}
+          effectiveSocPos={{ x: 50, y: 93 }}
+          t={mockT}
+        />
+      );
+
+      const grip = screen.getByLabelText(/Arrastrar redes sociales/i);
+      expect(grip).toBeDefined();
+      fireEvent.mouseDown(grip, { clientX: 200, clientY: 100 });
+      expect(startDrag).toHaveBeenCalledWith('socials', expect.anything(), expect.anything());
     });
   });
 

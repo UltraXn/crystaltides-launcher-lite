@@ -17,12 +17,13 @@ import {
 } from 'lucide-react';
 import { launcherActions, LauncherState, useT } from '../../store/launcherStore';
 
-interface HorizontalPanelProps {
+export interface HorizontalPanelProps {
   t: ReturnType<typeof useT>;
   dockConfig: LauncherState['dockConfig'];
   hudManualSide: LauncherState['hudManualSide'];
   accentColor: string;
   cycleSide: () => void;
+  winW?: number;
 }
 
 const HorizontalHeaderControls: React.FC<HorizontalPanelProps> = ({
@@ -31,13 +32,31 @@ const HorizontalHeaderControls: React.FC<HorizontalPanelProps> = ({
   hudManualSide,
   accentColor,
   cycleSide,
+  winW = 1280,
 }) => {
+  const isNarrow = winW < 1200;
+
   return (
     <>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginRight: '4px' }}>
-        <Move size={15} style={{ color: accentColor }} />
-        <span style={{ fontSize: '12px', fontWeight: 700, letterSpacing: '0.2px' }}>
-          {t.hudEditor.title}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '5px',
+          marginRight: '2px',
+          flexShrink: 0,
+        }}
+      >
+        <Move size={14} style={{ color: accentColor }} />
+        <span
+          style={{
+            fontSize: isNarrow ? '11px' : '12px',
+            fontWeight: 700,
+            letterSpacing: '0.2px',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {isNarrow ? t.hudEditor.titleNarrow : t.hudEditor.title}
         </span>
       </div>
 
@@ -86,18 +105,19 @@ const HorizontalHeaderControls: React.FC<HorizontalPanelProps> = ({
             display: 'flex',
             alignItems: 'center',
             gap: '4px',
-            padding: '4px 8px',
+            padding: isNarrow ? '3px 6px' : '4px 8px',
             borderRadius: '6px',
             border: 'none',
             background: dockConfig.layoutMode === 'dock' ? `${accentColor}33` : 'transparent',
             color: dockConfig.layoutMode === 'dock' ? accentColor : 'rgba(248, 250, 252, 0.6)',
-            fontSize: '11px',
+            fontSize: isNarrow ? '10.5px' : '11px',
             fontWeight: 600,
             cursor: 'pointer',
+            whiteSpace: 'nowrap',
           }}
         >
           <Columns size={12} />
-          <span>{t.hudEditor.unifiedDock}</span>
+          <span>{isNarrow ? 'Barra' : t.hudEditor.unifiedDock}</span>
         </button>
 
         <button
@@ -107,20 +127,21 @@ const HorizontalHeaderControls: React.FC<HorizontalPanelProps> = ({
             display: 'flex',
             alignItems: 'center',
             gap: '4px',
-            padding: '4px 8px',
+            padding: isNarrow ? '3px 6px' : '4px 8px',
             borderRadius: '6px',
             border: 'none',
             background:
               dockConfig.layoutMode === 'free_buttons' ? `${accentColor}33` : 'transparent',
             color:
               dockConfig.layoutMode === 'free_buttons' ? accentColor : 'rgba(248, 250, 252, 0.6)',
-            fontSize: '11px',
+            fontSize: isNarrow ? '10.5px' : '11px',
             fontWeight: 600,
             cursor: 'pointer',
+            whiteSpace: 'nowrap',
           }}
         >
           <Grid size={12} />
-          <span>{t.hudEditor.freeButtons}</span>
+          <span>{isNarrow ? 'Libres' : t.hudEditor.freeButtons}</span>
         </button>
       </div>
     </>
@@ -131,13 +152,18 @@ interface HorizontalPresetProps {
   t: ReturnType<typeof useT>;
   dockConfig: LauncherState['dockConfig'];
   accentColor: string;
+  winW?: number;
 }
 
 const HorizontalPresetAndActionControls: React.FC<HorizontalPresetProps> = ({
   t,
   dockConfig,
   accentColor,
+  winW = 1280,
 }) => {
+  const isNarrow = winW < 1200;
+  const isVeryNarrow = winW < 1050;
+
   return (
     <>
       {/* Button Scale / Compact Mode Toggle */}
@@ -149,6 +175,7 @@ const HorizontalPresetAndActionControls: React.FC<HorizontalPresetProps> = ({
           border: '1px solid rgba(255, 255, 255, 0.08)',
           borderRadius: '8px',
           padding: '2px',
+          flexShrink: 0,
         }}
       >
         <button
@@ -159,14 +186,15 @@ const HorizontalPresetAndActionControls: React.FC<HorizontalPresetProps> = ({
             display: 'flex',
             alignItems: 'center',
             gap: '4px',
-            padding: '4px 8px',
+            padding: isNarrow ? '3px 6px' : '4px 8px',
             borderRadius: '6px',
             border: 'none',
             background: dockConfig.scale !== 'compact' ? `${accentColor}33` : 'transparent',
             color: dockConfig.scale !== 'compact' ? accentColor : 'rgba(248, 250, 252, 0.6)',
-            fontSize: '11px',
+            fontSize: isNarrow ? '10.5px' : '11px',
             fontWeight: 600,
             cursor: 'pointer',
+            whiteSpace: 'nowrap',
           }}
         >
           <Maximize2 size={12} />
@@ -181,14 +209,15 @@ const HorizontalPresetAndActionControls: React.FC<HorizontalPresetProps> = ({
             display: 'flex',
             alignItems: 'center',
             gap: '4px',
-            padding: '4px 8px',
+            padding: isNarrow ? '3px 6px' : '4px 8px',
             borderRadius: '6px',
             border: 'none',
             background: dockConfig.scale === 'compact' ? `${accentColor}33` : 'transparent',
             color: dockConfig.scale === 'compact' ? accentColor : 'rgba(248, 250, 252, 0.6)',
-            fontSize: '11px',
+            fontSize: isNarrow ? '10.5px' : '11px',
             fontWeight: 600,
             cursor: 'pointer',
+            whiteSpace: 'nowrap',
           }}
         >
           <Minimize2 size={12} />
@@ -209,17 +238,19 @@ const HorizontalPresetAndActionControls: React.FC<HorizontalPresetProps> = ({
           display: 'flex',
           alignItems: 'center',
           gap: '4px',
-          padding: '4px 8px',
+          padding: isNarrow ? '3px 6px' : '4px 8px',
           borderRadius: '7px',
           border: dockConfig.showLabels
             ? `1px solid ${accentColor}`
             : '1px solid rgba(255, 255, 255, 0.1)',
           background: dockConfig.showLabels ? `${accentColor}33` : 'rgba(255, 255, 255, 0.05)',
           color: dockConfig.showLabels ? accentColor : 'rgba(248, 250, 252, 0.7)',
-          fontSize: '11px',
+          fontSize: isNarrow ? '10.5px' : '11px',
           fontWeight: 600,
           cursor: 'pointer',
           transition: 'all 0.15s ease',
+          whiteSpace: 'nowrap',
+          flexShrink: 0,
         }}
       >
         {dockConfig.showLabels ? <Type size={12} /> : <EyeOff size={12} />}
@@ -227,9 +258,8 @@ const HorizontalPresetAndActionControls: React.FC<HorizontalPresetProps> = ({
       </button>
 
       {/* Presets (when in dock mode) */}
-
       {dockConfig.layoutMode === 'dock' && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
           <button
             type="button"
             onClick={() =>
@@ -253,12 +283,14 @@ const HorizontalPresetAndActionControls: React.FC<HorizontalPresetProps> = ({
                   : '1px solid rgba(255, 255, 255, 0.1)',
               borderRadius: '6px',
               color: dockConfig.positionPreset === 'top' ? accentColor : 'rgba(248, 250, 252, 0.7)',
-              padding: '4px 8px',
+              padding: isNarrow ? '3px 6px' : '4px 8px',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
               gap: '3px',
-              fontSize: '11px',
+              fontSize: isNarrow ? '10.5px' : '11px',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
             }}
           >
             <ArrowUpToLine size={12} />
@@ -286,12 +318,14 @@ const HorizontalPresetAndActionControls: React.FC<HorizontalPresetProps> = ({
               borderRadius: '6px',
               color:
                 dockConfig.positionPreset === 'center' ? accentColor : 'rgba(248, 250, 252, 0.7)',
-              padding: '4px 8px',
+              padding: isNarrow ? '3px 6px' : '4px 8px',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
               gap: '3px',
-              fontSize: '11px',
+              fontSize: isNarrow ? '10.5px' : '11px',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
             }}
           >
             <Minus size={12} />
@@ -319,12 +353,14 @@ const HorizontalPresetAndActionControls: React.FC<HorizontalPresetProps> = ({
               borderRadius: '6px',
               color:
                 dockConfig.positionPreset === 'bottom' ? accentColor : 'rgba(248, 250, 252, 0.7)',
-              padding: '4px 8px',
+              padding: isNarrow ? '3px 6px' : '4px 8px',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
               gap: '3px',
-              fontSize: '11px',
+              fontSize: isNarrow ? '10.5px' : '11px',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
             }}
           >
             <ArrowDownToLine size={12} />
@@ -333,6 +369,7 @@ const HorizontalPresetAndActionControls: React.FC<HorizontalPresetProps> = ({
         </div>
       )}
 
+      {/* Hint Banner: Responsive text to prevent overflow */}
       <div
         style={{
           display: 'flex',
@@ -341,18 +378,29 @@ const HorizontalPresetAndActionControls: React.FC<HorizontalPresetProps> = ({
           background: `${accentColor}18`,
           border: `1px solid ${accentColor}40`,
           borderRadius: '6px',
-          padding: '4px 8px',
-          fontSize: '10.5px',
+          padding: isNarrow ? '3px 6px' : '4px 8px',
+          fontSize: isNarrow ? '10px' : '10.5px',
           color: accentColor,
           fontWeight: 600,
+          whiteSpace: 'nowrap',
+          flexShrink: 0,
         }}
         title="Haz doble clic en cualquier botón del Dock para personalizarlo a fondo"
       >
         <Sparkles size={12} />
-        <span>Doble clic en botón para personalizar</span>
+        {!isVeryNarrow && (
+          <span>{isNarrow ? 'Personalizar' : 'Doble clic en botón para personalizar'}</span>
+        )}
       </div>
 
-      <div style={{ width: '1px', height: '18px', background: 'rgba(255, 255, 255, 0.12)' }} />
+      <div
+        style={{
+          width: '1px',
+          height: '18px',
+          background: 'rgba(255, 255, 255, 0.12)',
+          flexShrink: 0,
+        }}
+      />
 
       {/* Reset */}
       <button
@@ -363,41 +411,50 @@ const HorizontalPresetAndActionControls: React.FC<HorizontalPresetProps> = ({
           background: 'transparent',
           border: 'none',
           color: '#f87171',
-          padding: '4px 8px',
+          padding: isNarrow ? '3px 6px' : '4px 8px',
           borderRadius: '6px',
           cursor: 'pointer',
           display: 'flex',
           alignItems: 'center',
           gap: '4px',
-          fontSize: '11px',
+          fontSize: isNarrow ? '10.5px' : '11px',
           fontWeight: 600,
+          whiteSpace: 'nowrap',
+          flexShrink: 0,
         }}
       >
         <RotateCcw size={12} />
         <span>{t.hudEditor.reset}</span>
       </button>
 
-      {/* Save & Exit */}
+      {/* Save & Exit (Single-line, non-wrapping, perfectly height-aligned) */}
       <button
         type="button"
         onClick={() => launcherActions.setEditingHud(false)}
+        title={t.hudEditor.done}
         style={{
           background: `linear-gradient(135deg, ${accentColor}, #0f766e)`,
           border: `1px solid ${accentColor}`,
           color: '#ffffff',
-          padding: '5px 12px',
-          borderRadius: '8px',
+          padding: isNarrow ? '3px 9px' : '4px 12px',
+          borderRadius: '7px',
           cursor: 'pointer',
-          display: 'flex',
+          display: 'inline-flex',
           alignItems: 'center',
-          gap: '4px',
-          fontSize: '11.5px',
+          gap: '5px',
+          fontSize: isNarrow ? '11px' : '11.5px',
           fontWeight: 700,
           boxShadow: '0 2px 10px rgba(14, 165, 233, 0.4)',
+          whiteSpace: 'nowrap',
+          flexShrink: 0,
+          height: isNarrow ? '24px' : '26px',
+          boxSizing: 'border-box',
         }}
       >
         <Check size={13} strokeWidth={3} />
-        <span>{t.hudEditor.done}</span>
+        <span style={{ whiteSpace: 'nowrap' }}>
+          {isNarrow ? 'Listo' : 'Listo'}
+        </span>
       </button>
     </>
   );

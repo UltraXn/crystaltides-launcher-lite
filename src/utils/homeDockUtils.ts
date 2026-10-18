@@ -133,7 +133,7 @@ export const getEffectClassName = (effect?: string): string => {
 
 export const resolveFreeButtonBorder = (
   isEditingHud: boolean,
-  isDraggingThis: boolean,
+  _isDraggingThis: boolean,
   isColliding: boolean,
   btnCustom: DockButtonCustomization | null | undefined,
   customBtnColor: string | null | undefined,
@@ -142,20 +142,20 @@ export const resolveFreeButtonBorder = (
 ): string => {
   if (isEditingHud) {
     const editColor = accentColor || '#38bdf8';
-    return isDraggingThis && isColliding ? '2px dashed #ef4444' : `2px dashed ${editColor}`;
+    return isColliding ? '2px dashed #ef4444' : `2px dashed ${editColor}`;
   }
   return resolveButtonBorder(btnCustom, customBtnColor, dockBorderColorMode);
 };
 
 export const resolveFreeButtonShadow = (
   isEditingHud: boolean,
-  isDraggingThis: boolean,
+  _isDraggingThis: boolean,
   isColliding: boolean,
   customBtnColor: string | null | undefined,
   accentColor?: string,
 ): string => {
   if (isEditingHud) {
-    return isDraggingThis && isColliding
+    return isColliding
       ? '0 0 20px rgba(239, 68, 68, 0.65)'
       : accentColor
         ? `0 0 16px ${accentColor}66`

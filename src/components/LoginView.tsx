@@ -15,6 +15,7 @@ const YoutubeIcon: React.FC<{ style?: React.CSSProperties }> = ({ style }) => (
 
 export const LoginView: React.FC = () => {
   const language = useLauncherStore((s) => s.language);
+  const accounts = useLauncherStore((s) => s.accounts);
   const t = useT();
   const [authMode, setAuthMode] = useState<'offline' | 'crystaltides'>('offline');
   const [username, setUsername] = useState('');
@@ -141,7 +142,7 @@ export const LoginView: React.FC = () => {
       {/* Centered Login Card */}
       <div className="login-card-container">
         {/* Close button on top-right of card */}
-        {authMode === 'crystaltides' && (
+        {authMode === 'crystaltides' ? (
           <button
             className="login-card-close"
             title="Volver"
@@ -152,7 +153,18 @@ export const LoginView: React.FC = () => {
           >
             <X style={{ width: '16px', height: '16px' }} />
           </button>
-        )}
+        ) : accounts.length > 0 ? (
+          <button
+            className="login-card-close"
+            title="Volver al Launcher"
+            aria-label="Volver al Launcher"
+            onClick={() => {
+              launcherActions.setView('home');
+            }}
+          >
+            <X style={{ width: '16px', height: '16px' }} />
+          </button>
+        ) : null}
 
         {/* Error banner if any */}
         {errorMsg && <div className="login-error-alert">{errorMsg}</div>}

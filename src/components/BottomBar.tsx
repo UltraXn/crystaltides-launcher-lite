@@ -7,7 +7,17 @@ import {
   type UserAccount,
   useT,
 } from '../store/launcherStore';
-import { Globe, GripHorizontal, AlertTriangle, User, Power } from 'lucide-react';
+import {
+  Globe,
+  GripHorizontal,
+  AlertTriangle,
+  User,
+  Power,
+  Pencil,
+  Check,
+  X,
+  Users,
+} from 'lucide-react';
 import {
   getElementDimensions,
   resolveCollisionAndClamp,
@@ -19,8 +29,6 @@ import {
   getWidgetCursor,
   getWidgetOutline,
 } from '../utils/bottomBarUtils';
-
-
 
 export const DiscordIcon: React.FC<{ style?: React.CSSProperties }> = ({ style }) => (
   <svg style={style} viewBox="0 0 24 24" fill="currentColor">
@@ -123,6 +131,7 @@ function useWidgetDrag(
         dims.width,
         dims.height,
         obstacles,
+        { winW, winH },
       );
 
       setTempPositions((prev) => ({
@@ -161,6 +170,7 @@ function useWidgetDrag(
         dims.width,
         dims.height,
         obstacles,
+        { winW, winH },
       );
 
       launcherActions.setWidgetPosition(draggingWidget, { x: resolved.x, y: resolved.y });
@@ -182,34 +192,31 @@ function useWidgetDrag(
       const widgets: WidgetType[] = ['userPill', 'socials', 'serverStatus'];
       const winW = typeof window !== 'undefined' ? window.innerWidth : 1280;
       const winH = typeof window !== 'undefined' ? window.innerHeight : 720;
-      const effectiveHudSide = getEffectiveHudSide(dockConfig, hudManualSide);
 
       for (const w of widgets) {
         const pos = dockConfig.widgetPositions?.[w];
         if (!pos) continue;
-        const { currentBoxId, dims } = getWidgetDims(w);
-        const obstacles = getActiveObstacles(currentBoxId, dockConfig, winW, winH, undefined, {
-          isEditing: isEditingHud,
-          side: effectiveHudSide,
-        });
-        const currentCenterPxX = (pos.x / 100) * winW;
-        const currentCenterPxY = (pos.y / 100) * winH;
-        const resolved = resolveCollisionAndClamp(
-          currentCenterPxX,
-          currentCenterPxY,
-          dims.width,
-          dims.height,
-          obstacles,
-        );
-        if (Math.abs(resolved.x - pos.x) > 0.5 || Math.abs(resolved.y - pos.y) > 0.5) {
-          launcherActions.setWidgetPosition(w, { x: resolved.x, y: resolved.y });
+        const { dims } = getWidgetDims(w);
+        const halfW = dims.width / 2;
+        const halfH = dims.height / 2;
+
+        const minXPct = Math.round(((halfW + 14) / winW) * 100 * 10) / 10;
+        const maxXPct = Math.round(((winW - halfW - 14) / winW) * 100 * 10) / 10;
+        const minYPct = Math.round(((halfH + 64) / winH) * 100 * 10) / 10;
+        const maxYPct = Math.round(((winH - halfH - 14) / winH) * 100 * 10) / 10;
+
+        const clampedX = Math.max(minXPct, Math.min(maxXPct, pos.x));
+        const clampedY = Math.max(minYPct, Math.min(maxYPct, pos.y));
+
+        if (Math.abs(clampedX - pos.x) > 0.5 || Math.abs(clampedY - pos.y) > 0.5) {
+          launcherActions.setWidgetPosition(w, { x: clampedX, y: clampedY });
         }
       }
     };
 
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, [dockConfig, hudManualSide, isEditingHud, getWidgetDims]);
+  }, [dockConfig, getWidgetDims]);
 
   const startDrag = (
     widget: WidgetType,
@@ -230,7 +237,6 @@ function useWidgetDrag(
     };
     setDraggingWidget(widget);
   };
-
 
   return {
     draggingWidget,
@@ -254,8 +260,8 @@ export const WidgetCoordinateBadge: React.FC<{
     <div
       style={{
         position: 'absolute',
-        bottom: y > 10 ? 'calc(100% + 8px)' : 'auto',
-        top: y <= 10 ? 'calc(100% + 8px)' : 'auto',
+        bottom: y > 10 ? 'calc(100% + 28px)' : 'auto',
+        top: y <= 10 ? 'calc(100% + 28px)' : 'auto',
         left: '50%',
         transform: 'translateX(-50%)',
         background:
@@ -351,6 +357,38 @@ export const BottomBarPlayerWidget: React.FC<BottomBarPlayerWidgetProps> = ({
           label={t.hudEditor.collision}
         />
       )}
+      {isEditingHud && (
+        <div
+          role="button"
+          tabIndex={0}
+          aria-label="Arrastrar perfil"
+          onMouseDown={(e) => {
+            e.stopPropagation();
+            drag.startDrag('userPill', e, drag.userPillRef);
+          }}
+          style={{
+            position: 'absolute',
+            bottom: 'calc(100% + 6px)',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'rgba(12, 17, 24, 0.88)',
+            border: '1px solid rgba(56, 189, 248, 0.4)',
+            backdropFilter: 'blur(8px)',
+            borderRadius: '9999px',
+            padding: '3px 10px',
+            color: '#38bdf8',
+            boxShadow: '0 2px 10px rgba(0, 0, 0, 0.5), 0 0 12px rgba(56, 189, 248, 0.25)',
+            cursor: drag.draggingWidget === 'userPill' ? 'grabbing' : 'grab',
+            userSelect: 'none',
+            zIndex: 10,
+          }}
+        >
+          <GripHorizontal size={14} />
+        </div>
+      )}
       <div className="papyrus-player-pill">
         <button
           type="button"
@@ -363,10 +401,6 @@ export const BottomBarPlayerWidget: React.FC<BottomBarPlayerWidgetProps> = ({
             cursor: isEditingHud ? 'grab' : 'pointer',
           }}
         >
-          {isEditingHud && (
-            <GripHorizontal size={14} color="#38bdf8" style={{ marginRight: '4px', flexShrink: 0 }} />
-          )}
-
           <div className="player-avatar-box">
             {(() => {
               const avatar =
@@ -465,10 +499,39 @@ export const BottomBarSocialsWidget: React.FC<BottomBarSocialsWidgetProps> = ({
           label={t.hudEditor.collision}
         />
       )}
+      {isEditingHud && (
+        <div
+          role="button"
+          tabIndex={0}
+          aria-label="Arrastrar redes sociales"
+          onMouseDown={(e) => {
+            e.stopPropagation();
+            drag.startDrag('socials', e, drag.socialsRef);
+          }}
+          style={{
+            position: 'absolute',
+            bottom: 'calc(100% + 6px)',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'rgba(12, 17, 24, 0.88)',
+            border: '1px solid rgba(56, 189, 248, 0.4)',
+            backdropFilter: 'blur(8px)',
+            borderRadius: '9999px',
+            padding: '3px 10px',
+            color: '#38bdf8',
+            boxShadow: '0 2px 10px rgba(0, 0, 0, 0.5), 0 0 12px rgba(56, 189, 248, 0.25)',
+            cursor: drag.draggingWidget === 'socials' ? 'grabbing' : 'grab',
+            userSelect: 'none',
+            zIndex: 10,
+          }}
+        >
+          <GripHorizontal size={14} />
+        </div>
+      )}
       <div className="papyrus-social-dock">
-        {isEditingHud && (
-          <GripHorizontal size={14} color="#38bdf8" style={{ marginRight: '2px' }} />
-        )}
         <a
           href="https://youtube.com"
           target="_blank"
@@ -504,6 +567,56 @@ export const BottomBarSocialsWidget: React.FC<BottomBarSocialsWidgetProps> = ({
   </>
 );
 
+export interface ServerLogoIconProps {
+  online: boolean;
+  icon?: string;
+  serverHost: string;
+}
+
+export const ServerLogoIcon: React.FC<ServerLogoIconProps> = ({ online, icon, serverHost }) => {
+  const [loadError, setLoadError] = useState(false);
+
+  useEffect(() => {
+    setLoadError(false);
+  }, [icon, serverHost, online]);
+
+  if (!online || loadError) {
+    return (
+      <Globe
+        size={14}
+        data-testid="server-globe-fallback"
+        style={{
+          color: online ? '#38bdf8' : '#ef4444',
+          flexShrink: 0,
+        }}
+      />
+    );
+  }
+
+  const effectiveIcon = icon || `https://api.mcstatus.io/v2/icon/${encodeURIComponent(serverHost)}`;
+
+  return (
+    <img
+      src={effectiveIcon}
+      alt="Logo del servidor"
+      data-testid="server-logo-img"
+      width={18}
+      height={18}
+      onError={() => setLoadError(true)}
+      style={{
+        width: '18px',
+        height: '18px',
+        borderRadius: '3px',
+        objectFit: 'contain',
+        imageRendering: 'pixelated',
+        flexShrink: 0,
+        border: '1px solid rgba(255, 255, 255, 0.15)',
+        backgroundColor: 'rgba(0, 0, 0, 0.4)',
+      }}
+    />
+  );
+};
+
 export interface BottomBarServerWidgetProps {
   drag: WidgetDragReturn;
   isEditingHud: boolean;
@@ -518,97 +631,595 @@ export const BottomBarServerWidget: React.FC<BottomBarServerWidgetProps> = ({
   statPos,
   serverStatus,
   t,
-}) => (
-  <>
-    {/* 3. Server Status Widget */}
-    <div
-      ref={drag.serverStatusRef}
-      role="toolbar"
-      tabIndex={0}
-      aria-label="Widget de estado del servidor"
-      onMouseDown={(e) => drag.startDrag('serverStatus', e, drag.serverStatusRef)}
-      style={{
-        position: 'absolute',
-        left: `${statPos.x}%`,
-        top: `${statPos.y}%`,
-        transform: 'translate(-50%, -50%)',
-        zIndex: isEditingHud ? 950 : 30,
-        whiteSpace: 'nowrap',
-        flexShrink: 0,
-        userSelect: 'none',
-        cursor: getWidgetCursor(isEditingHud, drag.draggingWidget === 'serverStatus'),
-        transition:
-          drag.draggingWidget === 'serverStatus'
-            ? 'none'
-            : 'top 0.35s cubic-bezier(0.16, 1, 0.3, 1), left 0.35s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease',
-        outline: getWidgetOutline(
-          isEditingHud,
-          drag.draggingWidget === 'serverStatus',
-          drag.isColliding,
-        ),
-        outlineOffset: '4px',
-        borderRadius: '999px',
-      }}
-    >
-      {isEditingHud && (
-        <WidgetCoordinateBadge
-          x={statPos.x}
-          y={statPos.y}
-          isDragging={drag.draggingWidget === 'serverStatus'}
-          isColliding={drag.isColliding}
-          label={t.hudEditor.collision}
-        />
-      )}
+}) => {
+  const [isHovered, setIsHovered] = useState(false);
+  const [isEditingIp, setIsEditingIp] = useState(false);
+  const [inputIp, setInputIp] = useState(serverStatus.serverHost || 'mc.crystaltidessmp.net');
+  const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [hoveredPlayerName, setHoveredPlayerName] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isEditingIp) {
+      setInputIp(serverStatus.serverHost || 'mc.crystaltidessmp.net');
+    }
+  }, [serverStatus.serverHost, isEditingIp]);
+
+  const handleMouseEnter = () => {
+    if (isEditingHud) return;
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+      hoverTimeoutRef.current = null;
+    }
+    setIsHovered(true);
+  };
+
+  const handleMouseLeave = () => {
+    if (isEditingIp) return;
+    hoverTimeoutRef.current = setTimeout(() => {
+      setIsHovered(false);
+      setHoveredPlayerName(null);
+    }, 280);
+  };
+
+  const handleSaveIp = () => {
+    const trimmed = inputIp.trim();
+    if (trimmed) {
+      launcherActions.setServerHost(trimmed);
+    }
+    setIsEditingIp(false);
+  };
+
+  const handleCancelIp = () => {
+    setInputIp(serverStatus.serverHost || 'mc.crystaltidessmp.net');
+    setIsEditingIp(false);
+  };
+
+  const currentHost = serverStatus.serverHost || 'mc.crystaltidessmp.net';
+  const rawList = serverStatus.playersList ?? [];
+  const totalReportedPlayers = Math.max(serverStatus.playersCount ?? 0, rawList.length);
+  const hasPlayers = rawList.length > 0;
+  const isFew = rawList.length <= 6 && totalReportedPlayers <= 6;
+  const MAX_HEADS = 24;
+  const visiblePlayers = isFew ? rawList : rawList.slice(0, MAX_HEADS);
+  const extraCount = Math.max(0, totalReportedPlayers - visiblePlayers.length);
+
+  return (
+    <>
+      {/* 3. Server Status Widget */}
       <div
-        className="papyrus-server-chip"
-        title={`${t.bottomBar.officialServer} • Ping: ${serverStatus.ping}ms`}
+        ref={drag.serverStatusRef}
+        role="toolbar"
+        tabIndex={0}
+        aria-label="Widget de estado del servidor"
+        onMouseDown={(e) => drag.startDrag('serverStatus', e, drag.serverStatusRef)}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+        style={{
+          position: 'absolute',
+          left: `${statPos.x}%`,
+          top: `${statPos.y}%`,
+          transform: 'translate(-50%, -50%)',
+          zIndex: isEditingHud ? 950 : isHovered ? 1000 : 30,
+          whiteSpace: 'nowrap',
+          flexShrink: 0,
+          userSelect: 'none',
+          cursor: getWidgetCursor(isEditingHud, drag.draggingWidget === 'serverStatus'),
+          transition:
+            drag.draggingWidget === 'serverStatus'
+              ? 'none'
+              : 'top 0.35s cubic-bezier(0.16, 1, 0.3, 1), left 0.35s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease',
+          outline: getWidgetOutline(
+            isEditingHud,
+            drag.draggingWidget === 'serverStatus',
+            drag.isColliding,
+          ),
+          outlineOffset: '4px',
+          borderRadius: '999px',
+        }}
       >
         {isEditingHud && (
-          <GripHorizontal size={14} color="#38bdf8" style={{ marginRight: '2px', flexShrink: 0 }} />
+          <WidgetCoordinateBadge
+            x={statPos.x}
+            y={statPos.y}
+            isDragging={drag.draggingWidget === 'serverStatus'}
+            isColliding={drag.isColliding}
+            label={t.hudEditor.collision}
+          />
         )}
-        <span
-          style={{
-            width: '8px',
-            height: '8px',
-            minWidth: '8px',
-            minHeight: '8px',
-            borderRadius: '50%',
-            backgroundColor: serverStatus.online ? '#22c55e' : '#ef4444',
-            boxShadow: serverStatus.online
-              ? '0 0 8px rgba(34, 197, 94, 0.7)'
-              : '0 0 8px rgba(239, 68, 68, 0.7)',
-            display: 'inline-block',
-            flexShrink: 0,
-          }}
-        />
-        <span
-          style={{
-            fontWeight: 600,
-            color: '#f8fafc',
-            whiteSpace: 'nowrap',
-            fontVariantNumeric: 'tabular-nums',
-          }}
+        {isEditingHud && (
+          <div
+            role="button"
+            tabIndex={0}
+            aria-label="Arrastrar estado del servidor"
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              drag.startDrag('serverStatus', e, drag.serverStatusRef);
+            }}
+            style={{
+              position: 'absolute',
+              bottom: 'calc(100% + 6px)',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'rgba(12, 17, 24, 0.88)',
+              border: '1px solid rgba(56, 189, 248, 0.4)',
+              backdropFilter: 'blur(8px)',
+              borderRadius: '9999px',
+              padding: '3px 10px',
+              color: '#38bdf8',
+              boxShadow: '0 2px 10px rgba(0, 0, 0, 0.5), 0 0 12px rgba(56, 189, 248, 0.25)',
+              cursor: drag.draggingWidget === 'serverStatus' ? 'grabbing' : 'grab',
+              userSelect: 'none',
+              zIndex: 10,
+            }}
+          >
+            <GripHorizontal size={14} />
+          </div>
+        )}
+        <div
+          className="papyrus-server-chip"
+          title={`${t.bottomBar?.officialServer ?? 'Servidor'}: ${currentHost} • Ping: ${serverStatus.online ? `${serverStatus.ping}ms` : '--'}`}
         >
-          {serverStatus.online
-            ? `${serverStatus.playersCount} ${t.bottomBar.online}`
-            : t.bottomBar.offline}
-        </span>
-        <span style={{ color: '#64748b', flexShrink: 0 }}>•</span>
-        <span
-          style={{
-            color: '#94a3b8',
-            fontSize: '11px',
-            whiteSpace: 'nowrap',
-            fontVariantNumeric: 'tabular-nums',
-            flexShrink: 0,
-          }}
-        >
-          {serverStatus.ping}ms
-        </span>
+          <span
+            style={{
+              width: '8px',
+              height: '8px',
+              minWidth: '8px',
+              minHeight: '8px',
+              borderRadius: '50%',
+              backgroundColor: serverStatus.online ? '#22c55e' : '#ef4444',
+              boxShadow: serverStatus.online
+                ? '0 0 8px rgba(34, 197, 94, 0.7)'
+                : '0 0 8px rgba(239, 68, 68, 0.7)',
+              display: 'inline-block',
+              flexShrink: 0,
+            }}
+          />
+          <span
+            style={{
+              fontWeight: 600,
+              color: serverStatus.online ? '#f8fafc' : '#f87171',
+              whiteSpace: 'nowrap',
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            {serverStatus.online
+              ? `${serverStatus.playersCount} ${t.bottomBar?.online ?? 'en línea'}`
+              : (t.bottomBar?.offline ?? 'Sin conexión')}
+          </span>
+          <span style={{ color: '#64748b', flexShrink: 0 }}>•</span>
+          <span
+            style={{
+              color: '#94a3b8',
+              fontSize: '11px',
+              whiteSpace: 'nowrap',
+              fontVariantNumeric: 'tabular-nums',
+              flexShrink: 0,
+            }}
+          >
+            {serverStatus.online ? `${serverStatus.ping}ms` : '--'}
+          </span>
+        </div>
+
+        {/* Hover Popover with connected players & custom IP */}
+        {!isEditingHud && isHovered && (
+          <div
+            data-testid="server-status-popover"
+            style={{
+              position: 'absolute',
+              bottom: 'calc(100% + 10px)',
+              right: 0,
+              minWidth: '270px',
+              maxWidth: '320px',
+              background: 'rgba(10, 14, 22, 0.96)',
+              backdropFilter: 'blur(20px)',
+              border: '1px solid rgba(255, 255, 255, 0.14)',
+              borderRadius: '12px',
+              padding: '12px 14px',
+              boxShadow: '0 16px 40px rgba(0, 0, 0, 0.8), 0 0 20px rgba(56, 189, 248, 0.12)',
+              color: '#f8fafc',
+              zIndex: 1050,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '10px',
+              pointerEvents: 'auto',
+            }}
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            {/* Header: Server Hostname & Edit IP */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                paddingBottom: '8px',
+                borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+                gap: '8px',
+              }}
+            >
+              {!isEditingIp ? (
+                <>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    <ServerLogoIcon
+                      online={serverStatus.online}
+                      icon={serverStatus.icon}
+                      serverHost={currentHost}
+                    />
+                    <span
+                      title={currentHost}
+                      style={{
+                        fontSize: '12px',
+                        fontWeight: 700,
+                        color: '#ffffff',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {currentHost}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingIp(true)}
+                    title={t.bottomBar?.changeServerIp ?? 'Cambiar IP del servidor'}
+                    aria-label="Editar IP del servidor"
+                    style={{
+                      background: 'rgba(255, 255, 255, 0.06)',
+                      border: '1px solid rgba(255, 255, 255, 0.12)',
+                      color: '#94a3b8',
+                      borderRadius: '6px',
+                      padding: '3px 6px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      fontSize: '10px',
+                      fontWeight: 600,
+                      flexShrink: 0,
+                    }}
+                  >
+                    <Pencil size={11} />
+                    <span>IP</span>
+                  </button>
+                </>
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', width: '100%' }}>
+                  <input
+                    type="text"
+                    value={inputIp}
+                    onChange={(e) => setInputIp(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleSaveIp();
+                      if (e.key === 'Escape') handleCancelIp();
+                    }}
+                    autoFocus
+                    placeholder="mc.crystaltidessmp.net"
+                    style={{
+                      flex: 1,
+                      background: 'rgba(0, 0, 0, 0.5)',
+                      border: '1px solid rgba(56, 189, 248, 0.5)',
+                      borderRadius: '6px',
+                      padding: '4px 8px',
+                      color: '#ffffff',
+                      fontSize: '11px',
+                      outline: 'none',
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSaveIp}
+                    title="Guardar"
+                    aria-label="Guardar nueva IP"
+                    style={{
+                      background: 'rgba(34, 197, 94, 0.2)',
+                      border: '1px solid rgba(34, 197, 94, 0.4)',
+                      color: '#4ade80',
+                      borderRadius: '6px',
+                      padding: '4px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <Check size={12} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCancelIp}
+                    title="Cancelar"
+                    aria-label="Cancelar cambio de IP"
+                    style={{
+                      background: 'rgba(239, 68, 68, 0.2)',
+                      border: '1px solid rgba(239, 68, 68, 0.4)',
+                      color: '#f87171',
+                      borderRadius: '6px',
+                      padding: '4px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Status & Stats info row */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                fontSize: '11px',
+                color: '#94a3b8',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span
+                  data-testid="server-status-dot"
+                  style={{
+                    width: '7px',
+                    height: '7px',
+                    borderRadius: '50%',
+                    backgroundColor: serverStatus.online ? '#22c55e' : '#ef4444',
+                    boxShadow: serverStatus.online
+                      ? '0 0 6px rgba(34, 197, 94, 0.7)'
+                      : '0 0 6px rgba(239, 68, 68, 0.7)',
+                    display: 'inline-block',
+                  }}
+                />
+                <span
+                  data-testid="server-status-text"
+                  style={{ fontWeight: 600, color: serverStatus.online ? '#4ade80' : '#f87171' }}
+                >
+                  {serverStatus.online
+                    ? (t.bottomBar?.online ?? 'En línea')
+                    : (t.bottomBar?.offline ?? 'Sin conexión')}
+                </span>
+              </div>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  fontVariantNumeric: 'tabular-nums',
+                }}
+              >
+                <span>Ping: {serverStatus.online ? `${serverStatus.ping}ms` : '--'}</span>
+                <span>•</span>
+                <span>
+                  {serverStatus.playersCount} / {serverStatus.maxPlayers}
+                </span>
+              </div>
+            </div>
+
+            {/* Connected Players / Heads */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  fontSize: '10.5px',
+                  fontWeight: 600,
+                  color: '#94a3b8',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <Users size={12} style={{ color: '#cbd5e1' }} />
+                  <span>
+                    {hoveredPlayerName
+                      ? `Jugador: ${hoveredPlayerName}`
+                      : (t.bottomBar?.connectedPlayers ?? 'Jugadores Conectados')}
+                  </span>
+                </div>
+                {!isFew && hasPlayers && (
+                  <span
+                    style={{
+                      fontSize: '9.5px',
+                      color: '#64748b',
+                      fontVariantNumeric: 'tabular-nums',
+                    }}
+                  >
+                    {totalReportedPlayers} en línea
+                  </span>
+                )}
+              </div>
+
+              {hasPlayers ? (
+                isFew ? (
+                  /* Modo Pocos Jugadores: Cabezas + Nombres */
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(2, 1fr)',
+                      gap: '6px',
+                      maxHeight: '130px',
+                      overflowY: 'auto',
+                      paddingRight: '2px',
+                    }}
+                  >
+                    {visiblePlayers.map((p, idx) => (
+                      <div
+                        key={p.uuid || `${p.name}-${idx}`}
+                        title={p.name}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          background: 'rgba(255, 255, 255, 0.05)',
+                          border: '1px solid rgba(255, 255, 255, 0.08)',
+                          borderRadius: '6px',
+                          padding: '3px 6px',
+                          overflow: 'hidden',
+                        }}
+                      >
+                        <img
+                          src={`https://mc-heads.net/avatar/${encodeURIComponent(p.name)}/24`}
+                          alt={p.name}
+                          width={18}
+                          height={18}
+                          style={{
+                            borderRadius: '3px',
+                            flexShrink: 0,
+                            backgroundColor: '#1e293b',
+                          }}
+                          onError={(e) => {
+                            (e.currentTarget as HTMLImageElement).style.display = 'none';
+                          }}
+                        />
+                        <span
+                          style={{
+                            fontSize: '10.5px',
+                            fontWeight: 600,
+                            color: '#e2e8f0',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {p.name}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  /* Modo Muchos / Demasiados Jugadores: Solo Cabezas con tooltip y contador extra */
+                  <div>
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(6, 1fr)',
+                        gap: '6px',
+                        maxHeight: '140px',
+                        overflowY: 'auto',
+                        paddingRight: '2px',
+                        alignItems: 'center',
+                      }}
+                    >
+                      {visiblePlayers.map((p, idx) => {
+                        const isHovered = hoveredPlayerName === p.name;
+                        return (
+                          <div
+                            key={p.uuid || `${p.name}-${idx}`}
+                            title={p.name}
+                            onMouseEnter={() => setHoveredPlayerName(p.name)}
+                            onMouseLeave={() => setHoveredPlayerName(null)}
+                            style={{
+                              width: '28px',
+                              height: '28px',
+                              borderRadius: '4px',
+                              border: isHovered
+                                ? '1px solid #38bdf8'
+                                : '1px solid rgba(255, 255, 255, 0.12)',
+                              boxShadow: isHovered ? '0 0 8px rgba(56, 189, 248, 0.5)' : 'none',
+                              transform: isHovered ? 'scale(1.15)' : 'scale(1)',
+                              transition: 'all 0.15s ease',
+                              cursor: 'pointer',
+                              overflow: 'hidden',
+                              backgroundColor: '#1e293b',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              flexShrink: 0,
+                            }}
+                          >
+                            <img
+                              src={`https://mc-heads.net/avatar/${encodeURIComponent(p.name)}/28`}
+                              alt={p.name}
+                              width={28}
+                              height={28}
+                              style={{
+                                width: '100%',
+                                height: '100%',
+                                objectFit: 'cover',
+                              }}
+                              onError={(e) => {
+                                (e.currentTarget as HTMLImageElement).style.display = 'none';
+                              }}
+                            />
+                          </div>
+                        );
+                      })}
+
+                      {extraCount > 0 && (
+                        <div
+                          title={`+${extraCount} jugadores más conectados`}
+                          style={{
+                            width: '28px',
+                            height: '28px',
+                            borderRadius: '4px',
+                            background: 'rgba(56, 189, 248, 0.14)',
+                            border: '1px solid rgba(56, 189, 248, 0.35)',
+                            color: '#38bdf8',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '9.5px',
+                            fontWeight: 700,
+                            fontFamily: 'monospace',
+                            cursor: 'default',
+                            flexShrink: 0,
+                          }}
+                        >
+                          +{extraCount > 99 ? '99+' : extraCount}
+                        </div>
+                      )}
+                    </div>
+
+                    {extraCount > 0 && (
+                      <div
+                        style={{
+                          fontSize: '9.5px',
+                          color: '#94a3b8',
+                          textAlign: 'center',
+                          marginTop: '6px',
+                        }}
+                      >
+                        {t.bottomBar.morePlayersOnServer.replace('{count}', String(extraCount))}
+                      </div>
+                    )}
+                  </div>
+                )
+              ) : (
+                <div
+                  style={{
+                    background: 'rgba(255, 255, 255, 0.03)',
+                    border: '1px dashed rgba(255, 255, 255, 0.08)',
+                    borderRadius: '6px',
+                    padding: '8px',
+                    textAlign: 'center',
+                    fontSize: '10.5px',
+                    color: '#64748b',
+                  }}
+                >
+                  {!serverStatus.online
+                    ? (t.bottomBar?.offline ?? 'Sin conexión')
+                    : serverStatus.playersCount === 0
+                      ? (t.bottomBar?.noPlayersConnected ?? 'No hay jugadores conectados.')
+                      : `${serverStatus.playersCount} ${t.bottomBar?.playersListHidden ?? 'jugadores conectados (lista oculta por el servidor).'}`}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
-    </div>
-  </>
-);
+    </>
+  );
+};
 
 export const BottomBar: React.FC = () => {
   const accounts = useLauncherStore((s: LauncherState) => s.accounts);
