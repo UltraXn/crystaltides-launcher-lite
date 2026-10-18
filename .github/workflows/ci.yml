@@ -107,6 +107,11 @@ jobs:
         working-directory: src-tauri
         run: cargo deny check advisories
 
+      # Puts the MSVC tools (dumpbin) on PATH for the architecture check below.
+      - name: Setup MSVC
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
       - name: Verify ct-agent.dll compilation (MSVC x64)
         if: runner.os == 'Windows'
         working-directory: native/ct-agent
@@ -114,15 +119,7 @@ jobs:
         run: |
           $jdk = if ($env:JAVA_HOME_21_X64) { $env:JAVA_HOME_21_X64 } else { $env:JAVA_HOME }
           .\build.ps1 -JdkPath $jdk
-          $dumpbinCmd = Get-Command dumpbin.exe -ErrorAction SilentlyContinue
-          $headers = if ($dumpbinCmd) {
-            dumpbin /headers ct-agent.dll
-          } else {
-            $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-            $vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-            $vcvars = Join-Path $vsPath "VC\Auxiliary\Build\vcvars64.bat"
-            cmd /c "call `"$vcvars`" >nul && dumpbin /headers ct-agent.dll"
-          }
+          $headers = dumpbin /headers ct-agent.dll
           if (($headers -join "`n") -notmatch "machine \(x64\)") {
             Write-Error "ct-agent.dll is not x64 architecture!"
             exit 1
