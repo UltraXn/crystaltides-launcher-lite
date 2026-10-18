@@ -18,6 +18,7 @@ export interface ImportableInstance {
   jvm_args?: string;
   resolution_width?: number;
   resolution_height?: number;
+  has_omitted_jvm_args?: boolean;
 }
 
 export const fetchExternalInstances = async (): Promise<ImportableInstance[]> => {

@@ -24,6 +24,8 @@ pub struct ImportableInstance {
     pub resolution_width: Option<u32>,
     #[serde(default)]
     pub resolution_height: Option<u32>,
+    #[serde(default)]
+    pub has_omitted_jvm_args: Option<bool>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -315,6 +317,53 @@ pub fn parse_ram_from_jvm_args(args: &str) -> (Option<f64>, Option<f64>) {
     (min_ram, max_ram)
 }
 
+/// Filtra argumentos de JVM importados: solo conserva los inofensivos (-Xmx/-Xms, -XX: de rendimiento, -D…)
+/// y descarta argumentos peligrosos (-javaagent, -agentpath, -agentlib, -Xbootclasspath, jdwp, etc.).
+/// Retorna `(Option<String>, bool)` donde el booleano indica si se omitió algún argumento.
+pub fn sanitize_jvm_args(args: &str) -> (Option<String>, bool) {
+    let mut safe_tokens = Vec::new();
+    let mut has_omitted = false;
+
+    for token in args.split_whitespace() {
+        let lower = token.to_lowercase();
+        if lower.starts_with("-javaagent")
+            || lower.starts_with("-agentpath")
+            || lower.starts_with("-agentlib")
+            || lower.starts_with("-xbootclasspath")
+            || lower.contains("jdwp")
+            || lower.starts_with("-xdebug")
+            || lower.starts_with("-xrunjdwp")
+        {
+            has_omitted = true;
+            continue;
+        }
+
+        // Flags inofensivos permitidos:
+        // -X (ej. -Xmx, -Xms, -Xmn, -Xss)
+        // -XX: (ej. -XX:+UseG1GC, -XX:+UnlockExperimentalVMOptions)
+        // -D (propiedades de sistema Java, ej. -Djava.net.preferIPv4Stack=true)
+        // -server, -client
+        if token.starts_with("-X")
+            || token.starts_with("-XX:")
+            || token.starts_with("-D")
+            || token == "-server"
+            || token == "-client"
+        {
+            safe_tokens.push(token);
+        } else {
+            has_omitted = true;
+        }
+    }
+
+    let sanitized = if safe_tokens.is_empty() {
+        None
+    } else {
+        Some(safe_tokens.join(" "))
+    };
+
+    (sanitized, has_omitted)
+}
+
 #[derive(Default, Debug, Clone)]
 pub struct ImportedConfig {
     pub min_ram_gb: Option<f64>,
@@ -322,6 +371,7 @@ pub struct ImportedConfig {
     pub jvm_args: Option<String>,
     pub resolution_width: Option<u32>,
     pub resolution_height: Option<u32>,
+    pub has_omitted_jvm_args: Option<bool>,
 }
 
 pub fn parse_prism_config(content: &str) -> ImportedConfig {
@@ -339,7 +389,11 @@ pub fn parse_prism_config(content: &str) -> ImportedConfig {
         } else if let Some(val) = trimmed.strip_prefix("JvmArgs=") {
             let s = val.trim();
             if !s.is_empty() {
-                config.jvm_args = Some(s.to_string());
+                let (safe_args, omitted) = sanitize_jvm_args(s);
+                config.jvm_args = safe_args;
+                if omitted {
+                    config.has_omitted_jvm_args = Some(true);
+                }
             }
         } else if let Some(val) = trimmed.strip_prefix("WindowWidth=") {
             if let Ok(w) = val.trim().parse::<u32>() {
@@ -361,12 +415,19 @@ pub fn parse_curseforge_config(content: &str) -> ImportedConfig {
             .get("allocatedMemory")
             .and_then(|m| m.as_f64())
             .map(|mb| (mb / 1024.0 * 10.0).round() / 10.0);
-        config.jvm_args = val
+        if let Some(raw_args) = val
             .get("customJavaArgs")
             .or_else(|| val.get("jvmArgs"))
             .and_then(|a| a.as_str())
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty());
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+        {
+            let (safe_args, omitted) = sanitize_jvm_args(raw_args);
+            config.jvm_args = safe_args;
+            if omitted {
+                config.has_omitted_jvm_args = Some(true);
+            }
+        }
         config.resolution_width = val
             .get("resolution")
             .and_then(|r| r.get("width"))
@@ -390,11 +451,18 @@ pub fn parse_modrinth_config(content: &str) -> ImportedConfig {
             .get("memory")
             .and_then(|m| m.as_f64())
             .map(|mb| (mb / 1024.0 * 10.0).round() / 10.0);
-        config.jvm_args = val
+        if let Some(raw_args) = val
             .get("java_args")
             .and_then(|a| a.as_str())
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty());
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+        {
+            let (safe_args, omitted) = sanitize_jvm_args(raw_args);
+            config.jvm_args = safe_args;
+            if omitted {
+                config.has_omitted_jvm_args = Some(true);
+            }
+        }
         config.resolution_width = val
             .get("resolution")
             .and_then(|r| r.get("width"))
@@ -462,13 +530,16 @@ fn scan_mojang_instances(home: &Path, results: &mut Vec<ImportableInstance>) {
                             name_raw.trim().to_string()
                         };
 
-                        let java_args = val
+                        let (sanitized_args, has_omitted) = val
                             .get("javaArgs")
                             .and_then(|a| a.as_str())
-                            .map(|s| s.trim().to_string())
-                            .filter(|s| !s.is_empty());
-                        let (min_ram_gb, max_ram_gb) = java_args
-                            .as_deref()
+                            .map(|s| s.trim())
+                            .filter(|s| !s.is_empty())
+                            .map(sanitize_jvm_args)
+                            .unwrap_or((None, false));
+                        let (min_ram_gb, max_ram_gb) = val
+                            .get("javaArgs")
+                            .and_then(|a| a.as_str())
                             .map(parse_ram_from_jvm_args)
                             .unwrap_or((None, None));
                         let resolution_width = val
@@ -496,9 +567,10 @@ fn scan_mojang_instances(home: &Path, results: &mut Vec<ImportableInstance>) {
                             icon: Some("cube".to_string()),
                             min_ram_gb,
                             max_ram_gb,
-                            jvm_args: java_args,
+                            jvm_args: sanitized_args,
                             resolution_width,
                             resolution_height,
+                            has_omitted_jvm_args: if has_omitted { Some(true) } else { None },
                         });
                     }
                 }
@@ -585,6 +657,7 @@ fn scan_curseforge_instances(home: &Path, results: &mut Vec<ImportableInstance>)
                                 jvm_args,
                                 resolution_width,
                                 resolution_height,
+                                has_omitted_jvm_args: cfg.has_omitted_jvm_args,
                             });
                         }
                     }
@@ -650,6 +723,7 @@ fn scan_modrinth_instances(home: &Path, results: &mut Vec<ImportableInstance>) {
                 let mut jvm_args = None;
                 let mut resolution_width = None;
                 let mut resolution_height = None;
+                let mut has_omitted_jvm_args = None;
 
                 let profile_json = path.join("profile.json");
                 if profile_json.exists() {
@@ -666,6 +740,7 @@ fn scan_modrinth_instances(home: &Path, results: &mut Vec<ImportableInstance>) {
                         jvm_args = cfg.jvm_args;
                         resolution_width = cfg.resolution_width;
                         resolution_height = cfg.resolution_height;
+                        has_omitted_jvm_args = cfg.has_omitted_jvm_args;
                     }
                 }
 
@@ -686,6 +761,7 @@ fn scan_modrinth_instances(home: &Path, results: &mut Vec<ImportableInstance>) {
                     jvm_args,
                     resolution_width,
                     resolution_height,
+                    has_omitted_jvm_args,
                 });
             }
         }
@@ -755,6 +831,7 @@ fn scan_prism_instances(home: &Path, results: &mut Vec<ImportableInstance>) {
                 let mut jvm_args = None;
                 let mut resolution_width = None;
                 let mut resolution_height = None;
+                let mut has_omitted_jvm_args = None;
 
                 if let Ok(content) = fs::read_to_string(&cfg_file) {
                     for line in content.lines() {
@@ -771,6 +848,7 @@ fn scan_prism_instances(home: &Path, results: &mut Vec<ImportableInstance>) {
                     jvm_args = cfg.jvm_args;
                     resolution_width = cfg.resolution_width;
                     resolution_height = cfg.resolution_height;
+                    has_omitted_jvm_args = cfg.has_omitted_jvm_args;
                 }
 
                 let mmc_pack = path.join("mmc-pack.json");
@@ -815,6 +893,7 @@ fn scan_prism_instances(home: &Path, results: &mut Vec<ImportableInstance>) {
                     jvm_args,
                     resolution_width,
                     resolution_height,
+                    has_omitted_jvm_args,
                 });
             }
         }
@@ -859,6 +938,7 @@ pub fn inspect_custom_instance_dir(path_str: &str) -> Result<ImportableInstance,
     let mut jvm_args = None;
     let mut resolution_width = None;
     let mut resolution_height = None;
+    let mut has_omitted_jvm_args = None;
 
     // 1. Check if CurseForge
     let cf_file = path.join("minecraftinstance.json");
@@ -893,6 +973,9 @@ pub fn inspect_custom_instance_dir(path_str: &str) -> Result<ImportableInstance,
             if cfg.resolution_height.is_some() {
                 resolution_height = cfg.resolution_height;
             }
+            if cfg.has_omitted_jvm_args.is_some() {
+                has_omitted_jvm_args = cfg.has_omitted_jvm_args;
+            }
         }
     }
 
@@ -923,6 +1006,9 @@ pub fn inspect_custom_instance_dir(path_str: &str) -> Result<ImportableInstance,
             if cfg.resolution_height.is_some() {
                 resolution_height = cfg.resolution_height;
             }
+            if cfg.has_omitted_jvm_args.is_some() {
+                has_omitted_jvm_args = cfg.has_omitted_jvm_args;
+            }
         }
     }
 
@@ -951,6 +1037,9 @@ pub fn inspect_custom_instance_dir(path_str: &str) -> Result<ImportableInstance,
             }
             if cfg.resolution_height.is_some() {
                 resolution_height = cfg.resolution_height;
+            }
+            if cfg.has_omitted_jvm_args.is_some() {
+                has_omitted_jvm_args = cfg.has_omitted_jvm_args;
             }
         }
     }
@@ -1002,6 +1091,7 @@ pub fn inspect_custom_instance_dir(path_str: &str) -> Result<ImportableInstance,
         jvm_args,
         resolution_width,
         resolution_height,
+        has_omitted_jvm_args,
     })
 }
 
@@ -1148,5 +1238,21 @@ WindowHeight=1080
         let (min_m, max_m) = parse_ram_from_jvm_args("-Xms1024M -Xmx4096M");
         assert_eq!(min_m, Some(1.0));
         assert_eq!(max_m, Some(4.0));
+    }
+
+    #[test]
+    fn test_sanitize_jvm_args() {
+        let dirty = "-Xms2G -Xmx6G -XX:+UseG1GC -javaagent:evil.jar -agentpath:/tmp/hack.so -Dcustom.prop=true --unrecognized-flag";
+        let (safe, omitted) = sanitize_jvm_args(dirty);
+        assert!(omitted);
+        assert_eq!(
+            safe,
+            Some("-Xms2G -Xmx6G -XX:+UseG1GC -Dcustom.prop=true".to_string())
+        );
+
+        let clean = "-Xms4G -Xmx4G -XX:+UseZGC -Dprism=1";
+        let (clean_safe, clean_omitted) = sanitize_jvm_args(clean);
+        assert!(!clean_omitted);
+        assert_eq!(clean_safe, Some(clean.to_string()));
     }
 }

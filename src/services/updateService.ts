@@ -49,7 +49,7 @@ export const restartApp = async (): Promise<void> => {
 export const fetchRemoteReleaseNotes = async (versionTag: string): Promise<string | null> => {
   try {
     const res = await fetch(
-      `https://api.github.com/repos/UltraXn/crystaltides-launcher-lite/releases/tags/${versionTag}`,
+      `https://api.github.com/repos/UltraXn/crystaltides-launcher-lite/releases/tags/${encodeURIComponent(versionTag)}`,
     );
     if (!res.ok) return null;
     const data = (await res.json()) as { body?: string };

@@ -358,6 +358,22 @@ export const InstancesImportTab: React.FC<InstancesImportTabProps> = ({ onImport
                       JVM Args
                     </span>
                   )}
+                  {customResult.has_omitted_jvm_args && (
+                    <span
+                      title="Se omitieron argumentos JVM no seguros (ej. javaagent) por seguridad."
+                      style={{
+                        fontSize: '10px',
+                        fontWeight: 600,
+                        padding: '1px 6px',
+                        borderRadius: '4px',
+                        background: 'rgba(245, 158, 11, 0.15)',
+                        color: '#f59e0b',
+                        border: '1px solid rgba(245, 158, 11, 0.3)',
+                      }}
+                    >
+                      ⚠️ Args filtrados
+                    </span>
+                  )}
                 </div>
               )}
               <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>{customResult.game_dir}</div>
@@ -508,7 +524,7 @@ export const InstancesImportTab: React.FC<InstancesImportTabProps> = ({ onImport
                     <span>{item.mods_count > 0 ? `${item.mods_count} mods` : t.instances.importNoMods}</span>
                   </div>
 
-                  {(item.max_ram_gb || item.resolution_width || item.jvm_args) && (
+                  {(item.max_ram_gb || item.resolution_width || item.jvm_args || item.has_omitted_jvm_args) && (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
                       {item.max_ram_gb && (
                         <span style={{ fontSize: '10px', fontWeight: 600, padding: '1px 6px', borderRadius: '4px', background: 'rgba(45, 212, 191, 0.1)', color: '#2dd4bf', border: '1px solid rgba(45, 212, 191, 0.25)' }}>
@@ -523,6 +539,22 @@ export const InstancesImportTab: React.FC<InstancesImportTabProps> = ({ onImport
                       {item.jvm_args && (
                         <span title={item.jvm_args} style={{ fontSize: '10px', fontWeight: 600, padding: '1px 6px', borderRadius: '4px', background: 'rgba(168, 85, 247, 0.1)', color: '#c084fc', border: '1px solid rgba(168, 85, 247, 0.2)' }}>
                           JVM Args
+                        </span>
+                      )}
+                      {item.has_omitted_jvm_args && (
+                        <span
+                          title="Se omitieron argumentos JVM no seguros (ej. javaagent) por seguridad."
+                          style={{
+                            fontSize: '10px',
+                            fontWeight: 600,
+                            padding: '1px 6px',
+                            borderRadius: '4px',
+                            background: 'rgba(245, 158, 11, 0.15)',
+                            color: '#f59e0b',
+                            border: '1px solid rgba(245, 158, 11, 0.3)',
+                          }}
+                        >
+                          ⚠️ Args filtrados
                         </span>
                       )}
                     </div>

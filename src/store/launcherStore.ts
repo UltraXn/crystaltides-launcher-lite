@@ -438,29 +438,54 @@ export const loadInitialDockConfig = (): DockConfig => {
             ...parsed.buttonPositions,
           };
 
-      // Repair widgets if they were previously ejected into canvas center (y < 80)
+      // Sanitize widget coordinates: only reset if invalid/NaN/out-of-bounds, preserving intentional user placement
+      const sanitizeWidgetCoord = (
+        coord: { x: number; y: number } | undefined,
+        fallback: { x: number; y: number },
+      ) => {
+        if (
+          !coord ||
+          typeof coord.x !== 'number' ||
+          typeof coord.y !== 'number' ||
+          Number.isNaN(coord.x) ||
+          Number.isNaN(coord.y) ||
+          coord.x < 0 ||
+          coord.x > 100 ||
+          coord.y < 0 ||
+          coord.y > 100
+        ) {
+          return fallback;
+        }
+        return coord;
+      };
+
       const rawWidgets = {
         ...DEFAULT_DOCK_CONFIG.widgetPositions,
         ...parsed.widgetPositions,
       };
       const effectiveWidgetPositions = {
-        userPill:
-          rawWidgets.userPill?.y && rawWidgets.userPill.y < 80
-            ? DEFAULT_DOCK_CONFIG.widgetPositions.userPill
-            : rawWidgets.userPill,
-        socials:
-          rawWidgets.socials?.y && rawWidgets.socials.y < 80
-            ? DEFAULT_DOCK_CONFIG.widgetPositions.socials
-            : rawWidgets.socials,
-        serverStatus:
-          rawWidgets.serverStatus?.y && rawWidgets.serverStatus.y < 80
-            ? DEFAULT_DOCK_CONFIG.widgetPositions.serverStatus
-            : rawWidgets.serverStatus,
+        userPill: sanitizeWidgetCoord(
+          rawWidgets.userPill,
+          DEFAULT_DOCK_CONFIG.widgetPositions.userPill,
+        ),
+        socials: sanitizeWidgetCoord(
+          rawWidgets.socials,
+          DEFAULT_DOCK_CONFIG.widgetPositions.socials,
+        ),
+        serverStatus: sanitizeWidgetCoord(
+          rawWidgets.serverStatus,
+          DEFAULT_DOCK_CONFIG.widgetPositions.serverStatus,
+        ),
       };
+
+      // Clamp iconScale strictly between 0.6 and 1.8
+      const rawScale = typeof parsed.iconScale === 'number' ? parsed.iconScale : 1.0;
+      const clampedIconScale = Number.isNaN(rawScale) ? 1.0 : Math.min(1.8, Math.max(0.6, rawScale));
 
       return {
         ...DEFAULT_DOCK_CONFIG,
         ...parsed,
+        iconScale: clampedIconScale,
         buttonPositions: effectiveButtonPositions,
         widgetPositions: effectiveWidgetPositions,
         visibleButtons: Array.from(visibleSet),
@@ -1102,6 +1127,11 @@ export const launcherActions = {
   },
 
   setDockConfig: (partial: Partial<DockConfig>) => {
+    if (typeof partial.iconScale === 'number') {
+      partial.iconScale = Number.isNaN(partial.iconScale)
+        ? 1.0
+        : Math.min(1.8, Math.max(0.6, partial.iconScale));
+    }
     setStoreState((prev) => {
       const nextConfig = { ...prev.dockConfig, ...partial };
       try {
