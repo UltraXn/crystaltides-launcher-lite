@@ -1994,15 +1994,28 @@ export const launcherActions = {
         }
       }, 1000);
 
-      await registerListener<number>('java-install-progress', (event) => {
-        setStoreState(() => ({
-          launch: {
-            status: 'DOWNLOADING',
-            progress: Math.min(90, Math.max(10, Math.round(event.payload * 100))),
-            message: `Instalando entorno Java... (${Math.round(event.payload * 100)}%)`,
-          },
-        }));
-      });
+      await registerListener<number | { progress?: number; message?: string }>(
+        'java-install-progress',
+        (event) => {
+          let prog = 0;
+          let msg = '';
+          if (typeof event.payload === 'number') {
+            prog = Math.min(95, Math.max(10, Math.round(event.payload * 100)));
+            msg = `Instalando entorno Java... (${Math.round(event.payload * 100)}%)`;
+          } else if (event.payload && typeof event.payload === 'object') {
+            const rawProg = typeof event.payload.progress === 'number' ? event.payload.progress : 0;
+            prog = Math.min(95, Math.max(10, Math.round(rawProg * 100)));
+            msg = event.payload.message || `Instalando entorno Java... (${prog}%)`;
+          }
+          setStoreState(() => ({
+            launch: {
+              status: 'DOWNLOADING',
+              progress: prog,
+              message: msg,
+            },
+          }));
+        },
+      );
 
       await registerListener<number>('mod-download-progress', (event) => {
         const currentModIdx = (event.payload ?? 0) + 1;

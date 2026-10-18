@@ -1069,6 +1069,7 @@ export const launchGame = async (
 
     onProgress?.('Comprobando entorno de Java...', 40);
     const javaPath = await resolveJavaRuntime(mcVer, params, normalizedHome, log);
+    onProgress?.('Verificando cargador de versiones...', 50);
 
     if (isCancelled?.()) {
       log('Lanzamiento cancelado por el usuario antes de instalar loader.', 'WARN');

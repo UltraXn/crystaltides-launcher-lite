@@ -1,5 +1,13 @@
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
+
+#[derive(serde::Serialize, Clone, Debug)]
+pub struct JavaProgressPayload {
+    pub progress: f32,
+    pub phase: String,
+    pub message: String,
+}
 
 // Data structures for Adoptium API response
 #[derive(serde::Deserialize, Debug)]
@@ -139,29 +147,81 @@ fn extract_zip_entry<R: std::io::Read>(
             fs::create_dir_all(p).map_err(|e| format!("Error al crear parent dir: {}", e))?;
         }
     }
-    let mut outfile = fs::File::create(&outpath)
+
+    // Si ya existe un archivo con permisos de solo lectura, desmarcarlo o borrarlo
+    if outpath.exists() {
+        if let Ok(metadata) = fs::metadata(&outpath) {
+            let mut permissions = metadata.permissions();
+            #[allow(clippy::permissions_set_readonly_false)]
+            if permissions.readonly() {
+                permissions.set_readonly(false);
+                let _ = fs::set_permissions(&outpath, permissions);
+            }
+        }
+        let _ = fs::remove_file(&outpath);
+    }
+
+    let outfile = fs::File::create(&outpath)
         .map_err(|e| format!("Error al crear archivo de salida: {}", e))?;
-    std::io::copy(file, &mut outfile)
+    let mut buffered_out = std::io::BufWriter::with_capacity(64 * 1024, outfile);
+    std::io::copy(file, &mut buffered_out)
         .map_err(|e| format!("Error al copiar contenido de archivo: {}", e))?;
+    buffered_out
+        .flush()
+        .map_err(|e| format!("Error al vaciar buffer de archivo: {}", e))?;
     Ok(())
 }
 
-fn extract_zip_archive(zip_path: &Path, version_dir: &Path) -> Result<(), String> {
+fn extract_zip_archive<F>(
+    zip_path: &Path,
+    version_dir: &Path,
+    mut on_progress: Option<F>,
+) -> Result<(), String>
+where
+    F: FnMut(f32) + Send,
+{
     let zip_file = fs::File::open(zip_path)
         .map_err(|e| format!("Error al abrir archivo zip de Java: {}", e))?;
+    let buffered_file = std::io::BufReader::with_capacity(128 * 1024, zip_file);
     let mut archive =
-        zip::ZipArchive::new(zip_file).map_err(|e| format!("Error al leer archivo zip: {}", e))?;
+        zip::ZipArchive::new(buffered_file).map_err(|e| format!("Error al leer archivo zip: {}", e))?;
 
-    for i in 0..archive.len() {
+    let total = archive.len();
+    let mut last_emit = std::time::Instant::now();
+    let mut last_fraction = 0.0f32;
+
+    for i in 0..total {
         let mut file = archive
             .by_index(i)
             .map_err(|e| format!("Error al descomprimir entrada zip: {}", e))?;
         extract_zip_entry(&mut file, version_dir)?;
+
+        if total > 0 {
+            if let Some(ref mut cb) = on_progress {
+                let fraction = (i + 1) as f32 / total as f32;
+                let now = std::time::Instant::now();
+                if (fraction - last_fraction) >= 0.02
+                    || now.duration_since(last_emit) >= std::time::Duration::from_millis(150)
+                    || i + 1 == total
+                {
+                    cb(fraction);
+                    last_fraction = fraction;
+                    last_emit = now;
+                }
+            }
+        }
     }
     Ok(())
 }
 
-fn extract_archive(archive_path: &Path, version_dir: &Path) -> Result<(), String> {
+fn extract_archive<F>(
+    archive_path: &Path,
+    version_dir: &Path,
+    on_progress: Option<F>,
+) -> Result<(), String>
+where
+    F: FnMut(f32) + Send,
+{
     let file_name = archive_path
         .file_name()
         .and_then(|n| n.to_str())
@@ -176,9 +236,12 @@ fn extract_archive(archive_path: &Path, version_dir: &Path) -> Result<(), String
         archive
             .unpack(version_dir)
             .map_err(|e| format!("Error al extraer archivo tar.gz de Java: {}", e))?;
+        if let Some(mut cb) = on_progress {
+            cb(1.0);
+        }
         Ok(())
     } else {
-        extract_zip_archive(archive_path, version_dir)
+        extract_zip_archive(archive_path, version_dir, on_progress)
     }
 }
 
@@ -231,10 +294,10 @@ pub async fn download_and_install_java<F>(
     version: u8,
     install_dir: &Path,
     distribution: Option<&str>,
-    on_progress: F,
+    mut on_progress: F,
 ) -> Result<PathBuf, String>
 where
-    F: FnMut(f32) + Send,
+    F: FnMut(JavaProgressPayload) + Send + 'static,
 {
     let dist = distribution.unwrap_or("adoptium").to_lowercase();
     let is_graalvm = dist.contains("graal");
@@ -303,14 +366,50 @@ where
         "JavaManager",
         &format!("Descargando paquete de Java {} ({})", version, file_name),
     );
-    download_file_to_path(
-        &download_url,
-        &zip_path,
-        &expected_hash,
-        version,
-        on_progress,
-    )
-    .await?;
+
+    on_progress(JavaProgressPayload {
+        progress: 0.05,
+        phase: "downloading".to_string(),
+        message: format!("Descargando Java {}... (5%)", version),
+    });
+
+    let (download_tx, mut download_rx) = tokio::sync::mpsc::unbounded_channel::<f32>();
+    let download_handle = {
+        let download_url = download_url.clone();
+        let zip_path = zip_path.clone();
+        let expected_hash = expected_hash.clone();
+        tokio::spawn(async move {
+            download_file_to_path(
+                &download_url,
+                &zip_path,
+                &expected_hash,
+                version,
+                move |frac| {
+                    let _ = download_tx.send(frac);
+                },
+            )
+            .await
+        })
+    };
+
+    while let Some(frac) = download_rx.recv().await {
+        let pct = (frac * 100.0).round() as u32;
+        on_progress(JavaProgressPayload {
+            progress: frac * 0.65,
+            phase: "downloading".to_string(),
+            message: format!("Descargando Java {}... ({}%)", version, pct),
+        });
+    }
+
+    download_handle
+        .await
+        .map_err(|e| format!("Fallo en tarea de descarga de Java: {}", e))??;
+
+    on_progress(JavaProgressPayload {
+        progress: 0.65,
+        phase: "extracting".to_string(),
+        message: format!("Preparando descompresión de Java {}...", version),
+    });
 
     if version_dir.exists() {
         let _ = remove_dir_all_with_retry(&version_dir);
@@ -323,9 +422,31 @@ where
         "JavaManager",
         &format!("Descomprimiendo Java {} en {:?}", version, version_dir),
     );
+
+    let (extract_tx, mut extract_rx) = tokio::sync::mpsc::unbounded_channel::<f32>();
     let zip_extract_path = zip_path.clone();
     let ver_dir_extract = version_dir.clone();
-    tokio::task::spawn_blocking(move || extract_archive(&zip_extract_path, &ver_dir_extract))
+
+    let extract_task = tokio::task::spawn_blocking(move || {
+        extract_archive(
+            &zip_extract_path,
+            &ver_dir_extract,
+            Some(move |frac| {
+                let _ = extract_tx.send(frac);
+            }),
+        )
+    });
+
+    while let Some(frac) = extract_rx.recv().await {
+        let pct = (frac * 100.0).round() as u32;
+        on_progress(JavaProgressPayload {
+            progress: 0.65 + (frac * 0.35),
+            phase: "extracting".to_string(),
+            message: format!("Descomprimiendo archivos de Java {}... ({}%)", version, pct),
+        });
+    }
+
+    extract_task
         .await
         .map_err(|e| format!("Fallo en hilo de descompresión: {}", e))??;
 
@@ -339,6 +460,13 @@ where
     })?;
 
     let _ = fs::remove_dir_all(temp_dir);
+
+    on_progress(JavaProgressPayload {
+        progress: 1.0,
+        phase: "completed".to_string(),
+        message: format!("Java {} ({}) configurado con éxito.", version, dist),
+    });
+
     crate::logger::log(
         "INFO",
         "JavaManager",
@@ -574,8 +702,24 @@ pub fn resolve(requested: Option<&str>, required_major: Option<u32>) -> Result<P
 }
 
 fn remove_dir_all_with_retry(path: &Path) -> std::io::Result<()> {
+    if !path.exists() {
+        return Ok(());
+    }
+
+    // En Windows, limpiar atributos de solo lectura recursivamente
+    for entry in walkdir::WalkDir::new(path).into_iter().filter_map(|e| e.ok()) {
+        if let Ok(metadata) = entry.metadata() {
+            let mut permissions = metadata.permissions();
+            #[allow(clippy::permissions_set_readonly_false)]
+            if permissions.readonly() {
+                permissions.set_readonly(false);
+                let _ = fs::set_permissions(entry.path(), permissions);
+            }
+        }
+    }
+
     let mut last_err = None;
-    for _ in 0..3 {
+    for _ in 0..5 {
         match fs::remove_dir_all(path) {
             Ok(_) => return Ok(()),
             Err(e) => {
@@ -583,7 +727,7 @@ fn remove_dir_all_with_retry(path: &Path) -> std::io::Result<()> {
                     return Ok(());
                 }
                 last_err = Some(e);
-                std::thread::sleep(std::time::Duration::from_millis(100));
+                std::thread::sleep(std::time::Duration::from_millis(150));
             }
         }
     }

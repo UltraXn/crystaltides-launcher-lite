@@ -743,8 +743,8 @@ async fn install_java_runtime(
         version,
         &install_path,
         distribution.as_deref(),
-        move |progress| {
-            let _ = app_clone.emit("java-install-progress", progress);
+        move |progress_payload| {
+            let _ = app_clone.emit("java-install-progress", &progress_payload);
         },
     )
     .await?;
