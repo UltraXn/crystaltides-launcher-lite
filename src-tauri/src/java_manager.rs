@@ -183,8 +183,8 @@ where
     let zip_file = fs::File::open(zip_path)
         .map_err(|e| format!("Error al abrir archivo zip de Java: {}", e))?;
     let buffered_file = std::io::BufReader::with_capacity(128 * 1024, zip_file);
-    let mut archive =
-        zip::ZipArchive::new(buffered_file).map_err(|e| format!("Error al leer archivo zip: {}", e))?;
+    let mut archive = zip::ZipArchive::new(buffered_file)
+        .map_err(|e| format!("Error al leer archivo zip: {}", e))?;
 
     let total = archive.len();
     let mut last_emit = std::time::Instant::now();
@@ -707,7 +707,10 @@ fn remove_dir_all_with_retry(path: &Path) -> std::io::Result<()> {
     }
 
     // En Windows, limpiar atributos de solo lectura recursivamente
-    for entry in walkdir::WalkDir::new(path).into_iter().filter_map(|e| e.ok()) {
+    for entry in walkdir::WalkDir::new(path)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
         if let Ok(metadata) = entry.metadata() {
             let mut permissions = metadata.permissions();
             #[allow(clippy::permissions_set_readonly_false)]

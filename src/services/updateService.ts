@@ -16,7 +16,7 @@ export const checkForAppUpdates = async (): Promise<AppUpdateInfo> => {
     return await invoke<AppUpdateInfo>("check_app_update");
   } catch (err) {
     console.warn("[AutoUpdater] Check skipped or failed (normal in dev/offline):", err);
-    return { available: false, currentVersion: "0.1.0" };
+    return { available: false, currentVersion: "0.1.1" };
   }
 };
 
