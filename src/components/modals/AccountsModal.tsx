@@ -245,8 +245,8 @@ const CrystalForm: React.FC<CrystalFormProps> = ({
     )}
     <input
       type="email"
-      aria-label="Correo de crystaltidessmp.net"
-      placeholder="Correo de crystaltidessmp.net"
+      aria-label={t.accounts.crystalEmailPlaceholder}
+      placeholder={t.accounts.crystalEmailPlaceholder}
       value={email}
       onChange={(e) => setEmail(e.target.value)}
       className="login-text-input"
@@ -254,8 +254,8 @@ const CrystalForm: React.FC<CrystalFormProps> = ({
     />
     <input
       type="password"
-      aria-label="Contraseña web"
-      placeholder="Contraseña web"
+      aria-label={t.accounts.crystalPasswordPlaceholder}
+      placeholder={t.accounts.crystalPasswordPlaceholder}
       value={password}
       onChange={(e) => setPassword(e.target.value)}
       className="login-text-input"
@@ -270,7 +270,7 @@ const CrystalForm: React.FC<CrystalFormProps> = ({
         disabled={loading}
         className="settings-action-btn primary"
       >
-        {loading ? 'Conectando...' : 'Conectar Cuenta'}
+        {loading ? t.accounts.connecting : t.accounts.crystalConnectBtn}
       </button>
     </div>
   </form>

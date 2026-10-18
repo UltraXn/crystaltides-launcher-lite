@@ -4,6 +4,7 @@ import React from 'react';
 import { LogViewerModal } from '../LogViewerModal';
 import { AccountsModal, AccountRowItem, GuestForm } from '../AccountsModal';
 import { InstancesModal } from '../InstancesModal';
+import { UpdaterModal } from '../UpdaterModal';
 import { getGameTypeBadge } from '../../../utils/instanceUtils';
 import { useLauncherStore } from '../../../store/launcherStore';
 
@@ -255,6 +256,33 @@ describe('Other Modals in launcher-lite', () => {
         background: 'rgba(34, 197, 94, 0.2)',
         color: '#22c55e',
       });
+    });
+  });
+
+  describe('UpdaterModal', () => {
+    it('renderiza la ventana de actualización con las versiones y changelog', () => {
+      const handleClose = vi.fn();
+      const mockUpdate = {
+        available: true,
+        currentVersion: '0.1.2',
+        version: '0.1.3',
+        body: '• Corrección de bugs\n• Mejoras de rendimiento',
+      };
+
+      const { container } = render(<UpdaterModal updateInfo={mockUpdate} onClose={handleClose} />);
+
+      expect(screen.getByText('Actualización Disponible')).toBeDefined();
+      expect(screen.getByText('v0.1.2')).toBeDefined();
+      expect(screen.getByText('v0.1.3')).toBeDefined();
+      expect(screen.getByText('Corrección de bugs')).toBeDefined();
+      expect(screen.getByText('Más tarde')).toBeDefined();
+      expect(screen.getByText('Actualizar Ahora')).toBeDefined();
+
+      const overlay = container.querySelector('.papyrus-modal-overlay');
+      expect(overlay).not.toBeNull();
+
+      fireEvent.click(screen.getByText('Más tarde'));
+      expect(handleClose).toHaveBeenCalledTimes(1);
     });
   });
 });

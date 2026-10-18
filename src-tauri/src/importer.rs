@@ -1095,6 +1095,46 @@ pub fn inspect_custom_instance_dir(path_str: &str) -> Result<ImportableInstance,
     })
 }
 
+/// Copia configuraciones clave del Minecraft principal (.minecraft) hacia la carpeta de la instancia objetivo:
+/// options.txt (teclas, volumen, renderizado, fov, etc.), optionsof.txt, optionsshaders.txt y servers.dat
+pub fn copy_minecraft_settings_to_instance(target_game_dir: &str) -> Result<Vec<String>, String> {
+    let target = Path::new(target_game_dir);
+    if !target.is_dir() {
+        let _ = fs::create_dir_all(target);
+    }
+
+    let home = dirs::home_dir().ok_or_else(|| "No se encontró el directorio de usuario (home)".to_string())?;
+    #[cfg(target_os = "windows")]
+    let default_mc = home.join("AppData").join("Roaming").join(".minecraft");
+    #[cfg(target_os = "macos")]
+    let default_mc = home.join("Library/Application Support/minecraft");
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let default_mc = home.join(".minecraft");
+
+    if !default_mc.is_dir() {
+        return Ok(Vec::new());
+    }
+
+    // Si el destino es la misma carpeta principal .minecraft, no hay nada que copiar
+    if crate::paths::normalize_for_compare(&default_mc) == crate::paths::normalize_for_compare(target) {
+        return Ok(Vec::new());
+    }
+
+    let mut copied_files = Vec::new();
+    let files_to_copy = ["options.txt", "optionsof.txt", "optionsshaders.txt", "servers.dat"];
+
+    for file_name in &files_to_copy {
+        let src_file = default_mc.join(file_name);
+        let dst_file = target.join(file_name);
+
+        if src_file.is_file() && fs::copy(&src_file, &dst_file).is_ok() {
+            copied_files.push(file_name.to_string());
+        }
+    }
+
+    Ok(copied_files)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

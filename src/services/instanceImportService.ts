@@ -112,5 +112,14 @@ export const importInstanceToLauncher = async (
     console.warn('[Importer] Error saving imported instance to SQLite:', dbErr);
   }
 
+  // Importar automáticamente configuraciones de Minecraft (teclas, volumen, renderizado, servers.dat)
+  if (newInst.gameDir) {
+    try {
+      await invoke('import_minecraft_options', { targetGameDir: newInst.gameDir });
+    } catch (optErr) {
+      console.warn('[Importer] Error importando configuraciones de Minecraft:', optErr);
+    }
+  }
+
   return newInst;
 };

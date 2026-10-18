@@ -31,12 +31,12 @@ describe('AboutModal Component', () => {
 
     // Copyright y disclaimer legal
     expect(screen.getByText(/©2026 CrystalTides Team/i)).toBeDefined();
-    expect(screen.getByText(/No afiliado con Mojang Studios/i)).toBeDefined();
+    expect(screen.getByText(/No es un producto oficial de Minecraft/i)).toBeDefined();
 
     // Secciones técnicas
     expect(screen.getByRole('heading', { level: 3, name: 'APP' })).toBeDefined();
     expect(screen.getByRole('heading', { level: 3, name: 'UI' })).toBeDefined();
-    expect(screen.getByText(/Launcher: v1.0.0-lite/i)).toBeDefined();
+    expect(screen.getByText(/Launcher: v/i)).toBeDefined();
     expect(screen.getByText(/Tauri: v2.0/i)).toBeDefined();
     expect(screen.getByText(/Papyrus UI: v1.2.0/i)).toBeDefined();
 
@@ -53,7 +53,7 @@ describe('AboutModal Component', () => {
     render(<AboutModal />);
 
     expect(screen.getByRole('link', { name: /Report a bug!/i })).toBeDefined();
-    expect(screen.getByText(/Not affiliated with Mojang Studios/i)).toBeDefined();
+    expect(screen.getByText(/Not an official Minecraft product/i)).toBeDefined();
     expect(screen.getByText(/forged in the deep tides/i)).toBeDefined();
     expect(screen.getByRole('link', { name: /Official Discord/i })).toBeDefined();
     expect(screen.getByRole('link', { name: /Website/i })).toBeDefined();

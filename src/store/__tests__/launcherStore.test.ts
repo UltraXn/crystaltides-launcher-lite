@@ -34,11 +34,20 @@ vi.mock('@tauri-apps/api/core', () => ({
   }),
 }));
 
-vi.mock('../../services/databaseService', () => ({
+vi.mock('../../services/dbService', () => ({
   getDatabaseAccounts: vi.fn().mockResolvedValue([]),
-  saveDatabaseAccount: vi.fn().mockResolvedValue(true),
-  deleteDatabaseAccount: vi.fn().mockResolvedValue(true),
-  setActiveDatabaseAccount: vi.fn().mockResolvedValue(true),
+  saveDatabaseAccount: vi.fn().mockResolvedValue(undefined),
+  deleteDatabaseAccount: vi.fn().mockResolvedValue(undefined),
+  setActiveDatabaseAccount: vi.fn().mockResolvedValue(undefined),
+  getDatabaseProfiles: vi.fn().mockResolvedValue([]),
+  saveDatabaseProfile: vi.fn().mockResolvedValue(undefined),
+  deleteDatabaseProfile: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('../../services/secureVault', () => ({
+  loadSecureItem: vi.fn().mockResolvedValue(null),
+  saveSecureItem: vi.fn().mockResolvedValue(undefined),
+  removeSecureItem: vi.fn(),
 }));
 
 vi.mock('../../services/microsoftAuthService', () => {
@@ -163,15 +172,15 @@ describe('launcherStore helpers & actions', () => {
     });
 
     it('extracts compound beta loader version from mcVersion when rawVersion is empty', () => {
-      expect(
-        resolveEffectiveLoaderVersion('quilt', '', 'quilt-loader-0.31.0-beta.4-26.2'),
-      ).toBe('0.31.0-beta.4');
+      expect(resolveEffectiveLoaderVersion('quilt', '', 'quilt-loader-0.31.0-beta.4-26.2')).toBe(
+        '0.31.0-beta.4',
+      );
       expect(
         resolveEffectiveLoaderVersion('quilt', '', 'quilt-loader-0.31.0-beta.4-26.2 (quilt)'),
       ).toBe('0.31.0-beta.4');
-      expect(
-        resolveEffectiveLoaderVersion('fabric', '', 'fabric-loader-0.16.10-1.21.1'),
-      ).toBe('0.16.10');
+      expect(resolveEffectiveLoaderVersion('fabric', '', 'fabric-loader-0.16.10-1.21.1')).toBe(
+        '0.16.10',
+      );
     });
   });
 
@@ -261,6 +270,22 @@ describe('launcherStore helpers & actions', () => {
     it('maneja cancelLaunchFlow restableciendo estado IDLE', () => {
       launcherActions.cancelLaunchFlow();
       expect(getLauncherState().launch.status).toBe('IDLE');
+    });
+
+    it('openModal desactiva el modo edición de HUD y resetea el inspector', () => {
+      useLauncherStore.setState({
+        isEditingHud: true,
+        isButtonInspectorOpen: true,
+        selectedDockButtonId: 'settings',
+      });
+
+      launcherActions.openModal('settings');
+
+      const state = getLauncherState();
+      expect(state.activeModal).toBe('settings');
+      expect(state.isEditingHud).toBe(false);
+      expect(state.isButtonInspectorOpen).toBe(false);
+      expect(state.selectedDockButtonId).toBeNull();
     });
 
     it('ejecuta startLaunchFlow exitosamente pasando por verificación y ejecución', async () => {
@@ -354,6 +379,73 @@ describe('launcherStore helpers & actions', () => {
 
       await launcherActions.removeAccount('acc2');
       expect(getLauncherState().accounts.some((a) => a.id === 'acc2')).toBe(false);
+    });
+
+    it('loadAccountsFromVault cambia la vista a home y restaura refreshToken si hay cuentas en SQLite', async () => {
+      const dbService = await import('../../services/dbService');
+      vi.mocked(dbService.getDatabaseAccounts).mockResolvedValueOnce([
+        {
+          id: 'ms_123',
+          username: 'UltraXn',
+          uuid: '12345678-1234-1234-1234-123456789abc',
+          account_type: 'microsoft',
+          access_token: 'mc-token',
+          refresh_token: 'ms-refresh-token-from-keyring',
+          is_active: true,
+          created_at: Date.now(),
+        },
+      ]);
+
+      useLauncherStore.setState({ currentView: 'login', accounts: [], activeAccountId: null });
+
+      await launcherActions.loadAccountsFromVault();
+
+      const state = getLauncherState();
+      expect(state.accounts.length).toBe(1);
+      expect(state.accounts[0].username).toBe('UltraXn');
+      expect(state.accounts[0].refreshToken).toBe('ms-refresh-token-from-keyring');
+      expect(state.accounts[0].requiresReauth).toBe(false);
+      expect(state.activeAccountId).toBe('ms_123');
+      expect(state.currentView).toBe('home');
+    });
+
+    it('loadAccountsFromVault mantiene la vista en login si la base de datos está vacía', async () => {
+      const dbService = await import('../../services/dbService');
+      vi.mocked(dbService.getDatabaseAccounts).mockResolvedValueOnce([]);
+
+      useLauncherStore.setState({ currentView: 'login', accounts: [], activeAccountId: null });
+
+      await launcherActions.loadAccountsFromVault();
+
+      const state = getLauncherState();
+      expect(state.accounts.length).toBe(0);
+      expect(state.activeAccountId).toBeNull();
+      expect(state.currentView).toBe('login');
+    });
+
+    it('addAccount pasa refresh_token a saveDatabaseAccount para blindaje en Keyring', async () => {
+      const dbService = await import('../../services/dbService');
+      const spySave = vi.mocked(dbService.saveDatabaseAccount);
+
+      const msAccount: UserAccount = {
+        id: 'ms_999',
+        username: 'Steve',
+        uuid: '99999999-9999-9999-9999-999999999999',
+        type: 'microsoft',
+        accessToken: 'access-token-999',
+        refreshToken: 'refresh-token-999',
+        lastUsed: Date.now(),
+      };
+
+      await launcherActions.addAccount(msAccount);
+
+      expect(spySave).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'ms_999',
+          refresh_token: 'refresh-token-999',
+          access_token: 'access-token-999',
+        }),
+      );
     });
 
     it('permite crear, seleccionar, duplicar y borrar instancias sincronizando settings', () => {
@@ -550,4 +642,3 @@ describe('launcherStore helpers & actions', () => {
     });
   });
 });
-

@@ -1,3 +1,8 @@
+export interface ServerPlayer {
+  name: string;
+  uuid?: string;
+}
+
 export interface ServerStatusData {
   online: boolean;
   playersCount: number;
@@ -5,6 +10,9 @@ export interface ServerStatusData {
   ping: number;
   version?: string;
   motd?: string;
+  icon?: string;
+  playersList?: ServerPlayer[];
+  serverHost?: string;
 }
 
 const DEFAULT_SERVER_HOST = 'mc.crystaltidessmp.net';
@@ -13,8 +21,9 @@ export const fetchLiveServerStatus = async (
   host: string = DEFAULT_SERVER_HOST,
 ): Promise<ServerStatusData> => {
   const startTime = Date.now();
+  const targetHost = host && host.trim().length > 0 ? host.trim() : DEFAULT_SERVER_HOST;
   try {
-    const res = await fetch(`https://api.mcstatus.io/v2/status/java/${encodeURIComponent(host)}`, {
+    const res = await fetch(`https://api.mcstatus.io/v2/status/java/${encodeURIComponent(targetHost)}`, {
       method: 'GET',
       headers: { Accept: 'application/json' },
       signal: AbortSignal.timeout(6000),
@@ -27,27 +36,55 @@ export const fetchLiveServerStatus = async (
         online: false,
         playersCount: 0,
         maxPlayers: 100,
-        ping: elapsed,
+        ping: 0,
+        icon: undefined,
+        playersList: [],
+        serverHost: targetHost,
       };
     }
 
     const data = await res.json();
+    const isOnline = Boolean(data.online);
+    const rawList = data.players?.list;
+    const playersList: ServerPlayer[] = Array.isArray(rawList)
+      ? rawList.map((p: any) => {
+          if (typeof p === 'string') return { name: p };
+          return {
+            name: p.name_clean || p.name_raw || p.name || 'Jugador',
+            uuid: p.uuid,
+          };
+        })
+      : [];
+
+    const icon = isOnline
+      ? data.icon || (targetHost.includes('crystaltides') ? '/logo.webp' : undefined)
+      : undefined;
+
     return {
-      online: Boolean(data.online),
-      playersCount: data.players?.online ?? 0,
+      online: isOnline,
+      playersCount: isOnline ? (data.players?.online ?? 0) : 0,
       maxPlayers: data.players?.max ?? 100,
-      ping: elapsed,
+      ping: isOnline ? elapsed : 0,
       version: data.version?.name_clean,
       motd: data.motd?.clean,
+      icon,
+      playersList: isOnline ? playersList : [],
+      serverHost: targetHost,
     };
   } catch (err) {
     console.warn('[ServerStatus] Fetch failed, fallback:', err);
-    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+    const isCustomHost = targetHost !== DEFAULT_SERVER_HOST;
+    const isTauriEnv = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+
+    if (isTauriEnv || isCustomHost) {
       return {
         online: false,
         playersCount: 0,
-        maxPlayers: 150,
+        maxPlayers: 100,
         ping: 0,
+        icon: undefined,
+        playersList: [],
+        serverHost: targetHost,
       };
     }
     return {
@@ -55,6 +92,14 @@ export const fetchLiveServerStatus = async (
       playersCount: 42,
       maxPlayers: 150,
       ping: 25,
+      icon: '/logo.webp',
+      playersList: [
+        { name: 'Nero' },
+        { name: 'UltraXn' },
+        { name: 'Steve' },
+        { name: 'Alex' },
+      ],
+      serverHost: targetHost,
     };
   }
 };

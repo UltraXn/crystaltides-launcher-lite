@@ -226,6 +226,22 @@ describe('DockButtonInspectorTabs Suite', () => {
       fireEvent.change(slider, { target: { value: '5' } });
       expect(setCustomizationSpy).toHaveBeenCalledWith('play', { iconScale: 5 });
     });
+
+    it('muestra botón de reiniciar escala cuando iconScale está personalizado y lo restablece a 1.0x', () => {
+      const setCustomizationSpy = vi.spyOn(launcherActions, 'setDockButtonCustomization');
+      render(
+        <DockButtonInspectorIconTab
+          buttonId="play"
+          customization={{ ...mockCustomization, iconScale: 2.5 }}
+          iconFileInputRef={{ current: null } as any}
+        />
+      );
+
+      const resetBtn = screen.getByText('Reiniciar Tamaño del Icono (1.0x)');
+      expect(resetBtn).toBeDefined();
+      fireEvent.click(resetBtn);
+      expect(setCustomizationSpy).toHaveBeenCalledWith('play', { iconScale: 1.0 });
+    });
   });
 
   describe('DockButtonInspectorFxTab', () => {

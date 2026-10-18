@@ -64,7 +64,11 @@ export const SettingsPersonalizationSection: React.FC<SettingsPersonalizationSec
   handleSelectPreset,
   handleFileChange,
   handleApplyUrl,
+  t: propT,
 }) => {
+  const storeT = useT();
+  const t = propT || storeT;
+
   return (
     <>
       {/* Section: Wallpaper & Personalization */}
@@ -75,17 +79,17 @@ export const SettingsPersonalizationSection: React.FC<SettingsPersonalizationSec
             style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
           >
             <Sparkles size={14} style={{ color: '#16A085' }} />
-            Fondo de Pantalla & Personalización
+            {t.settings.wallpaperTitle}
           </span>
           {customWallpaperUrl && (
             <button
               type="button"
               onClick={handleResetWallpaper}
               className="wallpaper-reset-btn"
-              title="Volver a los fondos oficiales"
+              title={t.settings.resetOfficialTitle}
             >
               <RotateCcw size={12} />
-              Restablecer oficial
+              {t.settings.resetOfficial}
             </button>
           )}
         </div>
@@ -96,8 +100,7 @@ export const SettingsPersonalizationSection: React.FC<SettingsPersonalizationSec
             margin: '2px 0 8px 0',
           }}
         >
-          Selecciona un entorno oficial de CrystalTides o añade tu propia imagen, GIF animado o
-          vídeo (hasta 500 MB):
+          {t.settings.wallpaperDesc}
         </p>
 
         {/* Preset Wallpapers */}
@@ -156,7 +159,7 @@ export const SettingsPersonalizationSection: React.FC<SettingsPersonalizationSec
                 className="wallpaper-upload-btn"
               >
                 <Upload size={14} />
-                Subir Imagen, GIF o Vídeo
+                {t.settings.uploadBtn}
               </button>
             </div>
 
@@ -202,7 +205,7 @@ export const SettingsPersonalizationSection: React.FC<SettingsPersonalizationSec
                   }}
                 >
                   <Film size={12} color="#16A085" />
-                  Audio del Vídeo de Fondo:
+                  {t.settings.videoAudio}
                 </span>
                 <button
                   type="button"
@@ -227,7 +230,7 @@ export const SettingsPersonalizationSection: React.FC<SettingsPersonalizationSec
                   }}
                 >
                   {wallpaperMuted ? <VolumeX size={12} /> : <Volume2 size={12} />}
-                  {wallpaperMuted ? 'Silenciado' : 'Con Sonido'}
+                  {wallpaperMuted ? t.settings.soundMuted : t.settings.soundActive}
                 </button>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -242,7 +245,7 @@ export const SettingsPersonalizationSection: React.FC<SettingsPersonalizationSec
                     if (wallpaperMuted) launcherActions.setWallpaperMuted(false);
                     launcherActions.setWallpaperVolume(parseFloat(e.target.value));
                   }}
-                  aria-label="Volumen del fondo de pantalla"
+                  aria-label={t.settings.wallpaperVolumeAria}
                   style={{ flex: 1, accentColor: '#16A085', cursor: 'pointer' }}
                 />
                 <span
@@ -265,8 +268,8 @@ export const SettingsPersonalizationSection: React.FC<SettingsPersonalizationSec
           <div className="wallpaper-url-box">
             <input
               type="text"
-              placeholder="O pega un enlace directo (ej: https://.../fondo.gif)"
-              aria-label="URL directa del fondo de pantalla"
+              placeholder={t.settings.directUrlPlaceholder}
+              aria-label={t.settings.wallpaperUrlAria}
               value={customUrlInput}
               onChange={(e) => setCustomUrlInput(e.target.value)}
               onKeyDown={(e) => {
@@ -287,7 +290,7 @@ export const SettingsPersonalizationSection: React.FC<SettingsPersonalizationSec
                 size={12}
                 style={{ display: 'inline', marginRight: '4px', verticalAlign: 'middle' }}
               />
-              Aplicar
+              {t.settings.apply}
             </button>
           </div>
 
@@ -325,17 +328,17 @@ export const SettingsPersonalizationSection: React.FC<SettingsPersonalizationSec
             style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
           >
             <Palette size={14} style={{ color: accentColor }} />
-            Color de Acento & Iluminación
+            {t.settings.accentColorTitle}
           </span>
           {accentColor.toLowerCase() !== '#16a085' && (
             <button
               type="button"
               onClick={() => launcherActions.setAccentColor('#16A085')}
               className="wallpaper-reset-btn"
-              title="Restablecer color jade oficial"
+              title={t.settings.resetAccentJadeTitle}
             >
               <RotateCcw size={12} />
-              Restablecer a Jade
+              {t.settings.resetAccentJade}
             </button>
           )}
         </div>
@@ -346,8 +349,7 @@ export const SettingsPersonalizationSection: React.FC<SettingsPersonalizationSec
             margin: '2px 0 8px 0',
           }}
         >
-          Selecciona la paleta de iluminación que tiñe los botones, resplandores ambientales y
-          bordes:
+          {t.settings.accentColorDesc}
         </p>
 
         <div className="accent-colors-grid">
@@ -372,7 +374,7 @@ export const SettingsPersonalizationSection: React.FC<SettingsPersonalizationSec
           <CustomColorPicker
             color={accentColor}
             onChange={(hex) => launcherActions.setAccentColor(hex)}
-            label="Personalizado"
+            label={t.settings.customColor}
           />
         </div>
       </div>
@@ -388,7 +390,7 @@ export const SettingsPersonalizationSection: React.FC<SettingsPersonalizationSec
             style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
           >
             <Type size={14} style={{ color: accentColor }} />
-            Personalización de la GUI (Tema & Tipografía)
+            {t.settings.guiThemeTitle}
           </span>
           {(guiTheme.fontFamily !== 'jost' ||
             guiTheme.bgMode !== 'obsidian' ||
@@ -398,10 +400,10 @@ export const SettingsPersonalizationSection: React.FC<SettingsPersonalizationSec
               type="button"
               onClick={() => launcherActions.resetGuiTheme()}
               className="wallpaper-reset-btn"
-              title="Restablecer tema de la GUI a valores predeterminados"
+              title={t.settings.resetGuiTitle}
             >
               <RotateCcw size={12} />
-              Restablecer GUI
+              {t.settings.resetGui}
             </button>
           )}
         </div>
@@ -412,8 +414,7 @@ export const SettingsPersonalizationSection: React.FC<SettingsPersonalizationSec
             margin: '2px 0 12px 0',
           }}
         >
-          Personaliza la tipografía de la interfaz, los colores de fondo de las ventanas y los
-          bordes:
+          {t.settings.guiThemeDesc}
         </p>
 
         {/* 1. Fuente / Tipografía */}
@@ -427,15 +428,15 @@ export const SettingsPersonalizationSection: React.FC<SettingsPersonalizationSec
               marginBottom: '6px',
             }}
           >
-            Fuente de la Interfaz:
+            {t.settings.fontTitle}
           </span>
           <div className="dock-preset-group" style={{ margin: 0, flexWrap: 'wrap' }}>
             {[
-              { id: 'jost', label: 'Jost (Elegante)' },
-              { id: 'inter', label: 'Inter (Limpia)' },
-              { id: 'outfit', label: 'Outfit (Gaming)' },
-              { id: 'fira-code', label: 'Fira Code (Mono)' },
-              { id: 'pixel', label: 'Pixel (VT323)' },
+              { id: 'jost', label: t.settings.fontJost },
+              { id: 'inter', label: t.settings.fontInter },
+              { id: 'outfit', label: t.settings.fontOutfit },
+              { id: 'fira-code', label: t.settings.fontFiraCode },
+              { id: 'pixel', label: t.settings.fontPixel },
             ].map((font) => (
               <button
                 key={font.id}
@@ -463,15 +464,15 @@ export const SettingsPersonalizationSection: React.FC<SettingsPersonalizationSec
               marginBottom: '6px',
             }}
           >
-            Color de Fondo de la GUI (Ventanas y Modales):
+            {t.settings.guiBgColorTitle}
           </span>
           <div className="dock-preset-group" style={{ margin: 0, flexWrap: 'wrap' }}>
             {[
-              { id: 'obsidian', label: 'Obsidiana Abisal', hex: '#140C30' },
-              { id: 'midnight', label: 'Medianoche Océano', hex: '#14253E' },
-              { id: 'amethyst', label: 'Amatista Cyber', hex: '#160a24' },
-              { id: 'emerald', label: 'Petróleo Abisal', hex: '#153D4C' },
-              { id: 'crimson', label: 'Carmesí Nether', hex: '#20080e' },
+              { id: 'obsidian', label: t.settings.bgObsidian, hex: '#140C30' },
+              { id: 'midnight', label: t.settings.bgMidnight, hex: '#14253E' },
+              { id: 'amethyst', label: t.settings.bgAmethyst, hex: '#160a24' },
+              { id: 'emerald', label: t.settings.bgEmerald, hex: '#153D4C' },
+              { id: 'crimson', label: t.settings.bgCrimson, hex: '#20080e' },
             ].map((bg) => (
               <button
                 key={bg.id}
@@ -500,7 +501,7 @@ export const SettingsPersonalizationSection: React.FC<SettingsPersonalizationSec
                   customBgColor: hex,
                 })
               }
-              label="Color Propio"
+              label={t.settings.customBgPicker}
             />
           </div>
         </div>
@@ -516,14 +517,20 @@ export const SettingsPersonalizationSection: React.FC<SettingsPersonalizationSec
               marginBottom: '6px',
             }}
           >
-            Color de Bordes de la GUI:
+            {t.settings.guiBorderColorTitle}
           </span>
           <div className="dock-preset-group" style={{ margin: 0, flexWrap: 'wrap' }}>
             {[
-              { id: 'subtle', label: 'Sutil (Translúcido)' },
-              { id: 'accent', label: `Acento Dinámico (${accentColor.toUpperCase()})` },
-              { id: 'cyan', label: 'Jade Abisal' },
-              { id: 'amber', label: 'Oro Solar' },
+              { id: 'subtle', label: t.settings.borderSubtle },
+              {
+                id: 'accent',
+                label: t.settings.borderDynamicAccent.replace(
+                  '{accent}',
+                  accentColor.toUpperCase(),
+                ),
+              },
+              { id: 'cyan', label: t.settings.borderCyan },
+              { id: 'amber', label: t.settings.borderAmber },
             ].map((b) => (
               <button
                 key={b.id}
@@ -544,7 +551,7 @@ export const SettingsPersonalizationSection: React.FC<SettingsPersonalizationSec
                   customBorderColor: hex,
                 })
               }
-              label="Borde Propio"
+              label={t.settings.customBorderPicker}
             />
           </div>
         </div>
@@ -560,14 +567,14 @@ export const SettingsPersonalizationSection: React.FC<SettingsPersonalizationSec
               marginBottom: '6px',
             }}
           >
-            Curvatura de Bordes (Radio):
+            {t.settings.borderRadiusTitle}
           </span>
           <div className="dock-preset-group" style={{ margin: 0 }}>
             {[
-              { radius: 8, label: '8px (Angular)' },
-              { radius: 12, label: '12px (Suave)' },
-              { radius: 16, label: '16px (Estándar)' },
-              { radius: 22, label: '22px (Cápsula)' },
+              { radius: 8, label: t.settings.radiusAngular },
+              { radius: 12, label: t.settings.radiusSoft },
+              { radius: 16, label: t.settings.radiusStandard },
+              { radius: 22, label: t.settings.radiusCapsule },
             ].map((r) => (
               <button
                 key={r.radius}

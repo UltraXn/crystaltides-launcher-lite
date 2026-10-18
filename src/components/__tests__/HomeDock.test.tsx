@@ -268,10 +268,11 @@ describe('HomeDock Component & Helpers Suite', () => {
       expect(selectionFrame).not.toBeNull();
     });
 
-    it('oculta la etiqueta del botón cuando se redimensiona a dimensiones compactas', () => {
+    it('oculta la etiqueta del botón cuando se redimensiona a dimensiones compactas en modo free_buttons', () => {
       useLauncherStore.setState({
         dockConfig: {
           ...useLauncherStore.getState().dockConfig,
+          layoutMode: 'free_buttons',
           showLabels: true,
           buttonCustomizations: {
             settings: { customHeight: 50, customWidth: 50 },
@@ -281,6 +282,22 @@ describe('HomeDock Component & Helpers Suite', () => {
 
       render(<HomeDock />);
       expect(screen.queryByText(/Ajustes/i)).toBeNull();
+    });
+
+    it('muestra la etiqueta en modo dock unificado incluso si buttonCustomizations tiene dimensiones compactas de modo libre', () => {
+      useLauncherStore.setState({
+        dockConfig: {
+          ...useLauncherStore.getState().dockConfig,
+          layoutMode: 'dock',
+          showLabels: true,
+          buttonCustomizations: {
+            settings: { customHeight: 50, customWidth: 50 },
+          },
+        },
+      });
+
+      render(<HomeDock />);
+      expect(screen.queryByText(/Ajustes/i)).not.toBeNull();
     });
 
     it('renderiza en modo free_buttons flotante con posiciones individuales', () => {

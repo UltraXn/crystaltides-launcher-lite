@@ -581,13 +581,42 @@ export const DockButtonInspectorIconTab: React.FC<IconTabProps> = ({
         style={{
           display: 'flex',
           justifyContent: 'space-between',
+          alignItems: 'center',
           fontSize: '11px',
           color: '#94a3b8',
           marginBottom: '4px',
         }}
       >
         <span>Escala del Icono:</span>
-        <span>{(customization.iconScale ?? 1).toFixed(2)}x</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span>{(customization.iconScale ?? 1).toFixed(2)}x</span>
+          {customization.iconScale !== undefined && customization.iconScale !== 1 && (
+            <button
+              type="button"
+              onClick={() => {
+                launcherActions.setDockButtonCustomization(buttonId, { iconScale: 1.0 });
+              }}
+              title="Restablecer a 1.0x"
+              aria-label="Restablecer escala a 1.0x"
+              style={{
+                background: 'rgba(56, 189, 248, 0.12)',
+                border: '1px solid rgba(56, 189, 248, 0.3)',
+                color: '#38bdf8',
+                borderRadius: '4px',
+                padding: '1px 5px',
+                fontSize: '10px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '3px',
+              }}
+            >
+              <RotateCcw size={10} />
+              <span>1.0x</span>
+            </button>
+          )}
+        </div>
       </div>
       <input
         type="range"
@@ -603,6 +632,34 @@ export const DockButtonInspectorIconTab: React.FC<IconTabProps> = ({
         }}
         style={{ width: '100%', accentColor: '#cbd5e1' }}
       />
+      {customization.iconScale !== undefined && customization.iconScale !== 1 && (
+        <button
+          type="button"
+          onClick={() => {
+            launcherActions.setDockButtonCustomization(buttonId, { iconScale: 1.0 });
+          }}
+          style={{
+            background: 'rgba(255, 255, 255, 0.05)',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            color: '#cbd5e1',
+            borderRadius: '8px',
+            padding: '6px 10px',
+            fontSize: '11px',
+            fontWeight: 600,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '6px',
+            marginTop: '8px',
+            width: '100%',
+            transition: 'all 0.15s ease',
+          }}
+        >
+          <RotateCcw size={12} />
+          <span>{t.hudEditor.resetScale ?? 'Reiniciar Tamaño del Icono (1.0x)'}</span>
+        </button>
+      )}
     </div>
   </div>
   );

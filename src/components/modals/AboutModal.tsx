@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { X, Globe } from 'lucide-react';
 import { DiscordIcon } from '../icons/DiscordIcon';
 import { useLauncherStore, launcherActions, LauncherState, useT } from '../../store/launcherStore';
+import { checkForAppUpdates } from '../../services/updateService';
 
 function getOperatingSystem(): string {
   if (typeof navigator === 'undefined') return 'Windows 11';
@@ -35,9 +36,26 @@ export const AboutModal: React.FC = () => {
   const t = useT();
   const activeModal = useLauncherStore((s: LauncherState) => s.activeModal);
   const language = useLauncherStore((s: LauncherState) => s.language);
+  const [appVersion, setAppVersion] = useState<string>('0.1.2');
 
-  const formattedDate = React.useMemo(() => getFormattedClientDate(language), [language]);
-  const systemOs = React.useMemo(() => getOperatingSystem(), []);
+  useEffect(() => {
+    let isMounted = true;
+    checkForAppUpdates()
+      .then((info) => {
+        if (!isMounted) return;
+        setAppVersion(info.currentVersion || '0.1.2');
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setAppVersion('0.1.2');
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const formattedDate = useMemo(() => getFormattedClientDate(language), [language]);
+  const systemOs = useMemo(() => getOperatingSystem(), []);
 
   if (activeModal !== 'about') return null;
 
@@ -104,7 +122,7 @@ export const AboutModal: React.FC = () => {
           <div className="about-section-list">
             <div>{systemOs}</div>
             <div>{formattedDate}</div>
-            <div>{t.about.launcherVersion}</div>
+            <div>{t.about.launcherVersion.replace('{version}', appVersion)}</div>
             <div>{t.about.engine}</div>
             <div>{t.about.runtime}</div>
             <div>{t.about.arch}</div>

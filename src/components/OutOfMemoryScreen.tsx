@@ -343,7 +343,7 @@ export const OutOfMemoryScreen: React.FC<OutOfMemoryScreenProps> = ({
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 9999,
+        zIndex: 20000,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',

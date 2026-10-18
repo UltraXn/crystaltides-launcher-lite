@@ -567,7 +567,8 @@ export const SettingsModal: React.FC = () => {
               <button
                 onClick={launcherActions.closeModal}
                 className="settings-card-close"
-                title="Cerrar"
+                title={t.settings.close}
+                aria-label={t.settings.close}
               >
                 <X style={{ width: '16px', height: '16px' }} />
               </button>
@@ -728,16 +729,16 @@ export const SettingsModal: React.FC = () => {
                   style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
                 >
                   <Layout size={14} style={{ color: accentColor }} />
-                  Personalización del Dock & Menú Principal
+                  {t.settings.dockCustomizationTitle}
                 </span>
                 <button
                   type="button"
                   onClick={() => launcherActions.resetDockConfig()}
                   className="wallpaper-reset-btn"
-                  title="Restablecer configuración del dock a valores predeterminados"
+                  title={t.settings.resetDock}
                 >
                   <RotateCcw size={12} />
-                  Restablecer Dock
+                  {t.settings.resetDock}
                 </button>
               </div>
               <p
@@ -747,8 +748,7 @@ export const SettingsModal: React.FC = () => {
                   margin: '2px 0 10px 0',
                 }}
               >
-                Ajusta la posición del dock para que no tape tus fondos, personaliza los colores y
-                organiza los botones:
+                {t.settings.dockBannerDesc}
               </p>
 
               {/* Banner Destacado: Entrar al Modo Edición Visual */}
@@ -779,12 +779,11 @@ export const SettingsModal: React.FC = () => {
                   >
                     <Move size={15} style={{ color: '#16A085' }} />
                     <span style={{ fontSize: '13px', fontWeight: 700, color: '#ffffff' }}>
-                      Modo de Edición Visual de la GUI
+                      {t.settings.dockBannerTitle}
                     </span>
                   </div>
                   <span style={{ fontSize: '11px', color: 'rgba(248, 250, 252, 0.65)' }}>
-                    Arrastra libremente cualquier botón del dock o los widgets inferiores (UltraXn,
-                    redes, estado) por toda la pantalla con protección de bordes.
+                    {t.settings.dockBannerDesc}
                   </span>
                 </div>
 
@@ -814,7 +813,7 @@ export const SettingsModal: React.FC = () => {
                   onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
                 >
                   <Move size={13} />
-                  <span>Entrar al Modo Edición</span>
+                  <span>{t.settings.enterEditModeBtn}</span>
                 </button>
               </div>
 
@@ -829,7 +828,7 @@ export const SettingsModal: React.FC = () => {
                     marginBottom: '6px',
                   }}
                 >
-                  Posición en Pantalla
+                  {t.settings.dockPositionTitle}
                 </span>
                 <div className="dock-preset-group">
                   <button
@@ -843,7 +842,7 @@ export const SettingsModal: React.FC = () => {
                     className={`dock-preset-pill ${dockConfig.positionPreset === 'center' ? 'active' : ''}`}
                   >
                     <Minus size={13} />
-                    <span>Centro</span>
+                    <span>{t.settings.posCenter}</span>
                   </button>
 
                   <button
@@ -857,7 +856,7 @@ export const SettingsModal: React.FC = () => {
                     className={`dock-preset-pill ${dockConfig.positionPreset === 'bottom' ? 'active' : ''}`}
                   >
                     <ArrowDownToLine size={13} />
-                    <span>Abajo (Dock Flotante)</span>
+                    <span>{t.settings.posBottom}</span>
                   </button>
 
                   <button
@@ -871,7 +870,7 @@ export const SettingsModal: React.FC = () => {
                     className={`dock-preset-pill ${dockConfig.positionPreset === 'top' ? 'active' : ''}`}
                   >
                     <ArrowUpToLine size={13} />
-                    <span>Arriba (Barra Superior)</span>
+                    <span>{t.settings.posTop}</span>
                   </button>
 
                   <button
@@ -888,17 +887,16 @@ export const SettingsModal: React.FC = () => {
                   >
                     <Move size={13} />
                     <span>
-                      Libre{' '}
+                      {t.settings.posFree}{' '}
                       {dockConfig.positionPreset === 'free' && dockConfig.customCoordinates
                         ? `(${dockConfig.customCoordinates.x}%, ${dockConfig.customCoordinates.y}%)`
-                        : '(Arrastrable)'}
+                        : t.settings.posDraggable}
                     </span>
                   </button>
                 </div>
                 {dockConfig.positionPreset === 'free' && (
                   <p style={{ fontSize: '10.5px', color: accentColor, margin: '6px 0 0 0' }}>
-                    Tip: En la pantalla principal puedes arrastrar directamente el dock sosteniendo
-                    el botón &quot;Mover&quot;.
+                    {t.settings.posFreeTip}
                   </p>
                 )}
               </div>
@@ -914,7 +912,7 @@ export const SettingsModal: React.FC = () => {
                     marginBottom: '6px',
                   }}
                 >
-                  Color del Botón Iniciar Juego (&quot;Start Game&quot;)
+                  {t.settings.startBtnColorTitle}
                 </span>
                 <div className="dock-preset-group">
                   <button
@@ -923,7 +921,7 @@ export const SettingsModal: React.FC = () => {
                     className={`dock-preset-pill ${dockConfig.startBtnColorMode === 'accent' ? 'active' : ''}`}
                   >
                     <Sparkles size={13} style={{ color: accentColor }} />
-                    <span>Sincronizado con Acento ({accentColor.toUpperCase()})</span>
+                    <span>{t.settings.syncWithAccent} ({accentColor.toUpperCase()})</span>
                   </button>
 
                   <button
@@ -932,7 +930,7 @@ export const SettingsModal: React.FC = () => {
                     className={`dock-preset-pill ${dockConfig.startBtnColorMode === 'emerald' ? 'active' : ''}`}
                   >
                     <CheckCircle2 size={13} style={{ color: '#22c55e' }} />
-                    <span>Verde Esmeralda Clásico</span>
+                    <span>{t.settings.emeraldGreen}</span>
                   </button>
 
                   <CustomColorPicker
@@ -943,7 +941,7 @@ export const SettingsModal: React.FC = () => {
                         customStartBtnColor: hex,
                       })
                     }
-                    label="Color Propio"
+                    label={t.settings.customColor}
                   />
                 </div>
               </div>
@@ -968,7 +966,7 @@ export const SettingsModal: React.FC = () => {
                       marginBottom: '6px',
                     }}
                   >
-                    Tamaño del Dock
+                    {t.settings.dockScaleTitle}
                   </span>
                   <div className="dock-preset-group" style={{ margin: 0 }}>
                     <button
@@ -976,14 +974,14 @@ export const SettingsModal: React.FC = () => {
                       onClick={() => launcherActions.setDockConfig({ scale: 'normal' })}
                       className={`dock-preset-pill ${dockConfig.scale === 'normal' ? 'active' : ''}`}
                     >
-                      Normal
+                      {t.settings.dockScaleNormal}
                     </button>
                     <button
                       type="button"
                       onClick={() => launcherActions.setDockConfig({ scale: 'compact' })}
                       className={`dock-preset-pill ${dockConfig.scale === 'compact' ? 'active' : ''}`}
                     >
-                      Compacto
+                      {t.settings.dockScaleCompact}
                     </button>
                   </div>
                 </div>
@@ -999,7 +997,7 @@ export const SettingsModal: React.FC = () => {
                       marginBottom: '6px',
                     }}
                   >
-                    Etiquetas de Texto
+                    {t.settings.textLabelsTitle}
                   </span>
                   <div className="dock-preset-group" style={{ margin: 0 }}>
                     <button
@@ -1007,14 +1005,14 @@ export const SettingsModal: React.FC = () => {
                       onClick={() => launcherActions.setDockConfig({ showLabels: true })}
                       className={`dock-preset-pill ${dockConfig.showLabels ? 'active' : ''}`}
                     >
-                      Iconos + Texto
+                      {t.settings.iconsAndText}
                     </button>
                     <button
                       type="button"
                       onClick={() => launcherActions.setDockConfig({ showLabels: false })}
                       className={`dock-preset-pill ${!dockConfig.showLabels ? 'active' : ''}`}
                     >
-                      Solo Iconos
+                      {t.settings.iconsOnly}
                     </button>
                   </div>
                 </div>
@@ -1030,7 +1028,7 @@ export const SettingsModal: React.FC = () => {
                       marginBottom: '6px',
                     }}
                   >
-                    Vidrio de Fondo
+                    {t.settings.bgGlassTitle}
                   </span>
                   <div className="dock-preset-group" style={{ margin: 0 }}>
                     <button
@@ -1038,21 +1036,21 @@ export const SettingsModal: React.FC = () => {
                       onClick={() => launcherActions.setDockConfig({ bgOpacity: 0.92 })}
                       className={`dock-preset-pill ${isNearOpacity(dockConfig.bgOpacity, 0.92) ? 'active' : ''}`}
                     >
-                      Sólido (92%)
+                      {t.settings.glassSolid}
                     </button>
                     <button
                       type="button"
                       onClick={() => launcherActions.setDockConfig({ bgOpacity: 0.7 })}
                       className={`dock-preset-pill ${isNearOpacity(dockConfig.bgOpacity, 0.7) ? 'active' : ''}`}
                     >
-                      Medio (70%)
+                      {t.settings.glassMedium}
                     </button>
                     <button
                       type="button"
                       onClick={() => launcherActions.setDockConfig({ bgOpacity: 0.45 })}
                       className={`dock-preset-pill ${isNearOpacity(dockConfig.bgOpacity, 0.45) ? 'active' : ''}`}
                     >
-                      Translúcido (45%)
+                      {t.settings.glassTranslucent}
                     </button>
                   </div>
                 </div>
@@ -1068,7 +1066,7 @@ export const SettingsModal: React.FC = () => {
                       marginBottom: '6px',
                     }}
                   >
-                    Bordes del Dock
+                    {t.settings.dockBordersTitle}
                   </span>
                   <div className="dock-preset-group" style={{ margin: 0 }}>
                     <button
@@ -1078,7 +1076,7 @@ export const SettingsModal: React.FC = () => {
                       }
                       className={`dock-preset-pill ${dockConfig.dockBorderColorMode === 'subtle' ? 'active' : ''}`}
                     >
-                      Sutil Neutro
+                      {t.settings.borderSubtleNeutral}
                     </button>
                     <button
                       type="button"
@@ -1087,7 +1085,7 @@ export const SettingsModal: React.FC = () => {
                       }
                       className={`dock-preset-pill ${dockConfig.dockBorderColorMode === 'accent' ? 'active' : ''}`}
                     >
-                      Resplandor de Acento
+                      {t.settings.borderAccentGlow}
                     </button>
                   </div>
                 </div>
@@ -1104,7 +1102,7 @@ export const SettingsModal: React.FC = () => {
                     marginBottom: '4px',
                   }}
                 >
-                  Organización y Visibilidad de Botones
+                  {t.settings.buttonsOrgTitle}
                 </span>
                 <p
                   style={{
@@ -1113,8 +1111,7 @@ export const SettingsModal: React.FC = () => {
                     margin: '0 0 6px 0',
                   }}
                 >
-                  Usa las flechas para cambiar el orden de los botones en el dock o el icono de ojo
-                  para ocultarlos:
+                  {t.settings.buttonsOrgDesc}
                 </p>
 
                 <div
@@ -1147,23 +1144,23 @@ export const SettingsModal: React.FC = () => {
                         { name: string; icon: React.ReactNode }
                       > = {
                         instances: {
-                          name: 'Instancias (Instances)',
+                          name: t.dock.instances,
                           icon: <Layers size={14} color="#16A085" />,
                         },
                         about: {
-                          name: 'Acerca de (About)',
+                          name: t.dock.about,
                           icon: <Info size={14} color="#94a3b8" />,
                         },
                         accounts: {
-                          name: 'Cuentas (Accounts)',
+                          name: t.dock.accounts,
                           icon: <User size={14} color="#a855f7" />,
                         },
                         settings: {
-                          name: 'Ajustes (Settings)',
+                          name: t.dock.settings,
                           icon: <SettingsIcon size={14} color="#cbd5e1" />,
                         },
                         launch: {
-                          name: 'Iniciar Juego (Start Game)',
+                          name: t.dock.launch,
                           icon: <Rocket size={14} color="#22c55e" />,
                         },
                       };
@@ -1256,7 +1253,7 @@ export const SettingsModal: React.FC = () => {
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <div
                               className="dock-drag-handle"
-                              title="Arrastrar para reordenar"
+                              title={t.settings.dragToReorder}
                               style={{
                                 display: 'flex',
                                 alignItems: 'center',
@@ -1301,17 +1298,17 @@ export const SettingsModal: React.FC = () => {
                               className={`dock-action-customize-btn ${
                                 dockConfig.buttonCustomizations?.[btnId] ? 'has-customization' : ''
                               }`}
-                              title="Personalizar fondo, vídeo, tamaño libre, SVG o efectos especiales"
+                              title={t.settings.customizeBtnTitle}
                             >
                               <Sparkles size={12} />
-                              <span>Personalizar</span>
+                              <span>{t.settings.customizeBtn}</span>
                             </button>
 
                             {/* Individual Color Picker (Compact 26x26) */}
                             <CustomColorPicker
                               color={activeBtnColor}
                               onChange={(hex) => launcherActions.setButtonColor(btnId, hex)}
-                              label="Pintar"
+                              label={t.settings.paintBtn}
                               compact={true}
                               alignRight={true}
                             />
@@ -1320,7 +1317,7 @@ export const SettingsModal: React.FC = () => {
                                 type="button"
                                 onClick={() => launcherActions.setButtonColor(btnId, null)}
                                 className="dock-action-icon-btn"
-                                title="Restablecer color al tema predeterminado"
+                                title={t.settings.resetThemeColor}
                                 style={{ color: '#94a3b8' }}
                               >
                                 <RotateCcw size={12} />
@@ -1333,7 +1330,7 @@ export const SettingsModal: React.FC = () => {
                               onClick={() => launcherActions.moveDockButton(btnId, 'left')}
                               disabled={index === 0}
                               className="dock-action-icon-btn"
-                              title="Mover a la izquierda / antes"
+                              title={t.settings.moveLeft}
                             >
                               <ChevronUp size={14} />
                             </button>
@@ -1344,7 +1341,7 @@ export const SettingsModal: React.FC = () => {
                               onClick={() => launcherActions.moveDockButton(btnId, 'right')}
                               disabled={index === dockConfig.buttonOrder.length - 1}
                               className="dock-action-icon-btn"
-                              title="Mover a la derecha / después"
+                              title={t.settings.moveRight}
                             >
                               <ChevronDown size={14} />
                             </button>
@@ -1353,7 +1350,7 @@ export const SettingsModal: React.FC = () => {
                             {PROTECTED_DOCK_BUTTONS.includes(btnId) ? (
                               <span
                                 className="dock-action-icon-btn protected-btn"
-                                title="Botón protegido del sistema (no se puede ocultar para garantizar el funcionamiento del launcher)"
+                                title={t.settings.protectedButton}
                               >
                                 <Lock size={12} color="#94a3b8" />
                               </span>
@@ -1362,9 +1359,7 @@ export const SettingsModal: React.FC = () => {
                                 type="button"
                                 onClick={() => launcherActions.toggleDockButton(btnId)}
                                 className={`dock-action-icon-btn ${isVisible ? 'active-eye' : ''}`}
-                                title={
-                                  isVisible ? 'Ocultar botón del dock' : 'Mostrar botón en el dock'
-                                }
+                                title={isVisible ? t.settings.hideButton : t.settings.showButton}
                               >
                                 {isVisible ? <Eye size={13} /> : <EyeOff size={13} />}
                               </button>
@@ -1383,7 +1378,7 @@ export const SettingsModal: React.FC = () => {
 
             {/* Section 3: Advanced Options Checkboxes */}
             <div className="settings-section">
-              <span className="settings-label-title">Advanced Options</span>
+              <span className="settings-label-title">{t.settings.advancedOptionsTitle}</span>
               <div className="settings-grid-checkboxes">
                 <div className="settings-col-checkboxes">
                   <label htmlFor="settings-keep-launcher" className="settings-checkbox-item">
@@ -1394,7 +1389,7 @@ export const SettingsModal: React.FC = () => {
                       onChange={(e) => setKeepLauncher(e.target.checked)}
                       className="papyrus-checkbox"
                     />
-                    <span className="checkbox-text">Keep launcher after launch.</span>
+                    <span className="checkbox-text">{t.settings.keepLauncher}</span>
                   </label>
 
                   <label htmlFor="settings-disable-bg-anim" className="settings-checkbox-item">
@@ -1405,7 +1400,7 @@ export const SettingsModal: React.FC = () => {
                       onChange={(e) => setDisableBgAnim(e.target.checked)}
                       className="papyrus-checkbox"
                     />
-                    <span className="checkbox-text">Disable animated background.</span>
+                    <span className="checkbox-text">{t.settings.disableBgAnim}</span>
                   </label>
                 </div>
 
@@ -1418,13 +1413,13 @@ export const SettingsModal: React.FC = () => {
                       onChange={(e) => setDisableAnimations(e.target.checked)}
                       className="papyrus-checkbox"
                     />
-                    <span className="checkbox-text">Disable animations.</span>
+                    <span className="checkbox-text">{t.settings.disableAnimations}</span>
                   </label>
 
                   <label
                     htmlFor="settings-disable-hw-accel"
                     className="settings-checkbox-item"
-                    aria-label="Disable hardware acceleration (Require restart)"
+                    aria-label={`${t.settings.disableHwAccel} ${t.settings.requiresRestart}`}
                   >
                     <input
                       id="settings-disable-hw-accel"
@@ -1437,8 +1432,8 @@ export const SettingsModal: React.FC = () => {
                       className="papyrus-checkbox"
                     />
                     <span className="checkbox-multi-line">
-                      <span className="checkbox-text">Disable hardware acceleration.</span>
-                      <span className="checkbox-subtext">(Require restart)</span>
+                      <span className="checkbox-text">{t.settings.disableHwAccel}</span>
+                      <span className="checkbox-subtext">{t.settings.requiresRestart}</span>
                     </span>
                   </label>
                 </div>
@@ -1447,13 +1442,13 @@ export const SettingsModal: React.FC = () => {
 
             {/* Section 4: Launcher Directory & Management */}
             <div className="settings-section">
-              <span className="settings-label-title">Launcher Directory</span>
+              <span className="settings-label-title">{t.settings.launcherDirTitle}</span>
               <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                 <input
                   type="text"
                   value={launcherDir}
                   readOnly
-                  aria-label="Ruta del directorio del launcher"
+                  aria-label={t.settings.launcherDirAria}
                   className="settings-dir-input"
                   style={{ flex: 1 }}
                 />
@@ -1466,7 +1461,7 @@ export const SettingsModal: React.FC = () => {
               style={{ borderTop: '1px solid rgba(255, 255, 255, 0.05)', paddingTop: '14px' }}
             >
               <span className="settings-label-title" style={{ color: '#16A085' }}>
-                Diagnóstico y Registros (Logs)
+                {t.settings.diagnosticsTitle}
               </span>
               <p
                 style={{
@@ -1475,8 +1470,7 @@ export const SettingsModal: React.FC = () => {
                   margin: '4px 0 10px 0',
                 }}
               >
-                Revisa los eventos detallados del launcher, descargas de Java, instaladores y
-                salidas del juego en caso de fallo:
+                {t.settings.diagnosticsDesc}
               </p>
               <div
                 style={{
@@ -1486,7 +1480,7 @@ export const SettingsModal: React.FC = () => {
                   gap: '8px',
                 }}
               >
-                <span className="settings-field-label">Motor de Ejecución Java:</span>
+                <span className="settings-field-label">{t.settings.javaRuntimeTitle}</span>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <button
                     type="button"
@@ -1494,7 +1488,7 @@ export const SettingsModal: React.FC = () => {
                     className={`dock-preset-pill ${javaDistribution === 'graalvm' ? 'active' : ''}`}
                     style={{ fontSize: '11px', padding: '6px 12px' }}
                   >
-                    GraalVM CE (Alto Rendimiento)
+                    {t.settings.graalvmLabel}
                   </button>
                   <button
                     type="button"
@@ -1502,7 +1496,7 @@ export const SettingsModal: React.FC = () => {
                     className={`dock-preset-pill ${javaDistribution === 'adoptium' ? 'active' : ''}`}
                     style={{ fontSize: '11px', padding: '6px 12px' }}
                   >
-                    Eclipse Temurin (Adoptium)
+                    {t.settings.adoptiumLabel}
                   </button>
                 </div>
               </div>
@@ -1527,7 +1521,7 @@ export const SettingsModal: React.FC = () => {
                   }}
                 >
                   <FileText size={14} />
-                  Ver Registro del Launcher
+                  {t.settings.viewLogsBtn}
                 </button>
 
                 <button
@@ -1550,7 +1544,7 @@ export const SettingsModal: React.FC = () => {
                   }}
                 >
                   <FolderOpen size={14} />
-                  Abrir Carpeta de Logs
+                  {t.settings.openLogsFolderBtn}
                 </button>
               </div>
             </div>
@@ -1670,7 +1664,7 @@ export const SettingsModal: React.FC = () => {
               style={{ borderTop: '1px solid rgba(255, 255, 255, 0.05)', paddingTop: '14px' }}
             >
               <span className="settings-label-title" style={{ color: '#FDA4AF' }}>
-                Zona de Mantenimiento
+                {t.settings.maintenanceTitle}
               </span>
               <p
                 style={{
@@ -1679,15 +1673,14 @@ export const SettingsModal: React.FC = () => {
                   margin: '4px 0 10px 0',
                 }}
               >
-                Si experimentas algún fallo o deseas limpiar registros temporales de sesiones
-                anteriores:
+                {t.settings.maintenanceDesc}
               </p>
               <button
                 type="button"
                 onClick={() => {
                   if (
                     window.confirm(
-                      '¿Deseas reiniciar la configuración y caché local de CrystalTides Launcher?',
+                      t.settings.resetLocalConfigConfirm,
                     )
                   ) {
                     localStorage.clear();
@@ -1705,7 +1698,7 @@ export const SettingsModal: React.FC = () => {
                   cursor: 'pointer',
                 }}
               >
-                Restablecer Configuración Local
+                {t.settings.resetLocalConfigBtn}
               </button>
             </div>
           </div>
@@ -1728,7 +1721,7 @@ export const SettingsModal: React.FC = () => {
         <div
           className="papyrus-modal-overlay"
           role="presentation"
-          style={{ zIndex: 100, background: 'rgba(0, 0, 0, 0.75)' }}
+          style={{ zIndex: 20100, background: 'rgba(0, 0, 0, 0.75)' }}
           onClick={(e) => {
             if (e.target === e.currentTarget) {
               setShowHwRestartModal(false);
@@ -1745,7 +1738,7 @@ export const SettingsModal: React.FC = () => {
           <dialog
             open
             className="papyrus-settings-card"
-            aria-label="Confirm Restart"
+            aria-label={t.settings.confirmRestartAria}
             style={{
               width: '420px',
               padding: '24px 26px',
@@ -1773,7 +1766,7 @@ export const SettingsModal: React.FC = () => {
                 <RotateCcw style={{ width: '18px', height: '18px' }} />
               </div>
               <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: '#f8fafc' }}>
-                ¿Reiniciar Launcher?
+                {t.settings.hwRestartRequiredTitle}
               </h3>
             </div>
 

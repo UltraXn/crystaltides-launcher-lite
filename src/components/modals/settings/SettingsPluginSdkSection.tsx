@@ -14,7 +14,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { useModuleStore, initializeBuiltinModules } from '../../../modules';
-import { launcherActions } from '../../../store/launcherStore';
+import { launcherActions, useT } from '../../../store/launcherStore';
 import type { CustomPluginManifest } from '../../../modules/types';
 
 const ICON_OPTIONS = [
@@ -39,6 +39,7 @@ const COLOR_PRESETS = [
 ];
 
 export const SettingsPluginSdkSection: React.FC = () => {
+  const t = useT();
   const modules = useModuleStore((s) => s.modules);
   const enabledModuleIds = useModuleStore((s) => s.enabledModuleIds);
   const installPlugin = useModuleStore((s) => s.installPlugin);
@@ -130,7 +131,7 @@ export const SettingsPluginSdkSection: React.FC = () => {
           style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#16A085' }}
         >
           <Puzzle size={15} style={{ color: '#16A085' }} />
-          Módulos &amp; Extensiones (Plugin SDK)
+          {t.pluginsSdk.title}
         </span>
         <button
           type="button"
@@ -138,7 +139,7 @@ export const SettingsPluginSdkSection: React.FC = () => {
           className="settings-action-btn"
           style={{ padding: '3px 8px', fontSize: '10.5px' }}
         >
-          {showAddExtension ? 'Cancelar' : 'Agregar Extensión'}
+          {showAddExtension ? t.pluginsSdk.cancelBtn : t.pluginsSdk.addExtensionBtn}
         </button>
         <span
           style={{
@@ -148,7 +149,9 @@ export const SettingsPluginSdkSection: React.FC = () => {
             fontFamily: 'var(--font-inter)',
           }}
         >
-          {modules.filter((m) => isModuleEnabled(m.id)).length} / {modules.length} Activos
+          {t.pluginsSdk.activeOfTotal
+            .replace('{active}', String(modules.filter((m) => isModuleEnabled(m.id)).length))
+            .replace('{total}', String(modules.length))}
         </span>
       </div>
 
@@ -160,8 +163,7 @@ export const SettingsPluginSdkSection: React.FC = () => {
           lineHeight: 1.45,
         }}
       >
-        Arquitectura extensible SDK. Activa o desactiva herramientas modulares integradas
-        (calculadoras, hubs, widgets) con integración viva en el Dock y el Launcher:
+        {t.pluginsSdk.subtitle}
       </p>
 
       {/* Panel Avanzado para Crear Extensiones */}
@@ -192,10 +194,10 @@ export const SettingsPluginSdkSection: React.FC = () => {
               }}
             >
               <Sparkles size={14} />
-              <span>Instalar Extensión (Plugin SDK)</span>
+              <span>{t.pluginsSdk.installExtensionTitle}</span>
             </label>
             <span style={{ fontSize: '10px', color: 'rgba(255, 255, 255, 0.5)' }}>
-              Crea tu botón personalizado y define su acción
+              {t.pluginsSdk.createButtonSubtitle}
             </span>
           </div>
 
@@ -203,12 +205,12 @@ export const SettingsPluginSdkSection: React.FC = () => {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
               <span style={{ fontSize: '11px', color: '#cbd5e1', fontWeight: 600 }}>
-                Nombre del Botón:
+                {t.pluginsSdk.buttonNameLabel}
               </span>
               <input
                 id="settings-new-extension-name"
                 type="text"
-                placeholder="ej: Discord Oficial, Tienda, Mapa"
+                placeholder={t.pluginsSdk.buttonNamePlaceholder}
                 value={newExtensionName}
                 onChange={(e) => setNewExtensionName(e.target.value)}
                 className="login-text-input"
@@ -226,11 +228,11 @@ export const SettingsPluginSdkSection: React.FC = () => {
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
               <span style={{ fontSize: '11px', color: '#cbd5e1', fontWeight: 600 }}>
-                Descripción / Subtítulo:
+                {t.pluginsSdk.buttonDescLabel}
               </span>
               <input
                 type="text"
-                placeholder="ej: Acceso directo a la comunidad..."
+                placeholder={t.pluginsSdk.buttonDescPlaceholder}
                 value={newExtensionDesc}
                 onChange={(e) => setNewExtensionDesc(e.target.value)}
                 className="login-text-input"
@@ -251,7 +253,7 @@ export const SettingsPluginSdkSection: React.FC = () => {
           {/* Selector de Icono */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             <span style={{ fontSize: '11px', color: '#cbd5e1', fontWeight: 600 }}>
-              Icono del Botón:
+              {t.pluginsSdk.buttonIconLabel}
             </span>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
               {ICON_OPTIONS.map((opt) => {
@@ -291,13 +293,13 @@ export const SettingsPluginSdkSection: React.FC = () => {
           {/* Acción al pulsar */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             <span style={{ fontSize: '11px', color: '#cbd5e1', fontWeight: 600 }}>
-              Acción al hacer clic en el Dock:
+              {t.pluginsSdk.actionOnClickLabel}
             </span>
             <div style={{ display: 'flex', gap: '8px' }}>
               {[
-                { id: 'url', label: '🌐 Abrir Enlace Web (URL)' },
-                { id: 'openDir', label: '📂 Abrir Carpeta Local' },
-                { id: 'modal', label: '🪟 Ventana Modal en Launcher' },
+                { id: 'url', label: t.pluginsSdk.actionWebUrl },
+                { id: 'openDir', label: t.pluginsSdk.actionOpenDir },
+                { id: 'modal', label: t.pluginsSdk.actionModal },
               ].map((act) => (
                 <button
                   key={act.id}
@@ -354,9 +356,9 @@ export const SettingsPluginSdkSection: React.FC = () => {
             {newExtensionActionType === 'openDir' && (
               <div style={{ display: 'flex', gap: '6px' }}>
                 {[
-                  { id: '{modsDir}', label: 'Carpeta de Mods' },
-                  { id: '{instanceDir}', label: 'Raíz de la Instancia' },
-                  { id: '{logsDir}', label: 'Carpeta de Logs' },
+                  { id: '{modsDir}', label: t.pluginsSdk.folderMods },
+                  { id: '{instanceDir}', label: t.pluginsSdk.folderInstance },
+                  { id: '{logsDir}', label: t.pluginsSdk.folderLogs },
                 ].map((d) => (
                   <button
                     key={d.id}
@@ -399,7 +401,7 @@ export const SettingsPluginSdkSection: React.FC = () => {
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span style={{ fontSize: '11px', color: '#cbd5e1', fontWeight: 600 }}>
-                Color del Botón:
+                {t.pluginsSdk.buttonColorLabel}
               </span>
               {COLOR_PRESETS.map((c) => (
                 <button
@@ -441,7 +443,7 @@ export const SettingsPluginSdkSection: React.FC = () => {
                 onChange={(e) => setOpenCustomizerAfterCreate(e.target.checked)}
                 style={{ accentColor: '#16A085' }}
               />
-              <span>Personalizar forma y FX en el Dock al crear</span>
+              <span>{t.pluginsSdk.customizeOnCreate}</span>
             </label>
           </div>
 
@@ -460,7 +462,7 @@ export const SettingsPluginSdkSection: React.FC = () => {
               boxShadow: '0 2px 10px rgba(22, 160, 133, 0.35)',
             }}
           >
-            Crear e Instalar Extensión
+            {t.pluginsSdk.createInstallBtn}
           </button>
         </div>
       )}
@@ -554,7 +556,7 @@ export const SettingsPluginSdkSection: React.FC = () => {
                       </span>
                       {mod.author && (
                         <span style={{ fontSize: '10px', color: 'rgba(248, 250, 252, 0.4)' }}>
-                          por {mod.author}
+                          {t.pluginsSdk.byAuthor.replace('{author}', mod.author)}
                         </span>
                       )}
                     </div>
@@ -595,7 +597,7 @@ export const SettingsPluginSdkSection: React.FC = () => {
                       title="Personalizar forma, dimensiones libres, radio de borde, fondo y efectos especiales en el Dock"
                     >
                       <Sparkles size={11} />
-                      <span>Personalizar Botón</span>
+                      <span>{t.pluginsSdk.customizeButton}</span>
                     </button>
                   )}
 
@@ -617,7 +619,7 @@ export const SettingsPluginSdkSection: React.FC = () => {
                         gap: '4px',
                       }}
                     >
-                      <span>Abrir</span>
+                      <span>{t.pluginsSdk.openModal}</span>
                       <ExternalLink size={11} />
                     </button>
                   )}
@@ -645,10 +647,10 @@ export const SettingsPluginSdkSection: React.FC = () => {
                     {enabled ? (
                       <>
                         <Check size={12} color={modAccent} />
-                        Habilitado
+                        {t.pluginsSdk.enabled}
                       </>
                     ) : (
-                      'Deshabilitado'
+                      t.pluginsSdk.disabled
                     )}
                   </button>
 

@@ -27,6 +27,7 @@ export interface AccountRecord {
   uuid: string;
   account_type: string;
   access_token?: string;
+  refresh_token?: string;
   skin_url?: string;
   is_active: boolean;
   created_at: number;

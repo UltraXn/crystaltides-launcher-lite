@@ -1640,16 +1640,20 @@ export const HomeDock: React.FC = () => {
   const isButtonLabelVisible = (btnId: DockButtonId) => {
     if (!showLabels) return false;
     const btnCustom = dockConfig.buttonCustomizations?.[btnId];
-    if (btnCustom?.hideLabel) return false;
-    const isCurrentResizing = resizing?.btnId === btnId;
-    const currentW =
-      isCurrentResizing && liveResizeDims ? liveResizeDims.width : btnCustom?.customWidth;
-    const currentH =
-      isCurrentResizing && liveResizeDims ? liveResizeDims.height : btnCustom?.customHeight;
-    if (currentH !== undefined && currentH < 62) return false;
-    if (currentW !== undefined && currentW < 70) return false;
+
     if (dockConfig.layoutMode === 'dock') {
-      if (effectiveSegmentHeightPx < 62 || effectiveSegmentWidthPx < 70) return false;
+      // In unified dock mode, segment dimensions are shared from the dock bar.
+      // Individual button customWidth / customHeight / hideLabel (from free buttons mode) do NOT apply.
+      if (effectiveSegmentHeightPx < 48 || effectiveSegmentWidthPx < 50) return false;
+    } else {
+      if (btnCustom?.hideLabel) return false;
+      const isCurrentResizing = resizing?.btnId === btnId;
+      const currentW =
+        isCurrentResizing && liveResizeDims ? liveResizeDims.width : btnCustom?.customWidth;
+      const currentH =
+        isCurrentResizing && liveResizeDims ? liveResizeDims.height : btnCustom?.customHeight;
+      if (currentH !== undefined && currentH < 62) return false;
+      if (currentW !== undefined && currentW < 70) return false;
     }
 
     // Dynamic icon clearance: if icon scale pushes the label into clipping territory, hide label automatically
@@ -1657,28 +1661,32 @@ export const HomeDock: React.FC = () => {
       const globalScale = dockConfig.iconScale ?? 1;
       const btnScale = btnCustom?.iconScale ?? 1;
       const effectiveScale = Math.round(globalScale * btnScale * 100) / 100;
-      const baseIconSize = iconSize + (btnId === 'launch' ? 2 : 0);
+      const baseIconSize = iconSize + (btnId === 'launch' ? 2 : btnId === 'accounts' ? 4 : 0);
       const effectiveIconH = Math.round(baseIconSize * effectiveScale);
 
       const availableH =
         dockConfig.layoutMode === 'dock'
           ? effectiveSegmentHeightPx
-          : (currentH ?? (isCompact ? 74 : 108));
+          : (resizing?.btnId === btnId && liveResizeDims
+              ? liveResizeDims.height
+              : (btnCustom?.customHeight ?? (isCompact ? 74 : 108)));
 
       const availableW =
         dockConfig.layoutMode === 'dock'
           ? btnId === 'launch'
             ? Math.round(effectiveSegmentWidthPx * 1.15)
             : effectiveSegmentWidthPx
-          : (currentW ?? (isCompact ? 96 : 136));
+          : (resizing?.btnId === btnId && liveResizeDims
+              ? liveResizeDims.width
+              : (btnCustom?.customWidth ?? (isCompact ? 96 : 136)));
 
-      // Label needs ~28px of vertical clearance (text line-height ~18px + flex gap 4px + padding safe margin 6px)
-      if (availableH - effectiveIconH < 28) {
+      // Label needs ~24px of vertical clearance
+      if (availableH - effectiveIconH < 24) {
         return false;
       }
 
       // If icon is extremely wide compared to button width, also avoid text squashing/clipping
-      if (availableW - effectiveIconH < 18) {
+      if (availableW - effectiveIconH < 14) {
         return false;
       }
     }
