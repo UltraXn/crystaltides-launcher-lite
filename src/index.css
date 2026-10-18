@@ -553,13 +553,14 @@ body {
 }
 
 .dock-label-wrapper.label-hidden {
-  animation: none;
   max-height: 0px;
   opacity: 0;
   transform: translateY(8px) scale(0.85);
   filter: blur(4px);
   margin-top: 0px;
   margin-bottom: 0px;
+  pointer-events: none;
+  animation: dockLabelDisappear 0.32s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .dock-label-wrapper.label-visible {
@@ -570,7 +571,7 @@ body {
   margin-top: 3px;
   margin-bottom: 0px;
   pointer-events: auto;
-  animation: dockLabelAppear 0.38s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: dockLabelAppear 0.32s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 @keyframes dockLabelAppear {
@@ -590,6 +591,26 @@ body {
     transform: translateY(0px) scale(1);
     filter: blur(0px);
     margin-top: 3px;
+  }
+}
+
+@keyframes dockLabelDisappear {
+  0% {
+    max-height: 32px;
+    opacity: 1;
+    transform: translateY(0px) scale(1);
+    filter: blur(0px);
+    margin-top: 3px;
+  }
+  40% {
+    filter: blur(2px);
+  }
+  100% {
+    max-height: 0px;
+    opacity: 0;
+    transform: translateY(8px) scale(0.85);
+    filter: blur(4px);
+    margin-top: 0px;
   }
 }
 

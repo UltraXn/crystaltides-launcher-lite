@@ -199,7 +199,7 @@ export const AnimatedDockLabel: React.FC<AnimatedDockLabelProps> = ({
       setIsVisible(true);
     } else {
       setIsVisible(false);
-      const timer = setTimeout(() => setShouldRender(false), 380);
+      const timer = setTimeout(() => setShouldRender(false), 330);
       return () => clearTimeout(timer);
     }
   }, [show]);
