@@ -553,6 +553,7 @@ body {
 }
 
 .dock-label-wrapper.label-hidden {
+  animation: none;
   max-height: 0px;
   opacity: 0;
   transform: translateY(8px) scale(0.85);
@@ -569,6 +570,27 @@ body {
   margin-top: 3px;
   margin-bottom: 0px;
   pointer-events: auto;
+  animation: dockLabelAppear 0.38s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes dockLabelAppear {
+  0% {
+    max-height: 0px;
+    opacity: 0;
+    transform: translateY(8px) scale(0.85);
+    filter: blur(4px);
+    margin-top: 0px;
+  }
+  60% {
+    filter: blur(1px);
+  }
+  100% {
+    max-height: 32px;
+    opacity: 1;
+    transform: translateY(0px) scale(1);
+    filter: blur(0px);
+    margin-top: 3px;
+  }
 }
 
 .dock-label {

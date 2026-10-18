@@ -196,11 +196,10 @@ export const AnimatedDockLabel: React.FC<AnimatedDockLabelProps> = ({
   useEffect(() => {
     if (show) {
       setShouldRender(true);
-      const raf = requestAnimationFrame(() => setIsVisible(true));
-      return () => cancelAnimationFrame(raf);
+      setIsVisible(true);
     } else {
       setIsVisible(false);
-      const timer = setTimeout(() => setShouldRender(false), 400);
+      const timer = setTimeout(() => setShouldRender(false), 380);
       return () => clearTimeout(timer);
     }
   }, [show]);
