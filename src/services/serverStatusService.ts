@@ -47,12 +47,22 @@ export const fetchLiveServerStatus = async (
     const isOnline = Boolean(data.online);
     const rawList = data.players?.list;
     const playersList: ServerPlayer[] = Array.isArray(rawList)
-      ? rawList.map((p: any) => {
+      ? rawList.map((p: unknown) => {
           if (typeof p === 'string') return { name: p };
-          return {
-            name: p.name_clean || p.name_raw || p.name || 'Jugador',
-            uuid: p.uuid,
-          };
+          if (typeof p === 'object' && p !== null) {
+            const playerObj = p as Record<string, unknown>;
+            const name =
+              typeof playerObj.name_clean === 'string'
+                ? playerObj.name_clean
+                : typeof playerObj.name_raw === 'string'
+                  ? playerObj.name_raw
+                  : typeof playerObj.name === 'string'
+                    ? playerObj.name
+                    : 'Jugador';
+            const uuid = typeof playerObj.uuid === 'string' ? playerObj.uuid : undefined;
+            return { name, uuid };
+          }
+          return { name: 'Jugador' };
         })
       : [];
 

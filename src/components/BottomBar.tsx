@@ -1111,7 +1111,7 @@ export const BottomBarServerWidget: React.FC<BottomBarServerWidgetProps> = ({
                       }}
                     >
                       {visiblePlayers.map((p, idx) => {
-                        const isHovered = hoveredPlayerName === p.name;
+                        const isPlayerHovered = hoveredPlayerName === p.name;
                         return (
                           <div
                             key={p.uuid || `${p.name}-${idx}`}
@@ -1122,11 +1122,11 @@ export const BottomBarServerWidget: React.FC<BottomBarServerWidgetProps> = ({
                               width: '28px',
                               height: '28px',
                               borderRadius: '4px',
-                              border: isHovered
+                              border: isPlayerHovered
                                 ? '1px solid #38bdf8'
                                 : '1px solid rgba(255, 255, 255, 0.12)',
-                              boxShadow: isHovered ? '0 0 8px rgba(56, 189, 248, 0.5)' : 'none',
-                              transform: isHovered ? 'scale(1.15)' : 'scale(1)',
+                              boxShadow: isPlayerHovered ? '0 0 8px rgba(56, 189, 248, 0.5)' : 'none',
+                              transform: isPlayerHovered ? 'scale(1.15)' : 'scale(1)',
                               transition: 'all 0.15s ease',
                               cursor: 'pointer',
                               overflow: 'hidden',

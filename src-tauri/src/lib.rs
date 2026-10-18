@@ -964,9 +964,11 @@ async fn pick_instance_folder(app: tauri::AppHandle) -> Result<Option<String>, S
 #[tauri::command]
 async fn import_minecraft_options(target_game_dir: String) -> Result<Vec<String>, String> {
     paths::validate_safe_file_path(&target_game_dir)?;
-    tokio::task::spawn_blocking(move || importer::copy_minecraft_settings_to_instance(&target_game_dir))
-        .await
-        .map_err(|e| e.to_string())?
+    tokio::task::spawn_blocking(move || {
+        importer::copy_minecraft_settings_to_instance(&target_game_dir)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 pub fn is_valid_instance_id(id: &str) -> bool {

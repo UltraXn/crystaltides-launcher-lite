@@ -1103,7 +1103,8 @@ pub fn copy_minecraft_settings_to_instance(target_game_dir: &str) -> Result<Vec<
         let _ = fs::create_dir_all(target);
     }
 
-    let home = dirs::home_dir().ok_or_else(|| "No se encontró el directorio de usuario (home)".to_string())?;
+    let home = dirs::home_dir()
+        .ok_or_else(|| "No se encontró el directorio de usuario (home)".to_string())?;
     #[cfg(target_os = "windows")]
     let default_mc = home.join("AppData").join("Roaming").join(".minecraft");
     #[cfg(target_os = "macos")]
@@ -1116,12 +1117,19 @@ pub fn copy_minecraft_settings_to_instance(target_game_dir: &str) -> Result<Vec<
     }
 
     // Si el destino es la misma carpeta principal .minecraft, no hay nada que copiar
-    if crate::paths::normalize_for_compare(&default_mc) == crate::paths::normalize_for_compare(target) {
+    if crate::paths::normalize_for_compare(&default_mc)
+        == crate::paths::normalize_for_compare(target)
+    {
         return Ok(Vec::new());
     }
 
     let mut copied_files = Vec::new();
-    let files_to_copy = ["options.txt", "optionsof.txt", "optionsshaders.txt", "servers.dat"];
+    let files_to_copy = [
+        "options.txt",
+        "optionsof.txt",
+        "optionsshaders.txt",
+        "servers.dat",
+    ];
 
     for file_name in &files_to_copy {
         let src_file = default_mc.join(file_name);
