@@ -480,7 +480,9 @@ export const loadInitialDockConfig = (): DockConfig => {
 
       // Clamp iconScale strictly between 0.6 and 1.8
       const rawScale = typeof parsed.iconScale === 'number' ? parsed.iconScale : 1.0;
-      const clampedIconScale = Number.isNaN(rawScale) ? 1.0 : Math.min(1.8, Math.max(0.6, rawScale));
+      const clampedIconScale = Number.isNaN(rawScale)
+        ? 1.0
+        : Math.min(1.8, Math.max(0.6, rawScale));
 
       return {
         ...DEFAULT_DOCK_CONFIG,
@@ -791,7 +793,12 @@ const syncInstanceAssets = async (
   }
 
   const isPerfDisabled = Boolean(activeInst.disableOptimization);
-  if (state.settings.useOptimization && !isPerfDisabled && activeInst.loaderType && !activeInst.isOfficial) {
+  if (
+    state.settings.useOptimization &&
+    !isPerfDisabled &&
+    activeInst.loaderType &&
+    !activeInst.isOfficial
+  ) {
     try {
       await syncPerformanceStackForInstance(
         effectiveGameDir,
@@ -1315,6 +1322,11 @@ export const launcherActions = {
     id: DockButtonId,
     customization: Partial<DockButtonCustomization>,
   ) => {
+    if (typeof customization.iconScale === 'number') {
+      customization.iconScale = Number.isNaN(customization.iconScale)
+        ? 1.0
+        : Math.min(5.0, Math.max(0.2, customization.iconScale));
+    }
     setStoreState((prev) => {
       const current = prev.dockConfig.buttonCustomizations?.[id] || {};
       const updated = { ...current, ...customization };
@@ -1680,9 +1692,8 @@ export const launcherActions = {
 
       // 1. Prospección en SQLite nativo (crystaltides.db) y carga de bóveda cifrada
       const dbAccounts = await getDatabaseAccounts();
-      const decrypted = await loadSecureItem<UserAccount[]>(
-        ACCOUNTS_VAULT_KEY,
-        (data) => Array.isArray(data),
+      const decrypted = await loadSecureItem<UserAccount[]>(ACCOUNTS_VAULT_KEY, (data) =>
+        Array.isArray(data),
       );
 
       const vaultDecryptionFailed =
@@ -1848,7 +1859,11 @@ export const launcherActions = {
   removeAccount: async (id: string) => {
     const wasActive = state.activeAccountId === id;
     const updated = state.accounts.filter((a: UserAccount) => a.id !== id);
-    const nextActive = wasActive ? (updated.length > 0 ? updated[0].id : null) : state.activeAccountId;
+    const nextActive = wasActive
+      ? updated.length > 0
+        ? updated[0].id
+        : null
+      : state.activeAccountId;
     const nextView = updated.length > 0 ? state.currentView : 'login';
     setStoreState(() => ({
       accounts: updated,
@@ -2097,15 +2112,18 @@ export const launcherActions = {
         }
       });
 
-      await registerListener<{ lines: Array<{ line: string; level?: string }> }>('game-log-batch', (event) => {
-        if (Array.isArray(event.payload?.lines)) {
-          for (const item of event.payload.lines) {
-            if (item?.line && item.level === 'ERROR') {
-              console.error('[Minecraft Log]', item.line);
+      await registerListener<{ lines: Array<{ line: string; level?: string }> }>(
+        'game-log-batch',
+        (event) => {
+          if (Array.isArray(event.payload?.lines)) {
+            for (const item of event.payload.lines) {
+              if (item?.line && item.level === 'ERROR') {
+                console.error('[Minecraft Log]', item.line);
+              }
             }
           }
-        }
-      });
+        },
+      );
     } catch {
       // Browser preview mode fallback
     }
@@ -2142,7 +2160,11 @@ export const launcherActions = {
       if (needsTokenRefresh) {
         try {
           setStoreState(() => ({
-            launch: { status: 'VERIFYING', progress: 5, message: 'Validando sesión de Microsoft...' },
+            launch: {
+              status: 'VERIFYING',
+              progress: 5,
+              message: 'Validando sesión de Microsoft...',
+            },
           }));
           const { refreshMicrosoftSession } = await import('../services/microsoftAuthService');
           const refreshed = await refreshMicrosoftSession(activeAcc.refreshToken);
@@ -2161,7 +2183,10 @@ export const launcherActions = {
           }
         } catch (authErr) {
           const errString = String(authErr);
-          logFrontend('WARN', `[Launcher Store] Error refrescando sesión previa de Microsoft: ${errString}`);
+          logFrontend(
+            'WARN',
+            `[Launcher Store] Error refrescando sesión previa de Microsoft: ${errString}`,
+          );
 
           const errorCode =
             authErr && typeof authErr === 'object' && 'code' in authErr

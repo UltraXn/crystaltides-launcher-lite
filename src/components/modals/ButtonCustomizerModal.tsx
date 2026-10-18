@@ -165,6 +165,7 @@ const ButtonIconPreview: React.FC<ButtonIconPreviewProps> = ({
     });
     return (
       <div
+        className="dock-custom-svg"
         style={{
           width: `${24 * scale}px`,
           height: `${24 * scale}px`,
@@ -1067,7 +1068,7 @@ const CustomizerIconTab: React.FC<CustomizerIconTabProps> = ({
         <input
           type="range"
           min="0.5"
-          max="2.0"
+          max="5.0"
           step="0.05"
           value={custom.iconScale ?? 1}
           onChange={(e) => handleUpdate({ iconScale: parseFloat(e.target.value) })}

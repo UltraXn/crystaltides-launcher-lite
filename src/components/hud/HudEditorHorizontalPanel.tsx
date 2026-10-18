@@ -226,45 +226,6 @@ const HorizontalPresetAndActionControls: React.FC<HorizontalPresetProps> = ({
         <span>{dockConfig.showLabels ? t.hudEditor.showText : t.hudEditor.hideText}</span>
       </button>
 
-      {/* Icon Scale Slider */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '6px',
-          padding: '3px 8px',
-          borderRadius: '7px',
-          background: 'rgba(255, 255, 255, 0.04)',
-          border: '1px solid rgba(255, 255, 255, 0.08)',
-        }}
-      >
-        <Sparkles size={11} style={{ color: accentColor }} />
-        <span style={{ fontSize: '10.5px', color: 'rgba(248, 250, 252, 0.7)', fontWeight: 600 }}>
-          {t.hudEditor.iconScale}:
-        </span>
-        <input
-          type="range"
-          aria-label={t.hudEditor.iconScale}
-          min="0.6"
-          max="1.8"
-          step="0.05"
-          value={dockConfig.iconScale ?? 1}
-          onChange={(e) =>
-            launcherActions.setDockConfig({
-              iconScale: Number.parseFloat(e.target.value),
-            })
-          }
-          style={{
-            width: '64px',
-            accentColor,
-            cursor: 'pointer',
-            height: '4px',
-          }}
-        />
-        <span style={{ fontSize: '10px', color: accentColor, fontWeight: 700, minWidth: '32px' }}>
-          {((dockConfig.iconScale ?? 1) * 100).toFixed(0)}%
-        </span>
-      </div>
 
       {/* Presets (when in dock mode) */}
 

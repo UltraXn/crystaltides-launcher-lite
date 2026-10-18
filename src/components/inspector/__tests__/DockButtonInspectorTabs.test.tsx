@@ -210,6 +210,22 @@ describe('DockButtonInspectorTabs Suite', () => {
       fireEvent.change(slider, { target: { value: '1.5' } });
       expect(setCustomizationSpy).toHaveBeenCalledWith('play', { iconScale: 1.5 });
     });
+
+    it('permite ajustar la escala del icono hasta 5.0x mediante el slider', () => {
+      const setCustomizationSpy = vi.spyOn(launcherActions, 'setDockButtonCustomization');
+      render(
+        <DockButtonInspectorIconTab
+          buttonId="play"
+          customization={mockCustomization}
+          iconFileInputRef={{ current: null } as any}
+        />
+      );
+
+      const slider = screen.getByRole('slider');
+      expect(slider.getAttribute('max')).toBe('5.0');
+      fireEvent.change(slider, { target: { value: '5' } });
+      expect(setCustomizationSpy).toHaveBeenCalledWith('play', { iconScale: 5 });
+    });
   });
 
   describe('DockButtonInspectorFxTab', () => {

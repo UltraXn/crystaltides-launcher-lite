@@ -377,44 +377,6 @@ const VerticalPresetsAndSliders: React.FC<VerticalPresetsProps> = ({
               </div>
             </div>
 
-            {/* Icon Scale / Size Slider */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span
-                  style={{
-                    fontSize: '9.5px',
-                    fontWeight: 600,
-                    color: 'rgba(248, 250, 252, 0.45)',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px',
-                  }}
-                >
-                  {t.hudEditor.iconScale}
-                </span>
-                <span style={{ fontSize: '10px', color: accentColor, fontWeight: 700 }}>
-                  {((dockConfig.iconScale ?? 1) * 100).toFixed(0)}%
-                </span>
-              </div>
-              <input
-                type="range"
-                aria-label={t.hudEditor.iconScale}
-                min="0.6"
-                max="1.8"
-                step="0.05"
-                value={dockConfig.iconScale ?? 1}
-                onChange={(e) =>
-                  launcherActions.setDockConfig({
-                    iconScale: Number.parseFloat(e.target.value),
-                  })
-                }
-                style={{
-                  width: '100%',
-                  accentColor,
-                  cursor: 'pointer',
-                  height: '4px',
-                }}
-              />
-            </div>
 
             {/* Text Labels Visibility */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>

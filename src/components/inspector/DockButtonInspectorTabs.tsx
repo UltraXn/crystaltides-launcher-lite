@@ -593,7 +593,7 @@ export const DockButtonInspectorIconTab: React.FC<IconTabProps> = ({
         type="range"
         aria-label={t.hudEditor.iconScale}
         min="0.5"
-        max="2"
+        max="5.0"
         step="0.05"
         value={customization.iconScale ?? 1}
         onChange={(e) => {
