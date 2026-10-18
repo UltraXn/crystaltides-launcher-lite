@@ -54,10 +54,13 @@ pub fn is_app_installed(install_dir: &Path) -> bool {
 /// El registro del sistema (clave de desinstalación y accesos directos) es único y global.
 /// Una instalación solo puede retirarlo si es la registrada (o si no hay ninguna registrada),
 /// para que desinstalar una copia secundaria o aislada no desregistre la principal.
+// Only the Windows uninstaller calls it; tests cover it on every platform.
+#[cfg(any(target_os = "windows", test))]
 pub(crate) fn owns_system_registration(install_dir: &Path, registered: Option<&Path>) -> bool {
     registered.is_none_or(|registered| same_dir(install_dir, registered))
 }
 
+#[cfg(any(target_os = "windows", test))]
 fn same_dir(a: &Path, b: &Path) -> bool {
     match (a.canonicalize(), b.canonicalize()) {
         (Ok(a), Ok(b)) => a == b,

@@ -33,6 +33,7 @@ struct GameSession {
 }
 
 static GAME_SESSION: Mutex<Option<GameSession>> = Mutex::new(None);
+#[cfg(target_os = "windows")]
 static TIMER_ACTIVE: AtomicBool = AtomicBool::new(false);
 
 /// Entre comprobar que no hay instancia activa y guardar la sesión nueva pasan el hook
@@ -93,6 +94,8 @@ mod winmm {
 
 #[allow(unsafe_code)]
 pub fn set_high_resolution_timer(enable: bool) {
+    #[cfg(not(target_os = "windows"))]
+    let _ = enable;
     #[cfg(target_os = "windows")]
     unsafe {
         if enable {
@@ -169,6 +172,7 @@ impl Drop for ProcessJobGuard {
     }
 }
 
+#[cfg(target_os = "windows")]
 pub fn find_java_pid_under_wrapper(wrapper_pid: u32) -> u32 {
     use sysinfo::{Pid, ProcessesToUpdate, System};
     let mut sys = System::new();
