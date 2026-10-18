@@ -200,6 +200,33 @@ describe('BottomBar Component & Widgets Suite', () => {
         expect(startDrag).toHaveBeenCalledWith('serverStatus', expect.anything(), expect.anything());
       }
     });
+
+    it('permite arrastrar widgets interactuando directamente desde el tirador superior de agarre', () => {
+      const startDrag = vi.fn();
+      const mockDragWithFn = {
+        socialsRef: { current: null },
+        serverStatusRef: { current: null },
+        userPillRef: { current: null },
+        tempPositions: {},
+        draggingWidget: null,
+        isColliding: false,
+        startDrag,
+      };
+
+      render(
+        <BottomBarSocialsWidget
+          drag={mockDragWithFn}
+          isEditingHud={true}
+          effectiveSocPos={{ x: 50, y: 93 }}
+          t={mockT}
+        />
+      );
+
+      const grip = screen.getByLabelText(/Arrastrar redes sociales/i);
+      expect(grip).toBeDefined();
+      fireEvent.mouseDown(grip, { clientX: 200, clientY: 100 });
+      expect(startDrag).toHaveBeenCalledWith('socials', expect.anything(), expect.anything());
+    });
   });
 
   describe('BottomBar Main Component', () => {

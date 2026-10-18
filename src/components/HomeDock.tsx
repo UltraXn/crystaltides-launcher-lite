@@ -105,24 +105,26 @@ export const FreeButtonCoordBadge: React.FC<FreeButtonCoordBadgeProps> = ({
   accentColor,
 }) => {
   const isDanger = isDraggingThis && isColliding;
-  const badgeColor = accentColor || '#16A085';
+  const badgeColor = accentColor || '#38bdf8';
   return (
     <div
       style={{
         position: 'absolute',
-        top: '-18px',
+        bottom: 'calc(100% + 6px)',
         left: '50%',
         transform: 'translateX(-50%)',
-        background: isDanger ? 'rgba(239, 68, 68, 0.95)' : 'rgba(10, 14, 22, 0.9)',
-        border: isDanger ? '1px solid #f87171' : `1px solid ${badgeColor}`,
+        background: isDanger ? 'rgba(239, 68, 68, 0.95)' : 'rgba(15, 18, 26, 0.95)',
+        border: isDanger ? '1px solid #f87171' : '1px solid rgba(255, 255, 255, 0.16)',
         borderRadius: '4px',
         padding: '1px 6px',
         fontSize: '9px',
-        fontWeight: 700,
+        fontWeight: 600,
+        fontFamily: 'ui-monospace, monospace',
         color: isDanger ? '#ffffff' : badgeColor,
         whiteSpace: 'nowrap',
         pointerEvents: 'none',
-        boxShadow: isDanger ? '0 0 12px rgba(239, 68, 68, 0.6)' : 'none',
+        boxShadow: isDanger ? '0 0 12px rgba(239, 68, 68, 0.6)' : '0 4px 12px rgba(0, 0, 0, 0.65)',
+        zIndex: 20,
       }}
     >
       {isDanger ? (
@@ -170,6 +172,52 @@ export const FreeButtonInspectorPopup: React.FC<FreeButtonInspectorPopupProps> =
     />
   </div>
 );
+
+interface AnimatedDockLabelProps {
+  show: boolean;
+  children: React.ReactNode;
+  fontSize: string;
+  color?: string;
+  fontWeight?: number | string;
+  transition?: string;
+}
+
+export const AnimatedDockLabel: React.FC<AnimatedDockLabelProps> = ({
+  show,
+  children,
+  fontSize,
+  color,
+  fontWeight,
+  transition,
+}) => {
+  const [shouldRender, setShouldRender] = useState(show);
+  const [isVisible, setIsVisible] = useState(show);
+
+  useEffect(() => {
+    if (show) {
+      setShouldRender(true);
+      const raf = requestAnimationFrame(() => setIsVisible(true));
+      return () => cancelAnimationFrame(raf);
+    } else {
+      setIsVisible(false);
+      const timer = setTimeout(() => setShouldRender(false), 400);
+      return () => clearTimeout(timer);
+    }
+  }, [show]);
+
+  if (!shouldRender) return null;
+
+  return (
+    <div
+      className={`dock-label-wrapper ${isVisible ? 'label-visible' : 'label-hidden'}`}
+      aria-hidden={!isVisible}
+    >
+      <span className="dock-label" style={{ fontSize, color, fontWeight, transition }}>
+        {children}
+      </span>
+    </div>
+  );
+};
 
 const resolveFreeButtonClasses = (
   isLaunch: boolean,
@@ -253,6 +301,16 @@ const FreeButtonElement: React.FC<FreeButtonElementProps> = ({
           : 'top 0.35s cubic-bezier(0.16, 1, 0.3, 1), left 0.35s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease, transform 0.2s ease',
       }}
     >
+      {isEditingHud && (
+        <FreeButtonCoordBadge
+          isDraggingThis={isDraggingThis}
+          isColliding={isColliding}
+          pos={pos}
+          collisionLabel={t.hudEditor.collision}
+          accentColor={accentColor}
+        />
+      )}
+
       <button
         ref={buttonRef}
         type="button"
@@ -305,16 +363,6 @@ const FreeButtonElement: React.FC<FreeButtonElementProps> = ({
             playsInline
             className="dock-button-video-bg"
             style={{ opacity: btnCustom.bgVideoOpacity ?? 0.85 }}
-          />
-        )}
-
-        {isEditingHud && (
-          <FreeButtonCoordBadge
-            isDraggingThis={isDraggingThis}
-            isColliding={isColliding}
-            pos={pos}
-            collisionLabel={t.hudEditor.collision}
-            accentColor={accentColor}
           />
         )}
 
@@ -562,6 +610,7 @@ interface GroupedDockLayoutProps {
   isButtonLabelVisible?: (btnId: DockButtonId) => boolean;
   isLaunchHovered?: boolean;
   onLaunchHover?: (h: boolean) => void;
+  isColliding?: boolean;
 }
 
 const GroupedDockLayout: React.FC<GroupedDockLayoutProps> = ({
@@ -569,6 +618,7 @@ const GroupedDockLayout: React.FC<GroupedDockLayoutProps> = ({
   dockPos,
   draggingTarget,
   isEditingHud,
+  isColliding,
   isHovered,
   setIsHovered,
   dockRef,
@@ -627,6 +677,51 @@ const GroupedDockLayout: React.FC<GroupedDockLayoutProps> = ({
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
+      {/* Dock Coordinate Badge in HUD editing mode */}
+      {isEditingHud && (
+        <div
+          aria-label="Coordenadas del dock"
+          style={{
+            position: 'absolute',
+            bottom: dockPos.y > 10 ? 'calc(100% + 8px)' : 'auto',
+            top: dockPos.y <= 10 ? 'calc(100% + 8px)' : 'auto',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background:
+              draggingTarget === 'dock' && isColliding
+                ? 'rgba(239, 68, 68, 0.95)'
+                : 'rgba(15, 18, 26, 0.95)',
+            border:
+              draggingTarget === 'dock' && isColliding
+                ? '1px solid rgba(248, 113, 113, 0.85)'
+                : '1px solid rgba(255, 255, 255, 0.16)',
+            borderRadius: '4px',
+            padding: '1px 6px',
+            fontSize: '9px',
+            fontWeight: 600,
+            fontFamily: 'ui-monospace, monospace',
+            color: draggingTarget === 'dock' && isColliding ? '#ffffff' : accentColor || '#38bdf8',
+            whiteSpace: 'nowrap',
+            pointerEvents: 'none',
+            boxShadow:
+              draggingTarget === 'dock' && isColliding
+                ? '0 0 12px rgba(239, 68, 68, 0.4)'
+                : '0 4px 12px rgba(0, 0, 0, 0.65)',
+            zIndex: 40,
+          }}
+        >
+          {draggingTarget === 'dock' && isColliding ? (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+              <AlertTriangle size={10} color="#fca5a5" />
+              <span>
+                {t.hudEditor.collision} | X:{dockPos.x}% Y:{dockPos.y}%
+              </span>
+            </span>
+          ) : (
+            `X:${dockPos.x}% Y:${dockPos.y}%`
+          )}
+        </div>
+      )}
       {/* Quick Access Bar */}
       {!isEditingHud && isHovered && (
         <div
@@ -1557,6 +1652,38 @@ export const HomeDock: React.FC = () => {
     if (dockConfig.layoutMode === 'dock') {
       if (effectiveSegmentHeightPx < 62 || effectiveSegmentWidthPx < 70) return false;
     }
+
+    // Dynamic icon clearance: if icon scale pushes the label into clipping territory, hide label automatically
+    if (btnCustom?.iconType !== 'none') {
+      const globalScale = dockConfig.iconScale ?? 1;
+      const btnScale = btnCustom?.iconScale ?? 1;
+      const effectiveScale = Math.round(globalScale * btnScale * 100) / 100;
+      const baseIconSize = iconSize + (btnId === 'launch' ? 2 : 0);
+      const effectiveIconH = Math.round(baseIconSize * effectiveScale);
+
+      const availableH =
+        dockConfig.layoutMode === 'dock'
+          ? effectiveSegmentHeightPx
+          : (currentH ?? (isCompact ? 74 : 108));
+
+      const availableW =
+        dockConfig.layoutMode === 'dock'
+          ? btnId === 'launch'
+            ? Math.round(effectiveSegmentWidthPx * 1.15)
+            : effectiveSegmentWidthPx
+          : (currentW ?? (isCompact ? 96 : 136));
+
+      // Label needs ~28px of vertical clearance (text line-height ~18px + flex gap 4px + padding safe margin 6px)
+      if (availableH - effectiveIconH < 28) {
+        return false;
+      }
+
+      // If icon is extremely wide compared to button width, also avoid text squashing/clipping
+      if (availableW - effectiveIconH < 18) {
+        return false;
+      }
+    }
+
     return true;
   };
 
@@ -1605,7 +1732,9 @@ export const HomeDock: React.FC = () => {
             }}
           >
             {currentDims.width} × {currentDims.height} px
-            {(currentDims.height < 62 || currentDims.width < 70) && (
+            {(currentDims.height < 62 ||
+              currentDims.width < 70 ||
+              !isButtonLabelVisible(btnId)) && (
               <span style={{ opacity: 0.8, fontWeight: 500 }}> • Sin texto</span>
             )}
           </div>
@@ -1817,17 +1946,13 @@ export const HomeDock: React.FC = () => {
     return (
       <>
         {renderIconWithCustomization('instances', defaultIcon, iconColor)}
-        {shouldShowLabel && (
-          <span
-            className="dock-label"
-            style={{
-              fontSize: labelFontSize,
-              color: customColor ?? undefined,
-            }}
-          >
-            {t.dock.instances}
-          </span>
-        )}
+        <AnimatedDockLabel
+          show={shouldShowLabel}
+          fontSize={labelFontSize}
+          color={customColor ?? undefined}
+        >
+          {t.dock.instances}
+        </AnimatedDockLabel>
       </>
     );
   };
@@ -1847,17 +1972,13 @@ export const HomeDock: React.FC = () => {
           />,
           customColor ?? undefined,
         )}
-        {shouldShowLabel && (
-          <span
-            className="dock-label"
-            style={{
-              fontSize: labelFontSize,
-              color: customColor ?? undefined,
-            }}
-          >
-            {t.dock.about}
-          </span>
-        )}
+        <AnimatedDockLabel
+          show={shouldShowLabel}
+          fontSize={labelFontSize}
+          color={customColor ?? undefined}
+        >
+          {t.dock.about}
+        </AnimatedDockLabel>
       </>
     );
   };
@@ -1865,11 +1986,6 @@ export const HomeDock: React.FC = () => {
   const renderAccountsButton = (customColor?: string | null) => {
     const avatarSrc = resolveAccountAvatarSrc(activeAccount);
     const shouldShowLabel = isButtonLabelVisible('accounts');
-    const accountsCustom = dockConfig.buttonCustomizations?.accounts;
-    const hasCustomIcon =
-      accountsCustom?.iconType === 'custom_svg' ||
-      accountsCustom?.iconType === 'custom_image' ||
-      accountsCustom?.iconType === 'none';
 
     const defaultAvatar = (
       <div
@@ -1891,20 +2007,14 @@ export const HomeDock: React.FC = () => {
 
     return (
       <>
-        {hasCustomIcon
-          ? renderIconWithCustomization('accounts', defaultAvatar, customColor ?? undefined)
-          : defaultAvatar}
-        {shouldShowLabel && (
-          <span
-            className="dock-label"
-            style={{
-              fontSize: labelFontSize,
-              color: customColor ?? undefined,
-            }}
-          >
-            {t.dock.accounts}
-          </span>
-        )}
+        {renderIconWithCustomization('accounts', defaultAvatar, customColor ?? undefined)}
+        <AnimatedDockLabel
+          show={shouldShowLabel}
+          fontSize={labelFontSize}
+          color={customColor ?? undefined}
+        >
+          {t.dock.accounts}
+        </AnimatedDockLabel>
       </>
     );
   };
@@ -1924,17 +2034,13 @@ export const HomeDock: React.FC = () => {
           />,
           customColor ?? undefined,
         )}
-        {shouldShowLabel && (
-          <span
-            className="dock-label"
-            style={{
-              fontSize: labelFontSize,
-              color: customColor ?? undefined,
-            }}
-          >
-            {t.dock.settings}
-          </span>
-        )}
+        <AnimatedDockLabel
+          show={shouldShowLabel}
+          fontSize={labelFontSize}
+          color={customColor ?? undefined}
+        >
+          {t.dock.settings}
+        </AnimatedDockLabel>
       </>
     );
   };
@@ -1982,19 +2088,15 @@ export const HomeDock: React.FC = () => {
           </div>,
           launchIconColor,
         )}
-        {shouldShowLabel && (
-          <span
-            className="dock-label"
-            style={{
-              color: launchLabelColor,
-              fontSize: labelFontSize,
-              fontWeight: 800,
-              transition: 'color 0.15s ease',
-            }}
-          >
-            {getLaunchLabel()}
-          </span>
-        )}
+        <AnimatedDockLabel
+          show={shouldShowLabel}
+          fontSize={labelFontSize}
+          color={launchLabelColor}
+          fontWeight={800}
+          transition="color 0.15s ease"
+        >
+          {getLaunchLabel()}
+        </AnimatedDockLabel>
 
         {isLaunching && (
           <div className="dock-launch-progress">
@@ -2038,17 +2140,13 @@ export const HomeDock: React.FC = () => {
             >
               {slot.icon}
             </div>
-            {shouldShowLabel && (
-              <span
-                className="dock-label"
-                style={{
-                  fontSize: labelFontSize,
-                  color: modCustomColor,
-                }}
-              >
-                {slot.label}
-              </span>
-            )}
+            <AnimatedDockLabel
+              show={shouldShowLabel}
+              fontSize={labelFontSize}
+              color={modCustomColor}
+            >
+              {slot.label}
+            </AnimatedDockLabel>
           </>
         );
       }
@@ -2184,6 +2282,7 @@ export const HomeDock: React.FC = () => {
       dockPos={dockPos}
       draggingTarget={draggingTarget}
       isEditingHud={isEditingHud}
+      isColliding={isColliding}
       isHovered={isHovered}
       setIsHovered={setIsHovered}
       dockRef={dockRef}

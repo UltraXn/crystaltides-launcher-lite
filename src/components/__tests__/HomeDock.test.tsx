@@ -525,7 +525,7 @@ describe('HomeDock Component & Helpers Suite', () => {
           scale: 'normal',
           showLabels: true,
           customSegmentWidth: 500, // Valor desmedido fuera de límites
-          customDockHeight: 400,   // Valor desmedido fuera de límites
+          customDockHeight: 400, // Valor desmedido fuera de límites
         },
       });
 
@@ -560,6 +560,71 @@ describe('HomeDock Component & Helpers Suite', () => {
       expect(useLauncherStore.getState().isButtonInspectorOpen).toBe(true);
       expect(screen.getByRole('dialog', { name: /Inspector de Botón/i })).toBeDefined();
     });
+
+    it('oculta automáticamente el texto de un botón si su icono escala a un tamaño que cortaría las letras', () => {
+      useLauncherStore.setState({
+        dockConfig: {
+          ...useLauncherStore.getState().dockConfig,
+          layoutMode: 'dock',
+          scale: 'normal',
+          showLabels: true,
+          buttonCustomizations: {
+            launch: {
+              iconScale: 3.9,
+            },
+            instances: {
+              iconScale: 1.0,
+            },
+          },
+        },
+      });
+
+      render(<HomeDock />);
+
+      // El botón de instances (escala 1.0) debe mostrarse
+      const instancesLabel = screen.queryByText(/Instancias/i);
+      expect(instancesLabel).not.toBeNull();
+
+      // El botón de launch (escala 3.9) debe ocultar su texto automáticamente
+      const launchLabel = screen.queryByText(/Iniciar Juego|Lanzar/i);
+      expect(launchLabel).toBeNull();
+    });
+
+    it('renderiza insignia de coordenadas sobre la barra unificada en modo edición HUD', () => {
+      useLauncherStore.setState({
+        isEditingHud: true,
+        dockConfig: {
+          ...useLauncherStore.getState().dockConfig,
+          layoutMode: 'dock',
+          positionPreset: 'free',
+          customCoordinates: { x: 50, y: 88 },
+        },
+      });
+
+      render(<HomeDock />);
+
+      const dockCoords = screen.getByLabelText(/Coordenadas del dock/i);
+      expect(dockCoords).toBeDefined();
+      expect(dockCoords.textContent).toContain('X:50% Y:88%');
+    });
+
+    it('renderiza insignia de coordenadas sobre los botones individuales en modo free_buttons', () => {
+      useLauncherStore.setState({
+        isEditingHud: true,
+        dockConfig: {
+          ...useLauncherStore.getState().dockConfig,
+          layoutMode: 'free_buttons',
+          buttonPositions: {
+            instances: { x: 25, y: 40 },
+            launch: { x: 75, y: 60 },
+          },
+        },
+      });
+
+      render(<HomeDock />);
+
+      expect(screen.getByText('X:25% Y:40%')).toBeDefined();
+      expect(screen.getByText('X:75% Y:60%')).toBeDefined();
+    });
   });
 });
-

@@ -250,8 +250,8 @@ export const WidgetCoordinateBadge: React.FC<{
     <div
       style={{
         position: 'absolute',
-        bottom: y > 10 ? 'calc(100% + 8px)' : 'auto',
-        top: y <= 10 ? 'calc(100% + 8px)' : 'auto',
+        bottom: y > 10 ? 'calc(100% + 28px)' : 'auto',
+        top: y <= 10 ? 'calc(100% + 28px)' : 'auto',
         left: '50%',
         transform: 'translateX(-50%)',
         background:
@@ -347,6 +347,38 @@ export const BottomBarPlayerWidget: React.FC<BottomBarPlayerWidgetProps> = ({
           label={t.hudEditor.collision}
         />
       )}
+      {isEditingHud && (
+        <div
+          role="button"
+          tabIndex={0}
+          aria-label="Arrastrar perfil"
+          onMouseDown={(e) => {
+            e.stopPropagation();
+            drag.startDrag('userPill', e, drag.userPillRef);
+          }}
+          style={{
+            position: 'absolute',
+            bottom: 'calc(100% + 6px)',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'rgba(12, 17, 24, 0.88)',
+            border: '1px solid rgba(56, 189, 248, 0.4)',
+            backdropFilter: 'blur(8px)',
+            borderRadius: '9999px',
+            padding: '3px 10px',
+            color: '#38bdf8',
+            boxShadow: '0 2px 10px rgba(0, 0, 0, 0.5), 0 0 12px rgba(56, 189, 248, 0.25)',
+            cursor: drag.draggingWidget === 'userPill' ? 'grabbing' : 'grab',
+            userSelect: 'none',
+            zIndex: 10,
+          }}
+        >
+          <GripHorizontal size={14} />
+        </div>
+      )}
       <div className="papyrus-player-pill">
         <button
           type="button"
@@ -359,14 +391,6 @@ export const BottomBarPlayerWidget: React.FC<BottomBarPlayerWidgetProps> = ({
             cursor: isEditingHud ? 'grab' : 'pointer',
           }}
         >
-          {isEditingHud && (
-            <GripHorizontal
-              size={14}
-              color="#38bdf8"
-              style={{ marginRight: '4px', flexShrink: 0 }}
-            />
-          )}
-
           <div className="player-avatar-box">
             {(() => {
               const avatar =
@@ -465,10 +489,39 @@ export const BottomBarSocialsWidget: React.FC<BottomBarSocialsWidgetProps> = ({
           label={t.hudEditor.collision}
         />
       )}
+      {isEditingHud && (
+        <div
+          role="button"
+          tabIndex={0}
+          aria-label="Arrastrar redes sociales"
+          onMouseDown={(e) => {
+            e.stopPropagation();
+            drag.startDrag('socials', e, drag.socialsRef);
+          }}
+          style={{
+            position: 'absolute',
+            bottom: 'calc(100% + 6px)',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'rgba(12, 17, 24, 0.88)',
+            border: '1px solid rgba(56, 189, 248, 0.4)',
+            backdropFilter: 'blur(8px)',
+            borderRadius: '9999px',
+            padding: '3px 10px',
+            color: '#38bdf8',
+            boxShadow: '0 2px 10px rgba(0, 0, 0, 0.5), 0 0 12px rgba(56, 189, 248, 0.25)',
+            cursor: drag.draggingWidget === 'socials' ? 'grabbing' : 'grab',
+            userSelect: 'none',
+            zIndex: 10,
+          }}
+        >
+          <GripHorizontal size={14} />
+        </div>
+      )}
       <div className="papyrus-social-dock">
-        {isEditingHud && (
-          <GripHorizontal size={14} color="#38bdf8" style={{ marginRight: '2px' }} />
-        )}
         <a
           href="https://youtube.com"
           target="_blank"
@@ -559,13 +612,42 @@ export const BottomBarServerWidget: React.FC<BottomBarServerWidgetProps> = ({
           label={t.hudEditor.collision}
         />
       )}
+      {isEditingHud && (
+        <div
+          role="button"
+          tabIndex={0}
+          aria-label="Arrastrar estado del servidor"
+          onMouseDown={(e) => {
+            e.stopPropagation();
+            drag.startDrag('serverStatus', e, drag.serverStatusRef);
+          }}
+          style={{
+            position: 'absolute',
+            bottom: 'calc(100% + 6px)',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'rgba(12, 17, 24, 0.88)',
+            border: '1px solid rgba(56, 189, 248, 0.4)',
+            backdropFilter: 'blur(8px)',
+            borderRadius: '9999px',
+            padding: '3px 10px',
+            color: '#38bdf8',
+            boxShadow: '0 2px 10px rgba(0, 0, 0, 0.5), 0 0 12px rgba(56, 189, 248, 0.25)',
+            cursor: drag.draggingWidget === 'serverStatus' ? 'grabbing' : 'grab',
+            userSelect: 'none',
+            zIndex: 10,
+          }}
+        >
+          <GripHorizontal size={14} />
+        </div>
+      )}
       <div
         className="papyrus-server-chip"
         title={`${t.bottomBar.officialServer} • Ping: ${serverStatus.ping}ms`}
       >
-        {isEditingHud && (
-          <GripHorizontal size={14} color="#38bdf8" style={{ marginRight: '2px', flexShrink: 0 }} />
-        )}
         <span
           style={{
             width: '8px',
