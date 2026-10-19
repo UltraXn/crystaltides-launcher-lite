@@ -8,25 +8,47 @@ interface UpdaterModalProps {
   onClose: () => void;
 }
 
+interface ParsedNoteLine {
+  key: string;
+  line: string;
+  trimmed: string;
+  isFirst: boolean;
+}
+
+const parseReleaseLines = (text: string): ParsedNoteLine[] => {
+  const counts: Record<string, number> = {};
+  const rawLines = text.split('\n');
+  return rawLines.map((rawLine, index) => {
+    const trimmed = rawLine.trim();
+    const count = (counts[trimmed] ?? 0) + 1;
+    counts[trimmed] = count;
+    return {
+      key: `note-${index}-${trimmed.slice(0, 12)}-${count}`,
+      line: rawLine,
+      trimmed,
+      isFirst: index === 0,
+    };
+  });
+};
+
 const renderFormattedNotes = (rawText: string) => {
-  const lines = rawText.split('\n');
+  const items = parseReleaseLines(rawText);
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-      {lines.map((line, idx) => {
-        const trimmed = line.trim();
-        if (!trimmed) {
-          return <div key={idx} style={{ height: '4px' }} />;
+      {items.map((item) => {
+        if (!item.trimmed) {
+          return <div key={item.key} style={{ height: '4px' }} />;
         }
-        if (trimmed.startsWith('#')) {
-          const headerText = trimmed.replace(/^#+\s*/, '');
+        if (item.trimmed.startsWith('#')) {
+          const headerText = item.trimmed.replace(/^#+\s*/, '');
           return (
             <div
-              key={idx}
+              key={item.key}
               style={{
                 fontSize: '12px',
                 fontWeight: 700,
                 color: '#2DD4BF',
-                marginTop: idx > 0 ? '6px' : '0',
+                marginTop: item.isFirst ? '0' : '6px',
                 letterSpacing: '0.02em',
                 textTransform: 'uppercase',
               }}
@@ -35,11 +57,11 @@ const renderFormattedNotes = (rawText: string) => {
             </div>
           );
         }
-        if (trimmed.startsWith('•') || trimmed.startsWith('-') || trimmed.startsWith('*')) {
-          const bulletText = trimmed.replace(/^[•\-*]\s*/, '');
+        if (item.trimmed.startsWith('•') || item.trimmed.startsWith('-') || item.trimmed.startsWith('*')) {
+          const bulletText = item.trimmed.replace(/^[•\-*]\s*/, '');
           return (
             <div
-              key={idx}
+              key={item.key}
               style={{
                 display: 'flex',
                 alignItems: 'flex-start',
@@ -55,8 +77,8 @@ const renderFormattedNotes = (rawText: string) => {
           );
         }
         return (
-          <div key={idx} style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.8)', lineHeight: 1.45 }}>
-            {line}
+          <div key={item.key} style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.8)', lineHeight: 1.45 }}>
+            {item.line}
           </div>
         );
       })}
@@ -67,7 +89,7 @@ const renderFormattedNotes = (rawText: string) => {
 export const UpdaterModal: React.FC<UpdaterModalProps> = ({ updateInfo, onClose }) => {
   const [isUpdating, setIsUpdating] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [releaseNotes, setReleaseNotes] = useState<string | null>(updateInfo.body || null);
+  const [releaseNotes, setReleaseNotes] = useState<string | null>(updateInfo.body ?? null);
   const [loadingNotes, setLoadingNotes] = useState(false);
 
   useEffect(() => {
@@ -219,7 +241,7 @@ export const UpdaterModal: React.FC<UpdaterModalProps> = ({ updateInfo, onClose 
               <span>Cargando notas de la versión...</span>
             </div>
           ) : (
-            renderFormattedNotes(releaseNotes || defaultFallbackNotes)
+            renderFormattedNotes(releaseNotes ?? defaultFallbackNotes)
           )}
         </div>
 

@@ -34,8 +34,8 @@ export const getSupabaseConfig = (env: {
   }
 
   return {
-    url: url || '',
-    anonKey: anonKey || '',
+    url: url ?? '',
+    anonKey: anonKey ?? '',
     isConfigured: false,
   };
 };

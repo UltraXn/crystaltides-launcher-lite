@@ -314,6 +314,9 @@ const buildCrashPayload = async (
         return;
       }
       if (e.key === 'Escape') {
+        if (typeof document !== 'undefined' && document.querySelector('.log-viewer-overlay, .log-viewer-dialog')) {
+          return;
+        }
         if (updateInfo?.available) {
           setUpdateInfo(null);
         } else if (customizingButtonId) {

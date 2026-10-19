@@ -3891,6 +3891,20 @@ dialog[data-inspector='true'] {
 /* ==========================================================================
    Log Viewer Modal — Abyssal Jade Theme & Dev-Grade Terminal
    ========================================================================== */
+.log-viewer-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(2, 4, 10, 0.85);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100000;
+  padding: 20px;
+  animation: fadeIn 0.18s ease-out;
+}
+
 .log-viewer-dialog {
   width: min(880px, 94vw);
   height: min(580px, 86vh);

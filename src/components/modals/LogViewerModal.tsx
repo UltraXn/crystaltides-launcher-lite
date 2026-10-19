@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { invoke } from '@tauri-apps/api/core';
 import {
   Terminal,
@@ -1081,19 +1082,40 @@ export const LogViewerModal: React.FC<LogViewerModalProps> = ({
     handleOpenFolder,
   } = useLogViewer(isOpen, defaultTab);
 
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        onCloseRef.current();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
-  return (
+  const modalContent = (
     <div
+      className="log-viewer-overlay"
       style={{
         position: 'fixed',
         inset: 0,
-        backgroundColor: 'rgba(2, 4, 10, 0.8)',
-        backdropFilter: 'blur(12px)',
+        backgroundColor: 'rgba(2, 4, 10, 0.85)',
+        backdropFilter: 'blur(14px)',
+        WebkitBackdropFilter: 'blur(14px)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        zIndex: 1100,
+        zIndex: 100000,
         padding: '20px',
       }}
     >
@@ -1109,12 +1131,16 @@ export const LogViewerModal: React.FC<LogViewerModalProps> = ({
           background: 'transparent',
           cursor: 'default',
         }}
-        onClick={onClose}
+        onClick={(e) => {
+          e.stopPropagation();
+          onClose();
+        }}
       />
       <dialog
         open
         aria-label="Log Viewer"
         className="log-viewer-dialog"
+        onClick={(e) => e.stopPropagation()}
       >
         <LogViewerHeader
           onOpenFolder={handleOpenFolder}
@@ -1156,4 +1182,9 @@ export const LogViewerModal: React.FC<LogViewerModalProps> = ({
       </dialog>
     </div>
   );
+
+  if (typeof document !== 'undefined') {
+    return createPortal(modalContent, document.body);
+  }
+  return modalContent;
 };

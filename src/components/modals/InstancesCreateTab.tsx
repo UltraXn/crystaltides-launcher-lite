@@ -22,9 +22,65 @@ import {
 } from '../../store/launcherStore';
 import { GameInstance } from '../../services/instanceService';
 
-export const getIconComponent = (
-  icon: 'cube' | 'sword' | 'feather' | 'flame' | 'shield' | 'crystal',
-) => {
+export type InstanceIcon = 'cube' | 'sword' | 'feather' | 'flame' | 'shield' | 'crystal';
+
+export const AVAILABLE_ICONS: readonly InstanceIcon[] = [
+  'cube',
+  'sword',
+  'feather',
+  'flame',
+  'shield',
+  'crystal',
+];
+
+const DEFAULT_VERSIONS = [
+  '1.21.1',
+  '1.21',
+  '1.20.4',
+  '1.20.1',
+  '1.19.4',
+  '1.18.2',
+  '1.16.5',
+  '1.12.2',
+  '1.8.9',
+];
+
+export const INSTANCE_LOADER_OPTIONS: SelectOption[] = [
+  {
+    label: 'NeoForge',
+    value: 'neoforge',
+    icon: <LoaderIconBadge type="neoforge" size={20} />,
+  },
+  {
+    label: 'Fabric',
+    value: 'fabric',
+    icon: <LoaderIconBadge type="fabric" size={20} />,
+  },
+  {
+    label: 'Forge',
+    value: 'forge',
+    icon: <LoaderIconBadge type="forge" size={20} />,
+  },
+  {
+    label: 'Quilt',
+    value: 'quilt',
+    icon: <LoaderIconBadge type="quilt" size={20} />,
+  },
+  {
+    label: 'Vanilla',
+    value: 'vanilla',
+    icon: <LoaderIconBadge type="vanilla" size={20} />,
+  },
+];
+
+const RESOLUTION_PRESETS = [
+  { label: '1080p', w: '1920', h: '1080' },
+  { label: '900p', w: '1600', h: '900' },
+  { label: '4:3 PvP', w: '1440', h: '1080' },
+  { label: '720p', w: '1280', h: '720' },
+] as const;
+
+export const getIconComponent = (icon: InstanceIcon) => {
   switch (icon) {
     case 'crystal':
       return <Sparkles style={{ width: '22px', height: '22px', color: '#16A085' }} />;
@@ -42,6 +98,705 @@ export const getIconComponent = (
   }
 };
 
+export const detectLoaderFromVersion = (version: string, currentLoader: LoaderType): LoaderType => {
+  const lower = version.toLowerCase();
+  if (lower.includes('quilt')) return 'quilt';
+  if (lower.includes('fabric')) return 'fabric';
+  if (lower.includes('neoforge')) return 'neoforge';
+  if (lower.includes('forge')) return 'forge';
+  return currentLoader;
+};
+
+const isCompositeVersion = (version: string): boolean => {
+  const lower = version.toLowerCase();
+  return (
+    lower.includes('quilt') ||
+    lower.includes('fabric') ||
+    lower.includes('neoforge') ||
+    lower.includes('forge')
+  );
+};
+
+export const buildVersionOptions = (availableVersions: string[]): SelectOption[] => {
+  const versions = availableVersions.length > 0 ? availableVersions : DEFAULT_VERSIONS;
+  return versions.map((v) => ({
+    label: isCompositeVersion(v) ? v : `Minecraft ${v}`,
+    value: v,
+  }));
+};
+
+export const hasAdvancedRes = (instance?: GameInstance | null): boolean => {
+  return Boolean(instance?.resolutionWidth ?? instance?.fullscreen);
+};
+
+export const hasAdvancedHooks = (instance?: GameInstance | null): boolean => {
+  return Boolean(
+    instance?.preLaunchCommand ??
+      instance?.wrapperCommand ??
+      instance?.postExitCommand ??
+      instance?.environmentVariables ??
+      instance?.maxRamGb,
+  );
+};
+
+interface FormInitialValues {
+  name: string;
+  mcVersion: string;
+  loaderType: LoaderType;
+  icon: InstanceIcon;
+  maxRamGb: string;
+  resolutionWidth: string;
+  resolutionHeight: string;
+  fullscreen: boolean;
+  preLaunchCommand: string;
+  wrapperCommand: string;
+  postExitCommand: string;
+  environmentVariables: string;
+  showAdvancedRes: boolean;
+  showAdvancedHooks: boolean;
+}
+
+export const getFormInitialValues = (instance?: GameInstance | null): FormInitialValues => {
+  return {
+    name: instance?.name ?? '',
+    mcVersion: instance?.mcVersion ?? '1.21.1',
+    loaderType: instance?.loaderType ?? 'neoforge',
+    icon: instance?.icon ?? 'cube',
+    maxRamGb: instance?.maxRamGb ? String(instance.maxRamGb) : '',
+    resolutionWidth: instance?.resolutionWidth ? String(instance.resolutionWidth) : '',
+    resolutionHeight: instance?.resolutionHeight ? String(instance.resolutionHeight) : '',
+    fullscreen: Boolean(instance?.fullscreen),
+    preLaunchCommand: instance?.preLaunchCommand ?? '',
+    wrapperCommand: instance?.wrapperCommand ?? '',
+    postExitCommand: instance?.postExitCommand ?? '',
+    environmentVariables: instance?.environmentVariables ?? '',
+    showAdvancedRes: hasAdvancedRes(instance),
+    showAdvancedHooks: hasAdvancedHooks(instance),
+  };
+};
+
+const parseOptionalPositiveInt = (value: string): number | undefined => {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  const parsed = Number.parseInt(trimmed, 10);
+  return Number.isNaN(parsed) ? undefined : parsed;
+};
+
+const sanitizeOptionalText = (value: string): string | undefined => {
+  const trimmed = value.trim();
+  return trimmed || undefined;
+};
+
+interface InstancePayloadInput {
+  formName: string;
+  formMcVersion: string;
+  formLoader: LoaderType;
+  formIcon: InstanceIcon;
+  formMaxRam: string;
+  formWidth: string;
+  formHeight: string;
+  formFullscreen: boolean;
+  formPreLaunch: string;
+  formWrapper: string;
+  formPostExit: string;
+  formEnvVars: string;
+  initialInstance?: GameInstance | null;
+}
+
+export const buildInstancePayload = (
+  input: InstancePayloadInput,
+): Omit<GameInstance, 'id' | 'createdAt'> => {
+  const trimmedName = input.formName.trim();
+  const finalName = trimmedName || `Minecraft ${input.formMcVersion} (${input.formLoader})`;
+  const existingLoaderVersion =
+    input.initialInstance?.loaderType === input.formLoader
+      ? input.initialInstance?.loaderVersion
+      : undefined;
+
+  const finalLoaderVersion = resolveEffectiveLoaderVersion(
+    input.formLoader,
+    existingLoaderVersion,
+    input.formMcVersion,
+  );
+
+  return {
+    name: finalName,
+    mcVersion: input.formMcVersion,
+    loaderType: input.formLoader,
+    loaderVersion: finalLoaderVersion,
+    icon: input.formIcon,
+    maxRamGb: parseOptionalPositiveInt(input.formMaxRam),
+    resolutionWidth: parseOptionalPositiveInt(input.formWidth),
+    resolutionHeight: parseOptionalPositiveInt(input.formHeight),
+    fullscreen: input.formFullscreen,
+    preLaunchCommand: sanitizeOptionalText(input.formPreLaunch),
+    wrapperCommand: sanitizeOptionalText(input.formWrapper),
+    postExitCommand: sanitizeOptionalText(input.formPostExit),
+    environmentVariables: sanitizeOptionalText(input.formEnvVars),
+  };
+};
+
+// ---------------- Subcomponents ----------------
+
+interface InstanceEditHeaderProps {
+  instanceName: string;
+  onCancel: () => void;
+  t: ReturnType<typeof useT>;
+}
+
+export const InstanceEditHeader: React.FC<InstanceEditHeaderProps> = ({
+  instanceName,
+  onCancel,
+  t,
+}) => (
+  <div
+    style={{
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      padding: '10px 14px',
+      borderRadius: '8px',
+      background: 'rgba(21, 111, 105, 0.12)',
+      border: '1px solid rgba(22, 160, 133, 0.3)',
+    }}
+  >
+    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <Pencil size={15} style={{ color: '#16A085' }} />
+      <span style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>
+        {t.instances.editTitle}: <span style={{ color: '#16A085' }}>{instanceName}</span>
+      </span>
+    </div>
+    <button
+      type="button"
+      onClick={onCancel}
+      style={{
+        background: 'transparent',
+        border: 'none',
+        color: '#94a3b8',
+        fontSize: '12px',
+        cursor: 'pointer',
+        textDecoration: 'underline',
+      }}
+    >
+      ← {t.instances.tabInstances}
+    </button>
+  </div>
+);
+
+interface InstanceVersionLoaderSectionProps {
+  formMcVersion: string;
+  formLoader: LoaderType;
+  onVersionChange: (version: string) => void;
+  onLoaderChange: (loader: LoaderType) => void;
+  versionOptions: SelectOption[];
+  loaderOptions: SelectOption[];
+  t: ReturnType<typeof useT>;
+}
+
+export const InstanceVersionLoaderSection: React.FC<InstanceVersionLoaderSectionProps> = ({
+  formMcVersion,
+  formLoader,
+  onVersionChange,
+  onLoaderChange,
+  versionOptions,
+  loaderOptions,
+  t,
+}) => (
+  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+    <div>
+      <span
+        style={{
+          display: 'block',
+          fontSize: '13px',
+          fontWeight: 600,
+          color: '#e2e8f0',
+          marginBottom: '6px',
+        }}
+      >
+        {t.instances.formVersionLabel}
+      </span>
+      <CustomSelect
+        value={formMcVersion}
+        onChange={onVersionChange}
+        options={versionOptions}
+        height={38}
+      />
+    </div>
+
+    <div>
+      <span
+        style={{
+          display: 'block',
+          fontSize: '13px',
+          fontWeight: 600,
+          color: '#e2e8f0',
+          marginBottom: '6px',
+        }}
+      >
+        {t.instances.formLoaderLabel}
+      </span>
+      <CustomSelect
+        value={formLoader}
+        onChange={(v: string) => onLoaderChange(v as LoaderType)}
+        options={loaderOptions}
+        height={38}
+      />
+    </div>
+  </div>
+);
+
+interface InstanceIconPickerSectionProps {
+  formIcon: InstanceIcon;
+  onIconSelect: (icon: InstanceIcon) => void;
+  t: ReturnType<typeof useT>;
+}
+
+export const InstanceIconPickerSection: React.FC<InstanceIconPickerSectionProps> = ({
+  formIcon,
+  onIconSelect,
+  t,
+}) => (
+  <div>
+    <span
+      style={{
+        display: 'block',
+        fontSize: '13px',
+        fontWeight: 600,
+        color: '#e2e8f0',
+        marginBottom: '6px',
+      }}
+    >
+      {t.instances.formIconLabel}
+    </span>
+    <div style={{ display: 'flex', gap: '10px' }}>
+      {AVAILABLE_ICONS.map((ico) => {
+        const isSelected = formIcon === ico;
+        return (
+          <button
+            key={ico}
+            type="button"
+            onClick={() => onIconSelect(ico)}
+            style={{
+              flex: 1,
+              padding: '10px',
+              borderRadius: '8px',
+              border: isSelected
+                ? '1px solid rgba(56, 189, 248, 0.4)'
+                : '1px solid rgba(255,255,255,0.08)',
+              background: isSelected ? 'rgba(56, 189, 248, 0.14)' : 'rgba(255,255,255,0.03)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            {getIconComponent(ico)}
+          </button>
+        );
+      })}
+    </div>
+  </div>
+);
+
+interface InstanceResolutionSectionProps {
+  showAdvancedRes: boolean;
+  onToggleAdvancedRes: () => void;
+  formWidth: string;
+  formHeight: string;
+  formFullscreen: boolean;
+  onWidthChange: (w: string) => void;
+  onHeightChange: (h: string) => void;
+  onFullscreenChange: (fullscreen: boolean) => void;
+  onSelectPreset: (w: string, h: string) => void;
+  t: ReturnType<typeof useT>;
+}
+
+export const InstanceResolutionSection: React.FC<InstanceResolutionSectionProps> = ({
+  showAdvancedRes,
+  onToggleAdvancedRes,
+  formWidth,
+  formHeight,
+  formFullscreen,
+  onWidthChange,
+  onHeightChange,
+  onFullscreenChange,
+  onSelectPreset,
+  t,
+}) => (
+  <div
+    style={{
+      borderRadius: '8px',
+      border: '1px solid rgba(255, 255, 255, 0.08)',
+      background: 'rgba(255, 255, 255, 0.02)',
+      padding: '10px 12px',
+    }}
+  >
+    <button
+      type="button"
+      onClick={onToggleAdvancedRes}
+      style={{
+        width: '100%',
+        background: 'transparent',
+        border: 'none',
+        padding: 0,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        cursor: 'pointer',
+        color: '#cbd5e1',
+        fontSize: '12px',
+        fontWeight: 600,
+      }}
+    >
+      <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <Monitor size={14} style={{ color: '#38bdf8' }} />
+        {t.instances.customResolutionTitle}
+      </span>
+      {showAdvancedRes ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+    </button>
+
+    {showAdvancedRes && (
+      <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px' }}>
+          {RESOLUTION_PRESETS.map((p) => {
+            const active = !formFullscreen && formWidth === p.w && formHeight === p.h;
+            return (
+              <button
+                key={p.label}
+                type="button"
+                onClick={() => onSelectPreset(p.w, p.h)}
+                style={{
+                  padding: '5px',
+                  borderRadius: '6px',
+                  border: active
+                    ? '1px solid rgba(22, 160, 133, 0.45)'
+                    : '1px solid rgba(255,255,255,0.08)',
+                  background: active
+                    ? 'rgba(22, 160, 133, 0.18)'
+                    : 'rgba(255,255,255,0.03)',
+                  color: '#e2e8f0',
+                  fontSize: '10.5px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                {p.label}
+              </button>
+            );
+          })}
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+          <div>
+            <span
+              style={{
+                display: 'block',
+                fontSize: '11px',
+                color: '#94a3b8',
+                marginBottom: '4px',
+              }}
+            >
+              {t.instances.widthPx}
+            </span>
+            <input
+              type="number"
+              placeholder={t.instances.defaultGlobal}
+              disabled={formFullscreen}
+              value={formWidth}
+              onChange={(e) => onWidthChange(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '8px 10px',
+                borderRadius: '6px',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                background: formFullscreen ? 'rgba(255,255,255,0.02)' : 'rgba(0, 0, 0, 0.3)',
+                color: '#fff',
+                fontSize: '12px',
+              }}
+            />
+          </div>
+          <div>
+            <span
+              style={{
+                display: 'block',
+                fontSize: '11px',
+                color: '#94a3b8',
+                marginBottom: '4px',
+              }}
+            >
+              {t.instances.heightPx}
+            </span>
+            <input
+              type="number"
+              placeholder={t.instances.defaultGlobal}
+              disabled={formFullscreen}
+              value={formHeight}
+              onChange={(e) => onHeightChange(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '8px 10px',
+                borderRadius: '6px',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                background: formFullscreen ? 'rgba(255,255,255,0.02)' : 'rgba(0, 0, 0, 0.3)',
+                color: '#fff',
+                fontSize: '12px',
+              }}
+            />
+          </div>
+        </div>
+
+        <label
+          htmlFor="form-fullscreen-checkbox"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            cursor: 'pointer',
+            fontSize: '11.5px',
+            color: '#cbd5e1',
+          }}
+        >
+          <input
+            id="form-fullscreen-checkbox"
+            type="checkbox"
+            checked={formFullscreen}
+            onChange={(e) => onFullscreenChange(e.target.checked)}
+            className="papyrus-checkbox"
+          />
+          <span>{t.instances.alwaysFullscreen}</span>
+        </label>
+      </div>
+    )}
+  </div>
+);
+
+interface InstanceHooksSectionProps {
+  showAdvancedHooks: boolean;
+  onToggleAdvancedHooks: () => void;
+  formPreLaunch: string;
+  formWrapper: string;
+  formPostExit: string;
+  formEnvVars: string;
+  formMaxRam: string;
+  onPreLaunchChange: (val: string) => void;
+  onWrapperChange: (val: string) => void;
+  onPostExitChange: (val: string) => void;
+  onEnvVarsChange: (val: string) => void;
+  onMaxRamChange: (val: string) => void;
+  t: ReturnType<typeof useT>;
+}
+
+export const InstanceHooksSection: React.FC<InstanceHooksSectionProps> = ({
+  showAdvancedHooks,
+  onToggleAdvancedHooks,
+  formPreLaunch,
+  formWrapper,
+  formPostExit,
+  formEnvVars,
+  formMaxRam,
+  onPreLaunchChange,
+  onWrapperChange,
+  onPostExitChange,
+  onEnvVarsChange,
+  onMaxRamChange,
+  t,
+}) => (
+  <div
+    style={{
+      marginTop: '12px',
+      borderTop: '1px solid rgba(255, 255, 255, 0.05)',
+      paddingTop: '10px',
+    }}
+  >
+    <button
+      type="button"
+      onClick={onToggleAdvancedHooks}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        width: '100%',
+        background: 'none',
+        border: 'none',
+        color: '#94a3b8',
+        fontSize: '12px',
+        fontWeight: 600,
+        cursor: 'pointer',
+        padding: '4px 0',
+      }}
+    >
+      <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <HardDrive size={14} style={{ color: '#38bdf8' }} />
+        {t.instances.lifecycleHooksTitle}
+      </span>
+      {showAdvancedHooks ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+    </button>
+
+    {showAdvancedHooks && (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '8px' }}>
+        <div>
+          <label
+            htmlFor="form-pre-launch-cmd"
+            style={{
+              display: 'block',
+              fontSize: '11px',
+              color: '#94a3b8',
+              marginBottom: '3px',
+            }}
+          >
+            {t.instances.preLaunchCmd}
+          </label>
+          <input
+            id="form-pre-launch-cmd"
+            type="text"
+            placeholder="ej. echo 'Iniciando instancia...'"
+            value={formPreLaunch}
+            onChange={(e) => onPreLaunchChange(e.target.value)}
+            style={{
+              width: '100%',
+              padding: '7px 10px',
+              borderRadius: '6px',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              background: 'rgba(0, 0, 0, 0.3)',
+              color: '#fff',
+              fontSize: '11px',
+              fontFamily: 'monospace',
+            }}
+          />
+        </div>
+
+        <div>
+          <label
+            htmlFor="form-wrapper-cmd"
+            style={{
+              display: 'block',
+              fontSize: '11px',
+              color: '#94a3b8',
+              marginBottom: '3px',
+            }}
+          >
+            {t.instances.wrapperCmd}
+          </label>
+          <input
+            id="form-wrapper-cmd"
+            type="text"
+            placeholder="ej. mangohud o optirun"
+            value={formWrapper}
+            onChange={(e) => onWrapperChange(e.target.value)}
+            style={{
+              width: '100%',
+              padding: '7px 10px',
+              borderRadius: '6px',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              background: 'rgba(0, 0, 0, 0.3)',
+              color: '#fff',
+              fontSize: '11px',
+              fontFamily: 'monospace',
+            }}
+          />
+        </div>
+
+        <div>
+          <label
+            htmlFor="form-post-exit-cmd"
+            style={{
+              display: 'block',
+              fontSize: '11px',
+              color: '#94a3b8',
+              marginBottom: '3px',
+            }}
+          >
+            {t.instances.postExitCmd}
+          </label>
+          <input
+            id="form-post-exit-cmd"
+            type="text"
+            placeholder="ej. sync_backup.bat"
+            value={formPostExit}
+            onChange={(e) => onPostExitChange(e.target.value)}
+            style={{
+              width: '100%',
+              padding: '7px 10px',
+              borderRadius: '6px',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              background: 'rgba(0, 0, 0, 0.3)',
+              color: '#fff',
+              fontSize: '11px',
+              fontFamily: 'monospace',
+            }}
+          />
+        </div>
+
+        <div>
+          <label
+            htmlFor="form-env-vars"
+            style={{
+              display: 'block',
+              fontSize: '11px',
+              color: '#94a3b8',
+              marginBottom: '3px',
+            }}
+          >
+            {t.instances.envVars}
+          </label>
+          <input
+            id="form-env-vars"
+            type="text"
+            placeholder='KEY=VAL o { "KEY": "VAL" }'
+            value={formEnvVars}
+            onChange={(e) => onEnvVarsChange(e.target.value)}
+            style={{
+              width: '100%',
+              padding: '7px 10px',
+              borderRadius: '6px',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              background: 'rgba(0, 0, 0, 0.3)',
+              color: '#fff',
+              fontSize: '11px',
+              fontFamily: 'monospace',
+            }}
+          />
+        </div>
+
+        <div>
+          <label
+            htmlFor="form-max-ram"
+            style={{
+              display: 'block',
+              fontSize: '11px',
+              color: '#94a3b8',
+              marginBottom: '3px',
+            }}
+          >
+            {t.instances.maxRamLabel}
+          </label>
+          <input
+            id="form-max-ram"
+            type="number"
+            min="1"
+            max="64"
+            placeholder="Por defecto global (ej. 4)"
+            value={formMaxRam}
+            onChange={(e) => onMaxRamChange(e.target.value)}
+            style={{
+              width: '100%',
+              padding: '7px 10px',
+              borderRadius: '6px',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              background: 'rgba(0, 0, 0, 0.3)',
+              color: '#fff',
+              fontSize: '11px',
+            }}
+          />
+        </div>
+      </div>
+    )}
+  </div>
+);
+
+// ---------------- Main Component ----------------
+
 interface InstancesCreateTabProps {
   availableVersions: string[];
   initialInstance?: GameInstance | null;
@@ -58,75 +813,44 @@ export const InstancesCreateTab: React.FC<InstancesCreateTabProps> = ({
   t,
 }) => {
   const isEditing = Boolean(initialInstance);
-  const [formName, setFormName] = useState(initialInstance?.name ?? '');
-  const [formMcVersion, setFormMcVersion] = useState(initialInstance?.mcVersion ?? '1.21.1');
-  const [formLoader, setFormLoader] = useState<LoaderType>(
-    initialInstance?.loaderType ?? 'neoforge',
-  );
-  const [formIcon, setFormIcon] = useState<
-    'cube' | 'sword' | 'feather' | 'flame' | 'shield' | 'crystal'
-  >(
-    (initialInstance?.icon as 'cube' | 'sword' | 'feather' | 'flame' | 'shield' | 'crystal') ??
-      'cube',
-  );
-  const [formMaxRam, setFormMaxRam] = useState(
-    initialInstance?.maxRamGb ? String(initialInstance.maxRamGb) : '',
-  );
-  const [formWidth, setFormWidth] = useState(
-    initialInstance?.resolutionWidth ? String(initialInstance.resolutionWidth) : '',
-  );
-  const [formHeight, setFormHeight] = useState(
-    initialInstance?.resolutionHeight ? String(initialInstance.resolutionHeight) : '',
-  );
-  const [formFullscreen, setFormFullscreen] = useState(initialInstance?.fullscreen ?? false);
-  const [showAdvancedRes, setShowAdvancedRes] = useState(
-    Boolean(initialInstance?.resolutionWidth || initialInstance?.fullscreen),
-  );
-  const [formPreLaunch, setFormPreLaunch] = useState(initialInstance?.preLaunchCommand ?? '');
-  const [formWrapper, setFormWrapper] = useState(initialInstance?.wrapperCommand ?? '');
-  const [formPostExit, setFormPostExit] = useState(initialInstance?.postExitCommand ?? '');
-  const [formEnvVars, setFormEnvVars] = useState(initialInstance?.environmentVariables ?? '');
-  const [showAdvancedHooks, setShowAdvancedHooks] = useState(
-    Boolean(
-      initialInstance?.preLaunchCommand ||
-      initialInstance?.wrapperCommand ||
-      initialInstance?.postExitCommand ||
-      initialInstance?.environmentVariables ||
-      initialInstance?.maxRamGb,
-    ),
-  );
+  const initialValues = getFormInitialValues(initialInstance);
+
+  const [formName, setFormName] = useState(initialValues.name);
+  const [formMcVersion, setFormMcVersion] = useState(initialValues.mcVersion);
+  const [formLoader, setFormLoader] = useState<LoaderType>(initialValues.loaderType);
+  const [formIcon, setFormIcon] = useState<InstanceIcon>(initialValues.icon);
+  const [formMaxRam, setFormMaxRam] = useState(initialValues.maxRamGb);
+  const [formWidth, setFormWidth] = useState(initialValues.resolutionWidth);
+  const [formHeight, setFormHeight] = useState(initialValues.resolutionHeight);
+  const [formFullscreen, setFormFullscreen] = useState(initialValues.fullscreen);
+  const [showAdvancedRes, setShowAdvancedRes] = useState(initialValues.showAdvancedRes);
+  const [formPreLaunch, setFormPreLaunch] = useState(initialValues.preLaunchCommand);
+  const [formWrapper, setFormWrapper] = useState(initialValues.wrapperCommand);
+  const [formPostExit, setFormPostExit] = useState(initialValues.postExitCommand);
+  const [formEnvVars, setFormEnvVars] = useState(initialValues.environmentVariables);
+  const [showAdvancedHooks, setShowAdvancedHooks] = useState(initialValues.showAdvancedHooks);
 
   const [prevInitialInstance, setPrevInitialInstance] = useState(initialInstance);
   if (initialInstance !== prevInitialInstance) {
     setPrevInitialInstance(initialInstance);
     if (initialInstance) {
-      setFormName(initialInstance.name);
-      setFormMcVersion(initialInstance.mcVersion);
-      setFormLoader(initialInstance.loaderType);
-      setFormIcon(
-        (initialInstance.icon as 'cube' | 'sword' | 'feather' | 'flame' | 'shield' | 'crystal') ??
-          'cube',
-      );
-      setFormMaxRam(initialInstance.maxRamGb ? String(initialInstance.maxRamGb) : '');
-      setFormWidth(initialInstance.resolutionWidth ? String(initialInstance.resolutionWidth) : '');
-      setFormHeight(
-        initialInstance.resolutionHeight ? String(initialInstance.resolutionHeight) : '',
-      );
-      setFormFullscreen(Boolean(initialInstance.fullscreen));
-      setFormPreLaunch(initialInstance.preLaunchCommand ?? '');
-      setFormWrapper(initialInstance.wrapperCommand ?? '');
-      setFormPostExit(initialInstance.postExitCommand ?? '');
-      setFormEnvVars(initialInstance.environmentVariables ?? '');
-      if (initialInstance.resolutionWidth || initialInstance.fullscreen) {
+      const vals = getFormInitialValues(initialInstance);
+      setFormName(vals.name);
+      setFormMcVersion(vals.mcVersion);
+      setFormLoader(vals.loaderType);
+      setFormIcon(vals.icon);
+      setFormMaxRam(vals.maxRamGb);
+      setFormWidth(vals.resolutionWidth);
+      setFormHeight(vals.resolutionHeight);
+      setFormFullscreen(vals.fullscreen);
+      setFormPreLaunch(vals.preLaunchCommand);
+      setFormWrapper(vals.wrapperCommand);
+      setFormPostExit(vals.postExitCommand);
+      setFormEnvVars(vals.environmentVariables);
+      if (vals.showAdvancedRes) {
         setShowAdvancedRes(true);
       }
-      if (
-        initialInstance.preLaunchCommand ||
-        initialInstance.wrapperCommand ||
-        initialInstance.postExitCommand ||
-        initialInstance.environmentVariables ||
-        initialInstance.maxRamGb
-      ) {
+      if (vals.showAdvancedHooks) {
         setShowAdvancedHooks(true);
       }
     }
@@ -134,121 +858,46 @@ export const InstancesCreateTab: React.FC<InstancesCreateTabProps> = ({
 
   const handleVersionChange = (val: string) => {
     setFormMcVersion(val);
-    const lower = val.toLowerCase();
-    let detectedLoader = formLoader;
-    if (lower.includes('quilt')) {
-      detectedLoader = 'quilt';
-    } else if (lower.includes('fabric')) {
-      detectedLoader = 'fabric';
-    } else if (lower.includes('neoforge')) {
-      detectedLoader = 'neoforge';
-    } else if (lower.includes('forge')) {
-      detectedLoader = 'forge';
-    }
-    setFormLoader(detectedLoader);
+    setFormLoader((current) => detectLoaderFromVersion(val, current));
   };
 
-  const handleLoaderChange = (newLoader: LoaderType) => {
-    setFormLoader(newLoader);
+  const handlePresetSelect = (w: string, h: string) => {
+    setFormWidth(w);
+    setFormHeight(h);
+    setFormFullscreen(false);
   };
 
-  const instanceVersionOptions: SelectOption[] = (
-    availableVersions.length > 0
-      ? availableVersions
-      : ['1.21.1', '1.21', '1.20.4', '1.20.1', '1.19.4', '1.18.2', '1.16.5', '1.12.2', '1.8.9']
-  ).map((v) => {
-    const isLoaderComposite =
-      v.toLowerCase().includes('quilt') ||
-      v.toLowerCase().includes('fabric') ||
-      v.toLowerCase().includes('neoforge') ||
-      v.toLowerCase().includes('forge');
-    return {
-      label: isLoaderComposite ? v : `Minecraft ${v}`,
-      value: v,
-    };
-  });
-
-  const instanceLoaderOptions: SelectOption[] = [
-    {
-      label: 'NeoForge',
-      value: 'neoforge',
-      icon: <LoaderIconBadge type="neoforge" size={20} />,
-    },
-    {
-      label: 'Fabric',
-      value: 'fabric',
-      icon: <LoaderIconBadge type="fabric" size={20} />,
-    },
-    {
-      label: 'Forge',
-      value: 'forge',
-      icon: <LoaderIconBadge type="forge" size={20} />,
-    },
-    {
-      label: 'Quilt',
-      value: 'quilt',
-      icon: <LoaderIconBadge type="quilt" size={20} />,
-    },
-    {
-      label: 'Vanilla',
-      value: 'vanilla',
-      icon: <LoaderIconBadge type="vanilla" size={20} />,
-    },
-  ];
+  const instanceVersionOptions = buildVersionOptions(availableVersions);
 
   const handleSubmit = (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const finalName = formName.trim() || `Minecraft ${formMcVersion} (${formLoader})`;
-    const parsedW = formWidth.trim() ? Number.parseInt(formWidth.trim(), 10) : undefined;
-    const parsedH = formHeight.trim() ? Number.parseInt(formHeight.trim(), 10) : undefined;
-    const parsedRam = formMaxRam.trim() ? Number.parseInt(formMaxRam.trim(), 10) : undefined;
-    const finalLoaderVersion = resolveEffectiveLoaderVersion(
-      formLoader,
-      initialInstance?.loaderType === formLoader ? initialInstance?.loaderVersion : undefined,
+    const payload = buildInstancePayload({
+      formName,
       formMcVersion,
-    );
+      formLoader,
+      formIcon,
+      formMaxRam,
+      formWidth,
+      formHeight,
+      formFullscreen,
+      formPreLaunch,
+      formWrapper,
+      formPostExit,
+      formEnvVars,
+      initialInstance,
+    });
 
     if (initialInstance) {
-      launcherActions.updateInstanceData(initialInstance.id, {
-        name: finalName,
-        mcVersion: formMcVersion,
-        loaderType: formLoader,
-        loaderVersion: finalLoaderVersion,
-        icon: formIcon,
-        maxRamGb: parsedRam && !Number.isNaN(parsedRam) ? parsedRam : undefined,
-        resolutionWidth: parsedW && !Number.isNaN(parsedW) ? parsedW : undefined,
-        resolutionHeight: parsedH && !Number.isNaN(parsedH) ? parsedH : undefined,
-        fullscreen: formFullscreen,
-        preLaunchCommand: formPreLaunch.trim() || undefined,
-        wrapperCommand: formWrapper.trim() || undefined,
-        postExitCommand: formPostExit.trim() || undefined,
-        environmentVariables: formEnvVars.trim() || undefined,
-      });
-      // Sincronizar y activar la instancia editada para que Ajustes y el launcher queden alineados
+      launcherActions.updateInstanceData(initialInstance.id, payload);
       launcherActions.selectInstance(initialInstance.id);
       if (onSubmitSuccess) {
         onSubmitSuccess();
-      } else {
-        onCancel();
+        return;
       }
     } else {
-      launcherActions.createInstance({
-        name: finalName,
-        mcVersion: formMcVersion,
-        loaderType: formLoader,
-        loaderVersion: finalLoaderVersion,
-        icon: formIcon,
-        maxRamGb: parsedRam && !Number.isNaN(parsedRam) ? parsedRam : undefined,
-        resolutionWidth: parsedW && !Number.isNaN(parsedW) ? parsedW : undefined,
-        resolutionHeight: parsedH && !Number.isNaN(parsedH) ? parsedH : undefined,
-        fullscreen: formFullscreen,
-        preLaunchCommand: formPreLaunch.trim() || undefined,
-        wrapperCommand: formWrapper.trim() || undefined,
-        postExitCommand: formPostExit.trim() || undefined,
-        environmentVariables: formEnvVars.trim() || undefined,
-      });
-      onCancel();
+      launcherActions.createInstance(payload);
     }
+    onCancel();
   };
 
   return (
@@ -264,40 +913,13 @@ export const InstancesCreateTab: React.FC<InstancesCreateTabProps> = ({
       }}
     >
       {initialInstance && (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '10px 14px',
-            borderRadius: '8px',
-            background: 'rgba(21, 111, 105, 0.12)',
-            border: '1px solid rgba(22, 160, 133, 0.3)',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Pencil size={15} style={{ color: '#16A085' }} />
-            <span style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>
-              {t.instances.editTitle}:{' '}
-              <span style={{ color: '#16A085' }}>{initialInstance.name}</span>
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={onCancel}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: '#94a3b8',
-              fontSize: '12px',
-              cursor: 'pointer',
-              textDecoration: 'underline',
-            }}
-          >
-            ← {t.instances.tabInstances}
-          </button>
-        </div>
+        <InstanceEditHeader
+          instanceName={initialInstance.name}
+          onCancel={onCancel}
+          t={t}
+        />
       )}
+
       <div>
         <label
           htmlFor="create-instance-name"
@@ -329,435 +951,50 @@ export const InstancesCreateTab: React.FC<InstancesCreateTabProps> = ({
         />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
-        <div>
-          <span
-            style={{
-              display: 'block',
-              fontSize: '13px',
-              fontWeight: 600,
-              color: '#e2e8f0',
-              marginBottom: '6px',
-            }}
-          >
-            {t.instances.formVersionLabel}
-          </span>
-          <CustomSelect
-            value={formMcVersion}
-            onChange={handleVersionChange}
-            options={instanceVersionOptions}
-            height={38}
-          />
-        </div>
+      <InstanceVersionLoaderSection
+        formMcVersion={formMcVersion}
+        formLoader={formLoader}
+        onVersionChange={handleVersionChange}
+        onLoaderChange={setFormLoader}
+        versionOptions={instanceVersionOptions}
+        loaderOptions={INSTANCE_LOADER_OPTIONS}
+        t={t}
+      />
 
-        <div>
-          <span
-            style={{
-              display: 'block',
-              fontSize: '13px',
-              fontWeight: 600,
-              color: '#e2e8f0',
-              marginBottom: '6px',
-            }}
-          >
-            {t.instances.formLoaderLabel}
-          </span>
-          <CustomSelect
-            value={formLoader}
-            onChange={(v: string) => handleLoaderChange(v as LoaderType)}
-            options={instanceLoaderOptions}
-            height={38}
-          />
-        </div>
-      </div>
+      <InstanceIconPickerSection
+        formIcon={formIcon}
+        onIconSelect={setFormIcon}
+        t={t}
+      />
 
-      <div>
-        <span
-          style={{
-            display: 'block',
-            fontSize: '13px',
-            fontWeight: 600,
-            color: '#e2e8f0',
-            marginBottom: '6px',
-          }}
-        >
-          {t.instances.formIconLabel}
-        </span>
-        <div style={{ display: 'flex', gap: '10px' }}>
-          {(['cube', 'sword', 'feather', 'flame', 'shield', 'crystal'] as const).map((ico) => {
-            const isSelected = formIcon === ico;
-            return (
-              <button
-                key={ico}
-                type="button"
-                onClick={() => setFormIcon(ico)}
-                style={{
-                  flex: 1,
-                  padding: '10px',
-                  borderRadius: '8px',
-                  border: isSelected
-                    ? '1px solid rgba(56, 189, 248, 0.4)'
-                    : '1px solid rgba(255,255,255,0.08)',
-                  background: isSelected ? 'rgba(56, 189, 248, 0.14)' : 'rgba(255,255,255,0.03)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease',
-                }}
-              >
-                {getIconComponent(ico)}
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      <InstanceResolutionSection
+        showAdvancedRes={showAdvancedRes}
+        onToggleAdvancedRes={() => setShowAdvancedRes((prev) => !prev)}
+        formWidth={formWidth}
+        formHeight={formHeight}
+        formFullscreen={formFullscreen}
+        onWidthChange={setFormWidth}
+        onHeightChange={setFormHeight}
+        onFullscreenChange={setFormFullscreen}
+        onSelectPreset={handlePresetSelect}
+        t={t}
+      />
 
-      <div
-        style={{
-          borderRadius: '8px',
-          border: '1px solid rgba(255, 255, 255, 0.08)',
-          background: 'rgba(255, 255, 255, 0.02)',
-          padding: '10px 12px',
-        }}
-      >
-        <button
-          type="button"
-          onClick={() => setShowAdvancedRes((prev) => !prev)}
-          style={{
-            width: '100%',
-            background: 'transparent',
-            border: 'none',
-            padding: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            cursor: 'pointer',
-            color: '#cbd5e1',
-            fontSize: '12px',
-            fontWeight: 600,
-          }}
-        >
-          <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <Monitor size={14} style={{ color: '#38bdf8' }} />
-            {t.instances.customResolutionTitle}
-          </span>
-          {showAdvancedRes ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-        </button>
-
-        {showAdvancedRes && (
-          <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px' }}>
-              {[
-                { label: '1080p', w: '1920', h: '1080' },
-                { label: '900p', w: '1600', h: '900' },
-                { label: '4:3 PvP', w: '1440', h: '1080' },
-                { label: '720p', w: '1280', h: '720' },
-              ].map((p) => (
-                <button
-                  key={p.label}
-                  type="button"
-                  onClick={() => {
-                    setFormWidth(p.w);
-                    setFormHeight(p.h);
-                    setFormFullscreen(false);
-                  }}
-                  style={{
-                    padding: '5px',
-                    borderRadius: '6px',
-                    border:
-                      formWidth === p.w && formHeight === p.h && !formFullscreen
-                        ? '1px solid rgba(22, 160, 133, 0.45)'
-                        : '1px solid rgba(255,255,255,0.08)',
-                    background:
-                      formWidth === p.w && formHeight === p.h && !formFullscreen
-                        ? 'rgba(22, 160, 133, 0.18)'
-                        : 'rgba(255,255,255,0.03)',
-                    color: '#e2e8f0',
-                    fontSize: '10.5px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                  }}
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-              <div>
-                <span
-                  style={{
-                    display: 'block',
-                    fontSize: '11px',
-                    color: '#94a3b8',
-                    marginBottom: '4px',
-                  }}
-                >
-                  {t.instances.widthPx}
-                </span>
-                <input
-                  type="number"
-                  placeholder={t.instances.defaultGlobal}
-                  disabled={formFullscreen}
-                  value={formWidth}
-                  onChange={(e) => setFormWidth(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '8px 10px',
-                    borderRadius: '6px',
-                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                    background: formFullscreen ? 'rgba(255,255,255,0.02)' : 'rgba(0, 0, 0, 0.3)',
-                    color: '#fff',
-                    fontSize: '12px',
-                  }}
-                />
-              </div>
-              <div>
-                <span
-                  style={{
-                    display: 'block',
-                    fontSize: '11px',
-                    color: '#94a3b8',
-                    marginBottom: '4px',
-                  }}
-                >
-                  {t.instances.heightPx}
-                </span>
-                <input
-                  type="number"
-                  placeholder={t.instances.defaultGlobal}
-                  disabled={formFullscreen}
-                  value={formHeight}
-                  onChange={(e) => setFormHeight(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '8px 10px',
-                    borderRadius: '6px',
-                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                    background: formFullscreen ? 'rgba(255,255,255,0.02)' : 'rgba(0, 0, 0, 0.3)',
-                    color: '#fff',
-                    fontSize: '12px',
-                  }}
-                />
-              </div>
-            </div>
-
-            <label
-              htmlFor="form-fullscreen-checkbox"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                cursor: 'pointer',
-                fontSize: '11.5px',
-                color: '#cbd5e1',
-              }}
-            >
-              <input
-                id="form-fullscreen-checkbox"
-                type="checkbox"
-                checked={formFullscreen}
-                onChange={(e) => setFormFullscreen(e.target.checked)}
-                className="papyrus-checkbox"
-              />
-              <span>{t.instances.alwaysFullscreen}</span>
-            </label>
-          </div>
-        )}
-      </div>
-
-      <div
-        style={{
-          marginTop: '12px',
-          borderTop: '1px solid rgba(255, 255, 255, 0.05)',
-          paddingTop: '10px',
-        }}
-      >
-        <button
-          type="button"
-          onClick={() => setShowAdvancedHooks(!showAdvancedHooks)}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            width: '100%',
-            background: 'none',
-            border: 'none',
-            color: '#94a3b8',
-            fontSize: '12px',
-            fontWeight: 600,
-            cursor: 'pointer',
-            padding: '4px 0',
-          }}
-        >
-          <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <HardDrive size={14} style={{ color: '#38bdf8' }} />
-            {t.instances.lifecycleHooksTitle}
-          </span>
-          {showAdvancedHooks ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-        </button>
-
-        {showAdvancedHooks && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '8px' }}>
-            <div>
-              <label
-                htmlFor="form-pre-launch-cmd"
-                style={{
-                  display: 'block',
-                  fontSize: '11px',
-                  color: '#94a3b8',
-                  marginBottom: '3px',
-                }}
-              >
-                {t.instances.preLaunchCmd}
-              </label>
-              <input
-                id="form-pre-launch-cmd"
-                type="text"
-                placeholder="ej. echo 'Iniciando instancia...'"
-                value={formPreLaunch}
-                onChange={(e) => setFormPreLaunch(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '7px 10px',
-                  borderRadius: '6px',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  background: 'rgba(0, 0, 0, 0.3)',
-                  color: '#fff',
-                  fontSize: '11px',
-                  fontFamily: 'monospace',
-                }}
-              />
-            </div>
-
-            <div>
-              <label
-                htmlFor="form-wrapper-cmd"
-                style={{
-                  display: 'block',
-                  fontSize: '11px',
-                  color: '#94a3b8',
-                  marginBottom: '3px',
-                }}
-              >
-                {t.instances.wrapperCmd}
-              </label>
-              <input
-                id="form-wrapper-cmd"
-                type="text"
-                placeholder="ej. mangohud o optirun"
-                value={formWrapper}
-                onChange={(e) => setFormWrapper(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '7px 10px',
-                  borderRadius: '6px',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  background: 'rgba(0, 0, 0, 0.3)',
-                  color: '#fff',
-                  fontSize: '11px',
-                  fontFamily: 'monospace',
-                }}
-              />
-            </div>
-
-            <div>
-              <label
-                htmlFor="form-post-exit-cmd"
-                style={{
-                  display: 'block',
-                  fontSize: '11px',
-                  color: '#94a3b8',
-                  marginBottom: '3px',
-                }}
-              >
-                {t.instances.postExitCmd}
-              </label>
-              <input
-                id="form-post-exit-cmd"
-                type="text"
-                placeholder="ej. sync_backup.bat"
-                value={formPostExit}
-                onChange={(e) => setFormPostExit(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '7px 10px',
-                  borderRadius: '6px',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  background: 'rgba(0, 0, 0, 0.3)',
-                  color: '#fff',
-                  fontSize: '11px',
-                  fontFamily: 'monospace',
-                }}
-              />
-            </div>
-
-            <div>
-              <label
-                htmlFor="form-env-vars"
-                style={{
-                  display: 'block',
-                  fontSize: '11px',
-                  color: '#94a3b8',
-                  marginBottom: '3px',
-                }}
-              >
-                {t.instances.envVars}
-              </label>
-              <input
-                id="form-env-vars"
-                type="text"
-                placeholder='KEY=VAL o { "KEY": "VAL" }'
-                value={formEnvVars}
-                onChange={(e) => setFormEnvVars(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '7px 10px',
-                  borderRadius: '6px',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  background: 'rgba(0, 0, 0, 0.3)',
-                  color: '#fff',
-                  fontSize: '11px',
-                  fontFamily: 'monospace',
-                }}
-              />
-            </div>
-
-            <div>
-              <label
-                htmlFor="form-max-ram"
-                style={{
-                  display: 'block',
-                  fontSize: '11px',
-                  color: '#94a3b8',
-                  marginBottom: '3px',
-                }}
-              >
-                {t.instances.maxRamLabel}
-              </label>
-              <input
-                id="form-max-ram"
-                type="number"
-                min="1"
-                max="64"
-                placeholder="Por defecto global (ej. 4)"
-                value={formMaxRam}
-                onChange={(e) => setFormMaxRam(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '7px 10px',
-                  borderRadius: '6px',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  background: 'rgba(0, 0, 0, 0.3)',
-                  color: '#fff',
-                  fontSize: '11px',
-                }}
-              />
-            </div>
-          </div>
-        )}
-      </div>
+      <InstanceHooksSection
+        showAdvancedHooks={showAdvancedHooks}
+        onToggleAdvancedHooks={() => setShowAdvancedHooks((prev) => !prev)}
+        formPreLaunch={formPreLaunch}
+        formWrapper={formWrapper}
+        formPostExit={formPostExit}
+        formEnvVars={formEnvVars}
+        formMaxRam={formMaxRam}
+        onPreLaunchChange={setFormPreLaunch}
+        onWrapperChange={setFormWrapper}
+        onPostExitChange={setFormPostExit}
+        onEnvVarsChange={setFormEnvVars}
+        onMaxRamChange={setFormMaxRam}
+        t={t}
+      />
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '14px' }}>
         <button

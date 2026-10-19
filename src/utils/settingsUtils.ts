@@ -39,7 +39,7 @@ export const extractCleanMinecraftVersion = (raw: string): string => {
   if (!raw) return '1.21.1';
   let clean = raw.trim();
   // Strip trailing parenthesized tags (e.g. "(quilt)", "(Vanilla)", "(official)")
-  clean = clean.replace(/\s*\([^)]*\)\s*$/, '').trim();
+  clean = clean.replace(/\s*\([^()]*\)\s*$/, '').trim();
 
   if (clean.startsWith('quilt-loader-') || clean.startsWith('fabric-loader-')) {
     const parts = clean.split('-');
@@ -76,22 +76,22 @@ export const extractLoaderVersionFromCompound = (
   _loaderType?: string,
 ): string | undefined => {
   if (!raw) return undefined;
-  const clean = raw.trim().replace(/\s*\([^)]*\)\s*$/, '').trim();
+  const clean = raw.trim().replace(/\s*\([^()]*\)\s*$/, '').trim();
 
   // Pattern: quilt-loader-<loaderVersion>-<mcVersion> or fabric-loader-<loaderVersion>-<mcVersion>
-  const loaderMatch = clean.match(/^(?:quilt|fabric)-loader-(.+)-([^-]+)$/i);
+  const loaderMatch = /^(?:quilt|fabric)-loader-(.+)-[^-]+$/i.exec(clean);
   if (loaderMatch) {
     return loaderMatch[1];
   }
 
   // Pattern: <mcVersion>-forge-<loaderVersion>
-  const forgeMatch = clean.match(/^[^-]+-forge-(.+)$/i);
+  const forgeMatch = /^[^-]+-forge-(.+)$/i.exec(clean);
   if (forgeMatch) {
     return forgeMatch[1];
   }
 
   // Pattern: neoforge-<loaderVersion>
-  const neoforgeMatch = clean.match(/^neoforge-(.+)$/i);
+  const neoforgeMatch = /^neoforge-(.+)$/i.exec(clean);
   if (neoforgeMatch) {
     return neoforgeMatch[1];
   }
