@@ -423,12 +423,7 @@ const FreeButtonElement: React.FC<FreeButtonElementProps> = ({
             customBtnColor,
             fallbackBg: `rgba(12, 17, 24, ${dockConfig.bgOpacity})`,
           }),
-          color: resolveButtonColor(
-            btnCustom,
-            isLaunch,
-            launchColors.contentColor,
-            customBtnColor,
-          ),
+          color: resolveButtonColor(btnCustom, isLaunch, launchColors.contentColor, customBtnColor),
           border: borderStyle,
           boxShadow: shadowStyle,
           backdropFilter: 'blur(20px)',
@@ -519,7 +514,7 @@ const resolveDimensionString = (
 ): string => {
   if (liveDim !== undefined && liveDim !== null) return `${liveDim}px`;
   if (customDim !== undefined && customDim !== null) return `${customDim}px`;
-  return defaultDim || 'auto';
+  return defaultDim ?? 'auto';
 };
 
 const FreeButtonsLayout: React.FC<FreeButtonsLayoutProps> = ({
@@ -711,13 +706,15 @@ const DockCoordinateBadge: React.FC<DockCoordinateBadgeProps> = ({
         left: '50%',
         transform: TRANSLATE_X_50,
         background: isDanger ? 'rgba(239, 68, 68, 0.95)' : 'rgba(15, 18, 26, 0.95)',
-        border: isDanger ? '1px solid rgba(248, 113, 113, 0.85)' : '1px solid rgba(255, 255, 255, 0.16)',
+        border: isDanger
+          ? '1px solid rgba(248, 113, 113, 0.85)'
+          : '1px solid rgba(255, 255, 255, 0.16)',
         borderRadius: '4px',
         padding: '1px 6px',
         fontSize: '9px',
         fontWeight: 600,
         fontFamily: 'ui-monospace, monospace',
-        color: isDanger ? '#ffffff' : accentColor || '#38bdf8',
+        color: isDanger ? '#ffffff' : accentColor ?? '#38bdf8',
         whiteSpace: 'nowrap',
         pointerEvents: 'none',
         boxShadow: isDanger ? '0 0 12px rgba(239, 68, 68, 0.4)' : '0 4px 12px rgba(0, 0, 0, 0.65)',
@@ -1097,8 +1094,8 @@ const DockModuleButtonsList: React.FC<DockModuleButtonsListProps> = ({
     <>
       {activeModuleButtons.map(({ module: mod, slot }, idx) => {
         const modCustomColor =
-          dockConfig.customButtonColors?.[`mod:${mod.id}` as unknown as DockButtonId] ||
-          slot.defaultColor ||
+          dockConfig.customButtonColors?.[`mod:${mod.id}` as unknown as DockButtonId] ??
+          slot.defaultColor ??
           accentColor;
         const isLast = idx === activeModuleButtons.length - 1;
 
@@ -1121,7 +1118,7 @@ const DockModuleButtonsList: React.FC<DockModuleButtonsListProps> = ({
             onContextMenu={(e) => {
               onButtonContextMenu?.(`mod:${mod.id}` as DockButtonId, e);
             }}
-            title={slot.tooltip || slot.label}
+            title={slot.tooltip ?? slot.label}
             className="dock-segment"
             style={{
               width: segmentWidth,
@@ -1351,11 +1348,7 @@ const clampFreeButtonPositions = (
   }
 };
 
-const renderCustomSvgIcon = (
-  sanitized: string,
-  effectiveSize: number,
-  effectiveColor?: string,
-) => (
+const renderCustomSvgIcon = (sanitized: string, effectiveSize: number, effectiveColor?: string) => (
   <div
     className="dock-icon-wrapper dock-custom-svg"
     data-dock-icon="true"
@@ -1512,9 +1505,7 @@ export const DockButtonResizeHandles: React.FC<DockButtonResizeHandlesProps> = (
           }}
         >
           {currentDims.width} × {currentDims.height} px
-          {(currentDims.height < 62 ||
-            currentDims.width < 70 ||
-            !isButtonLabelVisible(btnId)) && (
+          {(currentDims.height < 62 || currentDims.width < 70 || !isButtonLabelVisible(btnId)) && (
             <span style={{ opacity: 0.8, fontWeight: 500 }}> • Sin texto</span>
           )}
         </div>
@@ -2046,7 +2037,7 @@ const ModuleButtonContent: React.FC<{
 }) => {
   const { slot } = modItem;
   const modCustomColor =
-    customColor || dockConfig.customButtonColors?.[btnId] || slot.defaultColor || accentColor;
+    customColor ?? dockConfig.customButtonColors?.[btnId] ?? slot.defaultColor ?? accentColor;
   const shouldShowLabel = isButtonLabelVisible(btnId);
   return (
     <>
