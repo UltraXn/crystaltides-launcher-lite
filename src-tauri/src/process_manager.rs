@@ -914,6 +914,7 @@ pub fn launch_minecraft_process(
     let _launch_slot = LaunchSlot::acquire(&LAUNCH_IN_PROGRESS)?;
     check_running_instance(&GAME_SESSION)?;
     crate::game_marker::check_no_orphaned_game()?;
+    let _ = crate::agent::load_experimental_config(Path::new(&game_dir));
     enforce_high_performance_gpu(&validated_java_path);
 
     if let Some(ref pre_cmd) = pre_launch_command {
@@ -1073,36 +1074,47 @@ pub fn apply_os_optimizations(pid: u32) {
                 ),
             );
 
-            // 2. CPU Affinity (P-cores for Intel Hybrid, CCD0 for AMD Ryzen Dual-CCD X3D)
-            let hw = detect_hardware_profile_sync(None);
-            if hw.recommended_affinity_mask > 0 {
-                let mask = hw.recommended_affinity_mask as usize;
-                let mut proc_mask: usize = 0;
-                let mut sys_mask: usize = 0;
-                let target_mask = if GetProcessAffinityMask(handle, &mut proc_mask, &mut sys_mask)
-                    .is_ok()
-                    && sys_mask > 0
-                {
-                    let valid = mask & sys_mask;
-                    if valid > 0 {
-                        valid
-                    } else {
-                        sys_mask
-                    }
-                } else {
-                    mask
-                };
-                let aff_res = SetProcessAffinityMask(handle, target_mask);
+            // 2. CPU Affinity (Delegated to ct-agent.dll via SetThreadSelectedCpuSets unless CT_EXP_CPUSETS=0)
+            if crate::agent::is_exp_cpusets_enabled() {
                 crate::logger::log(
                     "INFO",
                     "ProcessManager",
                     &format!(
-                        "Applied CPU Affinity Mask 0x{:X} to PID {}: {:?}",
-                        target_mask,
-                        pid,
-                        aff_res.is_ok()
+                        "Skipped hard SetProcessAffinityMask on PID {}: P/E-Core isolation delegated to ct-agent.dll via SetThreadSelectedCpuSets.",
+                        pid
                     ),
                 );
+            } else {
+                let hw = detect_hardware_profile_sync(None);
+                if hw.recommended_affinity_mask > 0 {
+                    let mask = hw.recommended_affinity_mask as usize;
+                    let mut proc_mask: usize = 0;
+                    let mut sys_mask: usize = 0;
+                    let target_mask =
+                        if GetProcessAffinityMask(handle, &mut proc_mask, &mut sys_mask).is_ok()
+                            && sys_mask > 0
+                        {
+                            let valid = mask & sys_mask;
+                            if valid > 0 {
+                                valid
+                            } else {
+                                sys_mask
+                            }
+                        } else {
+                            mask
+                        };
+                    let aff_res = SetProcessAffinityMask(handle, target_mask);
+                    crate::logger::log(
+                        "INFO",
+                        "ProcessManager",
+                        &format!(
+                            "Applied CPU Affinity Mask 0x{:X} to PID {}: {:?}",
+                            target_mask,
+                            pid,
+                            aff_res.is_ok()
+                        ),
+                    );
+                }
             }
 
             // 3. Disable Windows 11 EcoQoS (PowerThrottling)
@@ -1268,7 +1280,13 @@ pub fn enforce_high_performance_gpu(java_path: &std::path::Path) {
         .encode_utf16()
         .collect();
     let val_name: Vec<u16> = format!("{}\0", clean_path).encode_utf16().collect();
-    let val_data: Vec<u16> = "GpuPreference=2;\0".encode_utf16().collect();
+    let swap_upgrade = crate::agent::is_exp_swap_effect_upgrade_enabled();
+    let pref_str = if swap_upgrade {
+        "GpuPreference=2;SwapEffectUpgradeEnable=1;\0"
+    } else {
+        "GpuPreference=2;\0"
+    };
+    let val_data: Vec<u16> = pref_str.encode_utf16().collect();
 
     unsafe {
         let mut hkey = HKEY::default();
@@ -1291,7 +1309,8 @@ pub fn enforce_high_performance_gpu(java_path: &std::path::Path) {
                     "INFO",
                     "ProcessManager",
                     &format!(
-                        "Forced High Performance GPU (GpuPreference=2) for: {}",
+                        "Forced High Performance GPU ({}) for: {}",
+                        pref_str.trim_end_matches('\0'),
                         clean_path
                     ),
                 );

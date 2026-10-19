@@ -24,7 +24,7 @@ Este manifiesto documenta la integridad criptográfica (SHA-256) de todos los bi
 | `boost/crystaltides-boost-neoforge-26.2.jar` | NeoForge · Minecraft 26.2 | CrystalTides Boost 1.2.0 | `e857af9f453553dc6eb8311f7dd2b54e2f152ff397663c4348bd190fd13c4f38` |
 | `boost/crystaltides-boost-fabric-26.3.jar` | Fabric/Quilt · Minecraft 26.3 | CrystalTides Boost 1.2.0 | `115f422f56ca29776b5491e630d0dd614b245c8956b176fda6cd84574e141485` |
 | `boost/crystaltides-boost-neoforge-26.3.jar` | NeoForge · Minecraft 26.3 | CrystalTides Boost 1.2.0 | `c616793ef3d840ecbd7b58587fe5c1396c67afb9f9f951e9a94a426689b6bcbf` |
-| `ct-agent.dll` | Windows x64 | Agente nativo de priorización de hilos y optimizaciones seguras de proceso | `ba1aa3c7b9eb074a6be5480087216fbe32d73654eab695f2a676d5a84f94d6e8` |
+| `ct-agent.dll` | Windows x64 | Agente nativo de priorización de hilos y optimizaciones seguras de proceso | `0480e4104ce5da8c2ac0f3662680c1dc25e5a1516dfb576dd7c750858bc87f17` |
 | `game-bridge.jar` | Multiplataforma | Bridge IPC de telemetría y métricas en tiempo real de Minecraft | `24055194ace5737417eb716cdc9f8a6c0dfa010049dffe90a282588408a93684` |
 
 ## Verificación en Tiempo de Compilación y Test Suite

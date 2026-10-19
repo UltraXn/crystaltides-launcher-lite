@@ -766,9 +766,93 @@ fn clean_path_for_jvm(path: &Path) -> String {
     }
 }
 
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
+#[serde(default)]
+pub struct ExperimentalOptimizationConfig {
+    pub timer_05ms: bool,
+    pub cpu_sets: bool,
+    pub gpu_priority: String,
+    pub swap_effect_upgrade: bool,
+    pub dx12_interop: bool,
+}
+
+impl Default for ExperimentalOptimizationConfig {
+    fn default() -> Self {
+        Self {
+            timer_05ms: true,
+            cpu_sets: true,
+            gpu_priority: "realtime".to_string(),
+            swap_effect_upgrade: true,
+            dx12_interop: false,
+        }
+    }
+}
+
+fn parse_env_bool(var_name: &str) -> Option<bool> {
+    let val = std::env::var(var_name).ok()?;
+    let clean = val.trim().to_ascii_lowercase();
+    match clean.as_str() {
+        "1" | "true" | "on" | "05ms" | "0.5ms" => Some(true),
+        "0" | "false" | "off" => Some(false),
+        _ => None,
+    }
+}
+
+static LAST_EXP_CPUSETS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+static LAST_EXP_SWAP_UPGRADE: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(true);
+
+pub fn is_exp_cpusets_enabled() -> bool {
+    parse_env_bool("CT_EXP_CPUSETS")
+        .unwrap_or_else(|| LAST_EXP_CPUSETS.load(std::sync::atomic::Ordering::SeqCst))
+}
+
+pub fn is_exp_swap_effect_upgrade_enabled() -> bool {
+    parse_env_bool("CT_EXP_SWAP_EFFECT_UPGRADE")
+        .unwrap_or_else(|| LAST_EXP_SWAP_UPGRADE.load(std::sync::atomic::Ordering::SeqCst))
+}
+
+pub fn load_experimental_config(base_path: &Path) -> ExperimentalOptimizationConfig {
+    let mut cfg = ExperimentalOptimizationConfig::default();
+
+    let json_path = base_path
+        .join("config")
+        .join("crystaltides-experimental.json");
+    if let Ok(content) = fs::read_to_string(&json_path) {
+        if let Ok(parsed) = serde_json::from_str::<ExperimentalOptimizationConfig>(&content) {
+            cfg = parsed;
+        }
+    }
+
+    if let Some(v) = parse_env_bool("CT_EXP_TIMER_05MS") {
+        cfg.timer_05ms = v;
+    }
+    if let Some(v) = parse_env_bool("CT_EXP_CPUSETS") {
+        cfg.cpu_sets = v;
+    }
+    if let Ok(v) = std::env::var("CT_EXP_GPU_PRIORITY") {
+        let clean = v.trim().to_ascii_lowercase();
+        if matches!(clean.as_str(), "realtime" | "high" | "off") {
+            cfg.gpu_priority = clean;
+        }
+    }
+    if let Some(v) = parse_env_bool("CT_EXP_SWAP_EFFECT_UPGRADE") {
+        cfg.swap_effect_upgrade = v;
+    }
+    if let Some(v) = parse_env_bool("CT_EXP_DX12_INTEROP") {
+        cfg.dx12_interop = v;
+    }
+
+    LAST_EXP_CPUSETS.store(cfg.cpu_sets, std::sync::atomic::Ordering::SeqCst);
+    LAST_EXP_SWAP_UPGRADE.store(cfg.swap_effect_upgrade, std::sync::atomic::Ordering::SeqCst);
+
+    cfg
+}
+
 pub fn build_agent_jvm_args(base_path: &Path) -> Result<Vec<String>, String> {
     let natives_dir = base_path.join("natives");
     let mc_version = resolve_instance_mc_version(base_path);
+    let exp_cfg = load_experimental_config(base_path);
 
     let mut args = vec![
         format!("-Djava.library.path={}", clean_path_for_jvm(&natives_dir)),
@@ -776,6 +860,10 @@ pub fn build_agent_jvm_args(base_path: &Path) -> Result<Vec<String>, String> {
         format!("-Dcrystaltides.minecraft.version={}", mc_version),
         format!("-Dcrystaltides.ipc.port={}", get_actual_game_ipc_port()),
     ];
+
+    if exp_cfg.dx12_interop {
+        args.push("-Dcrystaltides.exp.dx12Interop=true".to_string());
+    }
 
     if let Some(token_lock) = EXPECTED_SESSION_TOKEN.get() {
         if let Ok(guard) = token_lock.lock() {
@@ -803,9 +891,23 @@ pub fn build_agent_jvm_args(base_path: &Path) -> Result<Vec<String>, String> {
         base_path.join("ct-agent.dll"),
     ];
 
+    let gpu_opt = match exp_cfg.gpu_priority.trim().to_ascii_lowercase().as_str() {
+        "high" => "high",
+        "off" | "0" | "false" => "off",
+        _ => "realtime",
+    };
+    let timer_opt = if exp_cfg.timer_05ms { "05ms" } else { "off" };
+    let cpusets_opt = if exp_cfg.cpu_sets { "on" } else { "off" };
+
     for candidate in &ct_agent_candidates {
         if candidate.exists() {
-            args.push(format!("-agentpath:{}", clean_path_for_jvm(candidate)));
+            args.push(format!(
+                "-agentpath:{}=threads=on,gpu={},timer={},cpusets={}",
+                clean_path_for_jvm(candidate),
+                gpu_opt,
+                timer_opt,
+                cpusets_opt
+            ));
             break;
         }
     }
@@ -958,17 +1060,39 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_build_agent_jvm_args_with_ct_agent() {
         let temp_dir = std::env::temp_dir().join("ct_test_dir");
+        let _ = fs::remove_dir_all(&temp_dir);
         let natives_dir = temp_dir.join("natives");
         let _ = fs::create_dir_all(&natives_dir);
         let ct_path = natives_dir.join("ct-agent.dll");
         let _ = fs::write(&ct_path, b"test_dll");
 
         let args = build_agent_jvm_args(&temp_dir).expect("Should build JVM args");
-        assert!(args
+        assert!(args.iter().any(|arg| {
+            arg.starts_with("-agentpath:")
+                && arg.contains("ct-agent.dll=threads=on,gpu=realtime,timer=05ms,cpusets=on")
+        }));
+        assert!(!args
             .iter()
-            .any(|arg| arg.starts_with("-agentpath:") && arg.contains("ct-agent.dll")));
+            .any(|arg| arg == "-Dcrystaltides.exp.dx12Interop=true"));
+
+        let cfg_dir = temp_dir.join("config");
+        let _ = fs::create_dir_all(&cfg_dir);
+        let _ = fs::write(
+            cfg_dir.join("crystaltides-experimental.json"),
+            r#"{"timer_05ms":false,"cpu_sets":false,"gpu_priority":"high","swap_effect_upgrade":false,"dx12_interop":true}"#,
+        );
+
+        let args_custom = build_agent_jvm_args(&temp_dir).expect("Should build custom JVM args");
+        assert!(args_custom.iter().any(|arg| {
+            arg.starts_with("-agentpath:")
+                && arg.contains("ct-agent.dll=threads=on,gpu=high,timer=off,cpusets=off")
+        }));
+        assert!(args_custom
+            .iter()
+            .any(|arg| arg == "-Dcrystaltides.exp.dx12Interop=true"));
 
         let _ = fs::remove_dir_all(&temp_dir);
     }
@@ -1241,7 +1365,7 @@ mod tests {
             let ct_agent_hash = hex::encode(sha2::Sha256::digest(EMBEDDED_CT_AGENT_DLL));
             assert_eq!(
                 ct_agent_hash,
-                "ba1aa3c7b9eb074a6be5480087216fbe32d73654eab695f2a676d5a84f94d6e8"
+                "0480e4104ce5da8c2ac0f3662680c1dc25e5a1516dfb576dd7c750858bc87f17"
             );
             assert_eq!(
                 manifest_sha256_for("ct-agent.dll").as_deref(),
