@@ -141,7 +141,7 @@ export const resolveFreeButtonBorder = (
   accentColor?: string,
 ): string => {
   if (isEditingHud) {
-    const editColor = accentColor || '#38bdf8';
+    const editColor = accentColor ?? '#38bdf8';
     return isColliding ? '2px dashed #ef4444' : `2px dashed ${editColor}`;
   }
   return resolveButtonBorder(btnCustom, customBtnColor, dockBorderColorMode);
