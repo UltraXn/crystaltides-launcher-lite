@@ -6,32 +6,12 @@ import {
   FolderOpen,
   RotateCcw,
   Sparkles,
-  Check,
-  Layout,
-  Move,
-  Eye,
-  EyeOff,
-  ChevronUp,
-  ChevronDown,
-  ArrowUpToLine,
-  ArrowDownToLine,
-  Minus,
-  Layers,
-  Info,
-  User,
-  Settings as SettingsIcon,
-  Rocket,
-  Globe,
-  Lock,
   RefreshCw,
-  GripVertical,
 } from 'lucide-react';
 import {
   useLauncherStore,
   launcherActions,
   LauncherState,
-  DockButtonId,
-  PROTECTED_DOCK_BUTTONS,
   useT,
   resolveEffectiveLoaderVersion,
 } from '../../store/launcherStore';
@@ -60,8 +40,14 @@ import {
   SettingsPersonalizationSection,
   type SettingsPersonalizationSectionProps,
 } from './settings/SettingsPersonalizationSection';
-import { CustomColorPicker } from '../common/CustomColorPicker';
-import { SpainFlag, UsaFlag } from '../common/FlagIcons';
+import {
+  SettingsDockSection,
+  type SettingsDockSectionProps,
+} from './settings/SettingsDockSection';
+import {
+  SettingsLanguageSection,
+  type SettingsLanguageSectionProps,
+} from './settings/SettingsLanguageSection';
 import {
   fetchVanillaVersions,
   fetchInstalledLocalVersions,
@@ -72,7 +58,25 @@ import {
   installLoader,
 } from '../../services/minecraftMetadataService';
 import { getJavaVersionForMinecraft, ensureJava } from '../../services/javaService';
-import { isNearOpacity, resolveActiveBtnColor } from '../../utils/settingsUtils';
+
+const resolveBaseMinecraftVersion = (version: string): string => {
+  if (!version) return '1.21.1';
+  const trimmed = version.trim();
+  if (trimmed.startsWith('quilt-loader-') || trimmed.startsWith('fabric-loader-')) {
+    const parts = trimmed.split('-');
+    const last = parts[parts.length - 1];
+    if (last && /\d+\.\d+/.test(last)) return last;
+  }
+  const match = /(\d+\.\d+(?:\.\d+)?)/.exec(trimmed);
+  if (match) return match[1];
+  return trimmed;
+};
+
+const resolveUpdateFeedbackColor = (type: 'success' | 'available' | 'info'): string => {
+  if (type === 'success') return '#34D399';
+  if (type === 'available') return '#2DD4BF';
+  return '#94A3B8';
+};
 
 export const SettingsModal: React.FC = () => {
   const activeModal = useLauncherStore((s: LauncherState) => s.activeModal);
@@ -89,11 +93,11 @@ export const SettingsModal: React.FC = () => {
   const t = useT();
 
   // Local state for interactive editing before saving
-  const initialMc = settings.mcVersion || '1.21.1';
+  const initialMc = settings.mcVersion ?? '1.21.1';
   const [mcVersion, setMcVersion] = useState(initialMc);
   const [loaderType, setLoaderType] = useState<
     'vanilla' | 'neoforge' | 'forge' | 'fabric' | 'quilt'
-  >(settings.loaderType || 'neoforge');
+  >(settings.loaderType ?? 'neoforge');
   const initialLoaderVer =
     !settings.loaderVersion || settings.loaderVersion === '21.1.65'
       ? '21.1.252'
@@ -104,7 +108,7 @@ export const SettingsModal: React.FC = () => {
   const [height, setHeight] = useState('720');
   const [useDesktopRes, setUseDesktopRes] = useState(false);
   const [javaDistribution, setJavaDistribution] = useState<'adoptium' | 'graalvm'>(
-    settings.javaDistribution || 'adoptium',
+    settings.javaDistribution ?? 'adoptium',
   );
   const [keepLauncher, setKeepLauncher] = useState(!settings.autoCloseLauncher);
   const [disableBgAnim, setDisableBgAnim] = useState(settings.disableBgAnim ?? false);
@@ -130,10 +134,6 @@ export const SettingsModal: React.FC = () => {
   const [foundUpdate, setFoundUpdate] = useState<AppUpdateInfo | null>(null);
   const [showUpdaterModal, setShowUpdaterModal] = useState(false);
 
-  // Dock button drag and drop state
-  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
-  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
-  const dragSourceIndexRef = useRef<number | null>(null);
 
   // Wallpaper state
   const [customUrlInput, setCustomUrlInput] = useState('');
@@ -191,19 +191,6 @@ export const SettingsModal: React.FC = () => {
     };
   }, [activeModal, showAllVersions]);
 
-  // Helper para resolver la versión vanilla base de Minecraft en caso de nombres locales compuestos
-  const resolveBaseMinecraftVersion = (version: string): string => {
-    if (!version) return '1.21.1';
-    const trimmed = version.trim();
-    if (trimmed.startsWith('quilt-loader-') || trimmed.startsWith('fabric-loader-')) {
-      const parts = trimmed.split('-');
-      const last = parts[parts.length - 1];
-      if (last && /\d+\.\d+/.test(last)) return last;
-    }
-    const match = trimmed.match(/(\d+\.\d+(?:\.\d+)?)/);
-    if (match) return match[1];
-    return trimmed;
-  };
 
   // Fetch available loader versions whenever mcVersion, loaderType or showBetaLoaders changes
   useEffect(() => {
@@ -265,15 +252,28 @@ export const SettingsModal: React.FC = () => {
   }, [activeModal, loaderType, mcVersion, showBetaLoaders]);
 
   useEffect(() => {
+    if (activeModal !== 'settings') return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        launcherActions.closeModal();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [activeModal]);
+
+  useEffect(() => {
     if (activeModal === 'settings') {
-      setMcVersion(settings.mcVersion || '1.21.1');
-      setLoaderType(settings.loaderType || 'neoforge');
+      setMcVersion(settings.mcVersion ?? '1.21.1');
+      setLoaderType(settings.loaderType ?? 'neoforge');
       setLoaderVersion(
         !settings.loaderVersion || settings.loaderVersion === '21.1.65'
           ? '21.1.252'
           : settings.loaderVersion,
       );
-      setRamMb((settings.maxRamGb || 4) * 1024);
+      setRamMb((settings.maxRamGb ?? 4) * 1024);
       setKeepLauncher(!settings.autoCloseLauncher);
       setDisableBgAnim(settings.disableBgAnim ?? false);
       setDisableAnimations(settings.disableAnimations ?? false);
@@ -376,7 +376,7 @@ export const SettingsModal: React.FC = () => {
       try {
         const requiredJava = getJavaVersionForMinecraft(cleanMc, loaderType, loaderVersion);
         const home = await invoke<string | null>('get_home_dir');
-        const runtimesDir = `${(home || 'C:/Users/Default').replace(/\\/g, '/')}/.crystaltides/runtimes`;
+        const runtimesDir = `${(home ?? 'C:/Users/Default').replace(/\\/g, '/')}/.crystaltides/runtimes`;
         javaToUse = await ensureJava(requiredJava, runtimesDir).catch(() => '');
       } catch {
         javaToUse = '';
@@ -536,16 +536,22 @@ export const SettingsModal: React.FC = () => {
 
   return (
     <>
-      <div
-        className="papyrus-modal-overlay"
-        role="presentation"
-        onClick={(e) => {
-          if (e.target === e.currentTarget) launcherActions.closeModal();
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') launcherActions.closeModal();
-        }}
-      >
+      <div className="papyrus-modal-overlay">
+        <button
+          type="button"
+          aria-label={t.settings.close}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            width: '100%',
+            height: '100%',
+            background: 'transparent',
+            border: 'none',
+            padding: 0,
+            cursor: 'default',
+          }}
+          onClick={() => launcherActions.closeModal()}
+        />
         <dialog
           open
           className="papyrus-settings-card settings-modal-dialog"
@@ -578,88 +584,7 @@ export const SettingsModal: React.FC = () => {
           {/* Cuerpo scrolleable con todas las secciones de ajustes */}
           <div className="settings-modal-body">
             {/* Section: Language / Idioma Selector */}
-            <div className="settings-section">
-              <div className="settings-section-header">
-                <span
-                  className="settings-label-title"
-                  style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-                >
-                  <Globe size={14} style={{ color: '#16A085' }} />
-                  {t.settings.languageTitle}
-                </span>
-              </div>
-              <p
-                style={{
-                  fontSize: '11px',
-                  color: 'rgba(248, 250, 252, 0.5)',
-                  margin: '2px 0 8px 0',
-                }}
-              >
-                {t.settings.languageDesc}
-              </p>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button
-                  type="button"
-                  onClick={() => launcherActions.setLanguage('es')}
-                  className={`settings-action-btn ${language === 'es' ? 'active' : ''}`}
-                  style={{
-                    flex: 1,
-                    padding: '7px 12px',
-                    borderRadius: '8px',
-                    border:
-                      language === 'es'
-                        ? '1px solid #16A085'
-                        : '1px solid rgba(255, 255, 255, 0.1)',
-                    background:
-                      language === 'es' ? 'rgba(22, 160, 133, 0.18)' : 'rgba(255, 255, 255, 0.04)',
-                    color: language === 'es' ? '#16A085' : 'rgba(248, 250, 252, 0.7)',
-                    cursor: 'pointer',
-                    fontWeight: 600,
-                    fontSize: '11.5px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '8px',
-                    transition:
-                      'background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease',
-                  }}
-                >
-                  <SpainFlag />
-                  <span>{t.settings.spanish}</span>
-                  {language === 'es' && <Check size={13} color="#16A085" />}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => launcherActions.setLanguage('en')}
-                  className={`settings-action-btn ${language === 'en' ? 'active' : ''}`}
-                  style={{
-                    flex: 1,
-                    padding: '7px 12px',
-                    borderRadius: '8px',
-                    border:
-                      language === 'en'
-                        ? '1px solid #16A085'
-                        : '1px solid rgba(255, 255, 255, 0.1)',
-                    background:
-                      language === 'en' ? 'rgba(22, 160, 133, 0.18)' : 'rgba(255, 255, 255, 0.04)',
-                    color: language === 'en' ? '#16A085' : 'rgba(248, 250, 252, 0.7)',
-                    cursor: 'pointer',
-                    fontWeight: 600,
-                    fontSize: '11.5px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '8px',
-                    transition:
-                      'background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease',
-                  }}
-                >
-                  <UsaFlag />
-                  <span>{t.settings.english}</span>
-                  {language === 'en' && <Check size={13} color="#16A085" />}
-                </button>
-              </div>
-            </div>
+            <SettingsLanguageSection language={language} t={t} />
 
             {/* Section 0: Minecraft Version Selector */}
             <SettingsMinecraftSection
@@ -677,7 +602,7 @@ export const SettingsModal: React.FC = () => {
               loaderType={loaderType}
               setLoaderType={(newLoader) => {
                 setLoaderType(newLoader);
-                setLoaderVersion(resolveEffectiveLoaderVersion(newLoader, '', mcVersion) || '');
+                setLoaderVersion(resolveEffectiveLoaderVersion(newLoader, '', mcVersion) ?? '');
               }}
               loaderVersion={loaderVersion}
               setLoaderVersion={setLoaderVersion}
@@ -719,659 +644,11 @@ export const SettingsModal: React.FC = () => {
             />
 
             {/* Section: Dock & Main Menu Customization */}
-            <div
-              className="settings-section"
-              style={{ borderTop: '1px solid rgba(255, 255, 255, 0.06)', paddingTop: '16px' }}
-            >
-              <div className="settings-section-header">
-                <span
-                  className="settings-label-title"
-                  style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-                >
-                  <Layout size={14} style={{ color: accentColor }} />
-                  {t.settings.dockCustomizationTitle}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => launcherActions.resetDockConfig()}
-                  className="wallpaper-reset-btn"
-                  title={t.settings.resetDock}
-                >
-                  <RotateCcw size={12} />
-                  {t.settings.resetDock}
-                </button>
-              </div>
-              <p
-                style={{
-                  fontSize: '11px',
-                  color: 'rgba(248, 250, 252, 0.5)',
-                  margin: '2px 0 10px 0',
-                }}
-              >
-                {t.settings.dockBannerDesc}
-              </p>
-
-              {/* Banner Destacado: Entrar al Modo Edición Visual */}
-              <div
-                style={{
-                  padding: '12px 16px',
-                  borderRadius: '12px',
-                  background:
-                    'linear-gradient(135deg, rgba(20, 37, 62, 0.85) 0%, rgba(21, 61, 76, 0.6) 100%)',
-                  border: '1px solid rgba(22, 160, 133, 0.45)',
-                  boxShadow:
-                    '0 4px 20px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(22, 160, 133, 0.25)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '12px',
-                  marginBottom: '16px',
-                }}
-              >
-                <div>
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      marginBottom: '2px',
-                    }}
-                  >
-                    <Move size={15} style={{ color: '#16A085' }} />
-                    <span style={{ fontSize: '13px', fontWeight: 700, color: '#ffffff' }}>
-                      {t.settings.dockBannerTitle}
-                    </span>
-                  </div>
-                  <span style={{ fontSize: '11px', color: 'rgba(248, 250, 252, 0.65)' }}>
-                    {t.settings.dockBannerDesc}
-                  </span>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    launcherActions.closeModal();
-                    launcherActions.setEditingHud(true);
-                  }}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    padding: '8px 14px',
-                    borderRadius: '8px',
-                    background: 'linear-gradient(135deg, #156F69 0%, #16A085 100%)',
-                    border: '1px solid rgba(22, 160, 133, 0.6)',
-                    color: '#ffffff',
-                    fontSize: '11.5px',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    boxShadow: '0 4px 15px rgba(22, 160, 133, 0.35)',
-                    whiteSpace: 'nowrap',
-                    transition: 'transform 0.15s ease',
-                  }}
-                  onMouseEnter={(e) => (e.currentTarget.style.transform = 'scale(1.03)')}
-                  onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
-                >
-                  <Move size={13} />
-                  <span>{t.settings.enterEditModeBtn}</span>
-                </button>
-              </div>
-
-              {/* 1. Posición en Pantalla */}
-              <div style={{ marginBottom: '14px' }}>
-                <span
-                  style={{
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    color: '#e2e8f0',
-                    display: 'block',
-                    marginBottom: '6px',
-                  }}
-                >
-                  {t.settings.dockPositionTitle}
-                </span>
-                <div className="dock-preset-group">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      launcherActions.setDockConfig({
-                        positionPreset: 'center',
-                        customCoordinates: undefined,
-                      })
-                    }
-                    className={`dock-preset-pill ${dockConfig.positionPreset === 'center' ? 'active' : ''}`}
-                  >
-                    <Minus size={13} />
-                    <span>{t.settings.posCenter}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      launcherActions.setDockConfig({
-                        positionPreset: 'bottom',
-                        customCoordinates: undefined,
-                      })
-                    }
-                    className={`dock-preset-pill ${dockConfig.positionPreset === 'bottom' ? 'active' : ''}`}
-                  >
-                    <ArrowDownToLine size={13} />
-                    <span>{t.settings.posBottom}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      launcherActions.setDockConfig({
-                        positionPreset: 'top',
-                        customCoordinates: undefined,
-                      })
-                    }
-                    className={`dock-preset-pill ${dockConfig.positionPreset === 'top' ? 'active' : ''}`}
-                  >
-                    <ArrowUpToLine size={13} />
-                    <span>{t.settings.posTop}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (dockConfig.positionPreset !== 'free') {
-                        launcherActions.setDockConfig({
-                          positionPreset: 'free',
-                          customCoordinates: { x: 50, y: 50 },
-                        });
-                      }
-                    }}
-                    className={`dock-preset-pill ${dockConfig.positionPreset === 'free' ? 'active' : ''}`}
-                  >
-                    <Move size={13} />
-                    <span>
-                      {t.settings.posFree}{' '}
-                      {dockConfig.positionPreset === 'free' && dockConfig.customCoordinates
-                        ? `(${dockConfig.customCoordinates.x}%, ${dockConfig.customCoordinates.y}%)`
-                        : t.settings.posDraggable}
-                    </span>
-                  </button>
-                </div>
-                {dockConfig.positionPreset === 'free' && (
-                  <p style={{ fontSize: '10.5px', color: accentColor, margin: '6px 0 0 0' }}>
-                    {t.settings.posFreeTip}
-                  </p>
-                )}
-              </div>
-
-              {/* 2. Color del Botón Iniciar Juego */}
-              <div style={{ marginBottom: '14px' }}>
-                <span
-                  style={{
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    color: '#e2e8f0',
-                    display: 'block',
-                    marginBottom: '6px',
-                  }}
-                >
-                  {t.settings.startBtnColorTitle}
-                </span>
-                <div className="dock-preset-group">
-                  <button
-                    type="button"
-                    onClick={() => launcherActions.setDockConfig({ startBtnColorMode: 'accent' })}
-                    className={`dock-preset-pill ${dockConfig.startBtnColorMode === 'accent' ? 'active' : ''}`}
-                  >
-                    <Sparkles size={13} style={{ color: accentColor }} />
-                    <span>{t.settings.syncWithAccent} ({accentColor.toUpperCase()})</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => launcherActions.setDockConfig({ startBtnColorMode: 'emerald' })}
-                    className={`dock-preset-pill ${dockConfig.startBtnColorMode === 'emerald' ? 'active' : ''}`}
-                  >
-                    <CheckCircle2 size={13} style={{ color: '#22c55e' }} />
-                    <span>{t.settings.emeraldGreen}</span>
-                  </button>
-
-                  <CustomColorPicker
-                    color={dockConfig.customStartBtnColor || '#22c55e'}
-                    onChange={(hex) =>
-                      launcherActions.setDockConfig({
-                        startBtnColorMode: 'custom',
-                        customStartBtnColor: hex,
-                      })
-                    }
-                    label={t.settings.customColor}
-                  />
-                </div>
-              </div>
-
-              {/* 3. Estilo y Dimensiones */}
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-                  gap: '12px',
-                  marginBottom: '14px',
-                }}
-              >
-                {/* Escala */}
-                <div>
-                  <span
-                    style={{
-                      fontSize: '11px',
-                      fontWeight: 600,
-                      color: '#e2e8f0',
-                      display: 'block',
-                      marginBottom: '6px',
-                    }}
-                  >
-                    {t.settings.dockScaleTitle}
-                  </span>
-                  <div className="dock-preset-group" style={{ margin: 0 }}>
-                    <button
-                      type="button"
-                      onClick={() => launcherActions.setDockConfig({ scale: 'normal' })}
-                      className={`dock-preset-pill ${dockConfig.scale === 'normal' ? 'active' : ''}`}
-                    >
-                      {t.settings.dockScaleNormal}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => launcherActions.setDockConfig({ scale: 'compact' })}
-                      className={`dock-preset-pill ${dockConfig.scale === 'compact' ? 'active' : ''}`}
-                    >
-                      {t.settings.dockScaleCompact}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Etiquetas */}
-                <div>
-                  <span
-                    style={{
-                      fontSize: '11px',
-                      fontWeight: 600,
-                      color: '#e2e8f0',
-                      display: 'block',
-                      marginBottom: '6px',
-                    }}
-                  >
-                    {t.settings.textLabelsTitle}
-                  </span>
-                  <div className="dock-preset-group" style={{ margin: 0 }}>
-                    <button
-                      type="button"
-                      onClick={() => launcherActions.setDockConfig({ showLabels: true })}
-                      className={`dock-preset-pill ${dockConfig.showLabels ? 'active' : ''}`}
-                    >
-                      {t.settings.iconsAndText}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => launcherActions.setDockConfig({ showLabels: false })}
-                      className={`dock-preset-pill ${!dockConfig.showLabels ? 'active' : ''}`}
-                    >
-                      {t.settings.iconsOnly}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Transparencia / Cristal */}
-                <div>
-                  <span
-                    style={{
-                      fontSize: '11px',
-                      fontWeight: 600,
-                      color: '#e2e8f0',
-                      display: 'block',
-                      marginBottom: '6px',
-                    }}
-                  >
-                    {t.settings.bgGlassTitle}
-                  </span>
-                  <div className="dock-preset-group" style={{ margin: 0 }}>
-                    <button
-                      type="button"
-                      onClick={() => launcherActions.setDockConfig({ bgOpacity: 0.92 })}
-                      className={`dock-preset-pill ${isNearOpacity(dockConfig.bgOpacity, 0.92) ? 'active' : ''}`}
-                    >
-                      {t.settings.glassSolid}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => launcherActions.setDockConfig({ bgOpacity: 0.7 })}
-                      className={`dock-preset-pill ${isNearOpacity(dockConfig.bgOpacity, 0.7) ? 'active' : ''}`}
-                    >
-                      {t.settings.glassMedium}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => launcherActions.setDockConfig({ bgOpacity: 0.45 })}
-                      className={`dock-preset-pill ${isNearOpacity(dockConfig.bgOpacity, 0.45) ? 'active' : ''}`}
-                    >
-                      {t.settings.glassTranslucent}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Borde */}
-                <div>
-                  <span
-                    style={{
-                      fontSize: '11px',
-                      fontWeight: 600,
-                      color: '#e2e8f0',
-                      display: 'block',
-                      marginBottom: '6px',
-                    }}
-                  >
-                    {t.settings.dockBordersTitle}
-                  </span>
-                  <div className="dock-preset-group" style={{ margin: 0 }}>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        launcherActions.setDockConfig({ dockBorderColorMode: 'subtle' })
-                      }
-                      className={`dock-preset-pill ${dockConfig.dockBorderColorMode === 'subtle' ? 'active' : ''}`}
-                    >
-                      {t.settings.borderSubtleNeutral}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        launcherActions.setDockConfig({ dockBorderColorMode: 'accent' })
-                      }
-                      className={`dock-preset-pill ${dockConfig.dockBorderColorMode === 'accent' ? 'active' : ''}`}
-                    >
-                      {t.settings.borderAccentGlow}
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* 4. Organización y Visibilidad de Botones */}
-              <div>
-                <span
-                  style={{
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    color: '#e2e8f0',
-                    display: 'block',
-                    marginBottom: '4px',
-                  }}
-                >
-                  {t.settings.buttonsOrgTitle}
-                </span>
-                <p
-                  style={{
-                    fontSize: '10.5px',
-                    color: 'rgba(248, 250, 252, 0.45)',
-                    margin: '0 0 6px 0',
-                  }}
-                >
-                  {t.settings.buttonsOrgDesc}
-                </p>
-
-                <div
-                  className={`dock-buttons-reorder-list ${draggedIndex !== null ? 'is-dragging' : ''}`}
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    e.dataTransfer.dropEffect = 'move';
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    const fromIndex =
-                      dragSourceIndexRef.current ?? (draggedIndex !== null ? draggedIndex : -1);
-                    if (fromIndex !== -1 && fromIndex !== dockConfig.buttonOrder.length - 1) {
-                      const newOrder = [...dockConfig.buttonOrder];
-                      const [movedItem] = newOrder.splice(fromIndex, 1);
-                      newOrder.push(movedItem);
-                      launcherActions.reorderDockButtons(newOrder);
-                    }
-                    dragSourceIndexRef.current = null;
-                    setDraggedIndex(null);
-                    setDragOverIndex(null);
-                  }}
-                >
-                  {(() => {
-                    const visibleButtonsSet = new Set(dockConfig.visibleButtons);
-                    return dockConfig.buttonOrder.map((btnId: DockButtonId, index: number) => {
-                      const isVisible = visibleButtonsSet.has(btnId);
-                      const buttonLabels: Record<
-                        DockButtonId,
-                        { name: string; icon: React.ReactNode }
-                      > = {
-                        instances: {
-                          name: t.dock.instances,
-                          icon: <Layers size={14} color="#16A085" />,
-                        },
-                        about: {
-                          name: t.dock.about,
-                          icon: <Info size={14} color="#94a3b8" />,
-                        },
-                        accounts: {
-                          name: t.dock.accounts,
-                          icon: <User size={14} color="#a855f7" />,
-                        },
-                        settings: {
-                          name: t.dock.settings,
-                          icon: <SettingsIcon size={14} color="#cbd5e1" />,
-                        },
-                        launch: {
-                          name: t.dock.launch,
-                          icon: <Rocket size={14} color="#22c55e" />,
-                        },
-                      };
-                      const itemInfo = buttonLabels[btnId] || { name: btnId, icon: null };
-
-                      const isCustomColor = Boolean(dockConfig.customButtonColors?.[btnId]);
-                      const activeBtnColor = resolveActiveBtnColor(
-                        btnId,
-                        dockConfig.customButtonColors,
-                        dockConfig.startBtnColorMode,
-                        dockConfig.customStartBtnColor,
-                        accentColor,
-                      );
-
-                      return (
-                        <div
-                          key={btnId}
-                          draggable={true}
-                          onDragStart={(e) => {
-                            const target = e.target as HTMLElement;
-                            if (target.closest('button') || target.closest('input')) {
-                              e.preventDefault();
-                              return;
-                            }
-                            dragSourceIndexRef.current = index;
-                            try {
-                              e.dataTransfer.setData('text/plain', String(index));
-                            } catch {}
-                            e.dataTransfer.effectAllowed = 'move';
-                            setDraggedIndex(index);
-                          }}
-                          onDragEnter={(e) => {
-                            e.preventDefault();
-                            e.dataTransfer.dropEffect = 'move';
-                            setDragOverIndex(index);
-                          }}
-                          onDragOver={(e) => {
-                            e.preventDefault();
-                            e.dataTransfer.dropEffect = 'move';
-                            if (dragOverIndex !== index) {
-                              setDragOverIndex(index);
-                            }
-                          }}
-                          onDragLeave={(e) => {
-                            if (e.currentTarget.contains(e.relatedTarget as Node)) {
-                              return;
-                            }
-                            if (dragOverIndex === index) {
-                              setDragOverIndex(null);
-                            }
-                          }}
-                          onDrop={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            let fromIndex: number | null = null;
-                            try {
-                              const fromStr = e.dataTransfer.getData('text/plain');
-                              if (fromStr !== '' && !isNaN(parseInt(fromStr, 10))) {
-                                fromIndex = parseInt(fromStr, 10);
-                              }
-                            } catch {}
-                            if (fromIndex === null || isNaN(fromIndex)) {
-                              fromIndex = dragSourceIndexRef.current ?? draggedIndex;
-                            }
-                            if (
-                              fromIndex !== null &&
-                              !isNaN(fromIndex) &&
-                              fromIndex !== index &&
-                              fromIndex >= 0 &&
-                              fromIndex < dockConfig.buttonOrder.length
-                            ) {
-                              const newOrder = [...dockConfig.buttonOrder];
-                              const [movedItem] = newOrder.splice(fromIndex, 1);
-                              newOrder.splice(index, 0, movedItem);
-                              launcherActions.reorderDockButtons(newOrder);
-                            }
-                            dragSourceIndexRef.current = null;
-                            setDraggedIndex(null);
-                            setDragOverIndex(null);
-                          }}
-                          onDragEnd={() => {
-                            dragSourceIndexRef.current = null;
-                            setDraggedIndex(null);
-                            setDragOverIndex(null);
-                          }}
-                          className={`dock-reorder-item ${!isVisible ? 'disabled' : ''} ${
-                            draggedIndex === index ? 'dragging' : ''
-                          } ${dragOverIndex === index ? 'drag-over' : ''}`}
-                        >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <div
-                              className="dock-drag-handle"
-                              title={t.settings.dragToReorder}
-                              style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '3px',
-                                cursor: 'grab',
-                              }}
-                            >
-                              <GripVertical
-                                size={13}
-                                style={{ color: 'rgba(248, 250, 252, 0.4)' }}
-                              />
-                              <div
-                                style={{
-                                  width: '7px',
-                                  height: '7px',
-                                  borderRadius: '50%',
-                                  backgroundColor: activeBtnColor,
-                                  boxShadow: `0 0 5px ${activeBtnColor}`,
-                                  flexShrink: 0,
-                                }}
-                              />
-                            </div>
-                            {itemInfo.icon}
-                            <span style={{ fontSize: '11.5px', fontWeight: 500, color: '#f8fafc' }}>
-                              {itemInfo.name}
-                            </span>
-                          </div>
-
-                          <div
-                            className="dock-reorder-actions"
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '6px',
-                              flexShrink: 0,
-                            }}
-                          >
-                            {/* Advanced Customizer (Background, Video, SVG, Sizing, FX, Color) */}
-                            <button
-                              type="button"
-                              onClick={() => launcherActions.openButtonCustomizer(btnId)}
-                              className={`dock-action-customize-btn ${
-                                dockConfig.buttonCustomizations?.[btnId] ? 'has-customization' : ''
-                              }`}
-                              title={t.settings.customizeBtnTitle}
-                            >
-                              <Sparkles size={12} />
-                              <span>{t.settings.customizeBtn}</span>
-                            </button>
-
-                            {/* Individual Color Picker (Compact 26x26) */}
-                            <CustomColorPicker
-                              color={activeBtnColor}
-                              onChange={(hex) => launcherActions.setButtonColor(btnId, hex)}
-                              label={t.settings.paintBtn}
-                              compact={true}
-                              alignRight={true}
-                            />
-                            {isCustomColor && (
-                              <button
-                                type="button"
-                                onClick={() => launcherActions.setButtonColor(btnId, null)}
-                                className="dock-action-icon-btn"
-                                title={t.settings.resetThemeColor}
-                                style={{ color: '#94a3b8' }}
-                              >
-                                <RotateCcw size={12} />
-                              </button>
-                            )}
-
-                            {/* Move Left / Up */}
-                            <button
-                              type="button"
-                              onClick={() => launcherActions.moveDockButton(btnId, 'left')}
-                              disabled={index === 0}
-                              className="dock-action-icon-btn"
-                              title={t.settings.moveLeft}
-                            >
-                              <ChevronUp size={14} />
-                            </button>
-
-                            {/* Move Right / Down */}
-                            <button
-                              type="button"
-                              onClick={() => launcherActions.moveDockButton(btnId, 'right')}
-                              disabled={index === dockConfig.buttonOrder.length - 1}
-                              className="dock-action-icon-btn"
-                              title={t.settings.moveRight}
-                            >
-                              <ChevronDown size={14} />
-                            </button>
-
-                            {/* Toggle Visibility (Protected buttons cannot be hidden) */}
-                            {PROTECTED_DOCK_BUTTONS.includes(btnId) ? (
-                              <span
-                                className="dock-action-icon-btn protected-btn"
-                                title={t.settings.protectedButton}
-                              >
-                                <Lock size={12} color="#94a3b8" />
-                              </span>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => launcherActions.toggleDockButton(btnId)}
-                                className={`dock-action-icon-btn ${isVisible ? 'active-eye' : ''}`}
-                                title={isVisible ? t.settings.hideButton : t.settings.showButton}
-                              >
-                                {isVisible ? <Eye size={13} /> : <EyeOff size={13} />}
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    });
-                  })()}
-                </div>
-              </div>
-            </div>
+            <SettingsDockSection
+              dockConfig={dockConfig}
+              accentColor={accentColor}
+              t={t}
+            />
 
             {/* Section: Plugin & Module SDK */}
             <SettingsPluginSdkSection />
@@ -1623,12 +900,7 @@ export const SettingsModal: React.FC = () => {
                       alignItems: 'center',
                       gap: '6px',
                       fontSize: '11.5px',
-                      color:
-                        updateFeedback.type === 'success'
-                          ? '#34D399'
-                          : updateFeedback.type === 'available'
-                            ? '#2DD4BF'
-                            : '#94A3B8',
+                      color: resolveUpdateFeedbackColor(updateFeedback.type),
                     }}
                   >
                     {updateFeedback.type === 'success' && <CheckCircle2 size={13} />}
@@ -1720,21 +992,26 @@ export const SettingsModal: React.FC = () => {
       {showHwRestartModal && (
         <div
           className="papyrus-modal-overlay"
-          role="presentation"
           style={{ zIndex: 20100, background: 'rgba(0, 0, 0, 0.75)' }}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              setShowHwRestartModal(false);
-              setPendingHwAccel(null);
-            }
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') {
-              setShowHwRestartModal(false);
-              setPendingHwAccel(null);
-            }
-          }}
         >
+          <button
+            type="button"
+            aria-label={t.settings.cancel}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              width: '100%',
+              height: '100%',
+              background: 'transparent',
+              border: 'none',
+              padding: 0,
+              cursor: 'default',
+            }}
+            onClick={() => {
+              setShowHwRestartModal(false);
+              setPendingHwAccel(null);
+            }}
+          />
           <dialog
             open
             className="papyrus-settings-card"
@@ -1858,5 +1135,15 @@ export const SettingsModal: React.FC = () => {
   );
 };
 
-export { SettingsMinecraftSection, SettingsPersonalizationSection };
-export type { SettingsMinecraftSectionProps, SettingsPersonalizationSectionProps };
+export {
+  SettingsMinecraftSection,
+  SettingsPersonalizationSection,
+  SettingsDockSection,
+  SettingsLanguageSection,
+};
+export type {
+  SettingsMinecraftSectionProps,
+  SettingsPersonalizationSectionProps,
+  SettingsDockSectionProps,
+  SettingsLanguageSectionProps,
+};
