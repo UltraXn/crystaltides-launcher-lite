@@ -120,7 +120,7 @@ export const FreeButtonCoordBadge: React.FC<FreeButtonCoordBadgeProps> = ({
   accentColor,
 }) => {
   const isDanger = isDraggingThis && isColliding;
-  const badgeColor = accentColor || '#38bdf8';
+  const badgeColor = accentColor ?? '#38bdf8';
   return (
     <div
       style={{
@@ -209,14 +209,13 @@ export const AnimatedDockLabel: React.FC<AnimatedDockLabelProps> = ({
   const [isVisible, setIsVisible] = useState(show);
 
   useEffect(() => {
+    setIsVisible(show);
     if (show) {
       setShouldRender(true);
-      setIsVisible(true);
-    } else {
-      setIsVisible(false);
-      const timer = setTimeout(() => setShouldRender(false), 330);
-      return () => clearTimeout(timer);
+      return;
     }
+    const timer = setTimeout(() => setShouldRender(false), 330);
+    return () => clearTimeout(timer);
   }, [show]);
 
   if (!shouldRender) return null;
@@ -488,7 +487,6 @@ interface FreeButtonsLayoutProps {
   renderResizeHandles: (btnId: DockButtonId) => React.ReactNode;
   selectedDockButtonId: DockButtonId | null;
   isInspectorOpen: boolean;
-  isResizing?: boolean;
   resizing?: ResizeState | null;
   liveResizeDims?: { width: number; height: number } | null;
   inspectorTab: InspectorTab;
@@ -2354,7 +2352,6 @@ export const HomeDock: React.FC = () => {
         renderResizeHandles={renderResizeHandles}
         selectedDockButtonId={selectedDockButtonId}
         isInspectorOpen={isButtonInspectorOpen}
-        isResizing={Boolean(resizing)}
         resizing={resizing}
         liveResizeDims={liveResizeDims}
         inspectorTab={inspectorTab}
