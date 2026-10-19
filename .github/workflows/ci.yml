@@ -22,6 +22,8 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Install pnpm
         uses: pnpm/action-setup@v6
@@ -46,14 +48,30 @@ jobs:
       - name: Oxlint Static Analysis
         run: pnpm run lint:fast
 
-      - name: Run Vitest Suite
-        run: pnpm run test
+      - name: Run Vitest Suite with Coverage
+        run: pnpm run test:coverage
 
       - name: Build Frontend Bundle
         run: pnpm run build
 
       - name: React Doctor Quality Gate (Score >= 68)
         run: pnpm run doctor:ci
+
+      - name: SonarQube Scan
+        uses: sonarsource/sonarqube-scan-action@v5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL || 'https://sonarcloud.io' }}
+        with:
+          args: >
+            -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
+
+      - name: SonarQube Quality Gate
+        uses: sonarsource/sonarqube-quality-gate-action@v1
+        timeout-minutes: 5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL || 'https://sonarcloud.io' }}
 
   # Windows es la plataforma real del launcher; Linux compila los stubs y corre en CI.
   # fmt, clippy -D warnings, cargo-deny y ct-agent venian del CI del monorepo, que ya no

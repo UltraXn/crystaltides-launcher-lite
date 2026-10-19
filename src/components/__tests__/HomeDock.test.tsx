@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import React from 'react';
 import { HomeDock, FreeButtonCoordBadge, FreeButtonInspectorPopup } from '../HomeDock';
 import {
@@ -159,7 +159,7 @@ describe('HomeDock Component & Helpers Suite', () => {
     });
 
     it('FreeButtonCoordBadge renderiza estado normal y de colisión', () => {
-      const { container, rerender } = render(
+      const { rerender } = render(
         <FreeButtonCoordBadge
           isDraggingThis={true}
           isColliding={false}
@@ -167,7 +167,7 @@ describe('HomeDock Component & Helpers Suite', () => {
           collisionLabel="Colisión detectada"
         />,
       );
-      expect(container.firstChild).not.toBeNull();
+      expect(screen.getByText('X:50% Y:80%')).toBeDefined();
 
       rerender(
         <FreeButtonCoordBadge
@@ -177,7 +177,7 @@ describe('HomeDock Component & Helpers Suite', () => {
           collisionLabel="Colisión detectada"
         />,
       );
-      expect(container.firstChild).not.toBeNull();
+      expect(screen.getByText(/Colisión detectada/)).toBeDefined();
     });
   });
 
@@ -238,8 +238,8 @@ describe('HomeDock Component & Helpers Suite', () => {
     });
 
     it('renderiza la barra Dock con los botones activos en modo dock', () => {
-      const { container } = render(<HomeDock />);
-      expect(container.firstChild).not.toBeNull();
+      render(<HomeDock />);
+      expect(screen.getByRole('toolbar', { name: /Barra de botones del dock/i })).toBeDefined();
     });
 
     it('permite hacer click en los botones del dock', () => {
@@ -259,13 +259,12 @@ describe('HomeDock Component & Helpers Suite', () => {
         selectedDockButtonId: 'settings',
         accentColor: '#16A085',
       });
-      const { container } = render(<HomeDock />);
+      render(<HomeDock />);
 
-      expect(container.firstChild).not.toBeNull();
-      const selectionFrame =
-        container.querySelector('div[style*="border: 2px solid rgb(22, 160, 133)"]') ||
-        container.querySelector('div[style*="border: 2px solid #16A085"]');
-      expect(selectionFrame).not.toBeNull();
+      expect(screen.getByTestId('dock-selection-frame')).toBeDefined();
+      expect(
+        screen.getByRole('button', { name: /Arrastra para cambiar ancho y alto de la barra/i }),
+      ).toBeDefined();
     });
 
     it('oculta la etiqueta del botón cuando se redimensiona a dimensiones compactas en modo free_buttons', () => {
@@ -297,7 +296,7 @@ describe('HomeDock Component & Helpers Suite', () => {
       });
 
       render(<HomeDock />);
-      expect(screen.queryByText(/Ajustes/i)).not.toBeNull();
+      expect(screen.getByText(/Ajustes/i)).toBeDefined();
     });
 
     it('renderiza en modo free_buttons flotante con posiciones individuales', () => {
@@ -308,9 +307,7 @@ describe('HomeDock Component & Helpers Suite', () => {
         },
       });
 
-      const { container } = render(<HomeDock />);
-      expect(container.firstChild).not.toBeNull();
-
+      render(<HomeDock />);
       const buttons = screen.getAllByRole('button');
       expect(buttons.length).toBeGreaterThan(0);
 
@@ -346,8 +343,8 @@ describe('HomeDock Component & Helpers Suite', () => {
         },
       });
 
-      const { container } = render(<HomeDock />);
-      expect(container.firstChild).not.toBeNull();
+      const { rerender } = render(<HomeDock />);
+      expect(screen.getByRole('toolbar', { name: /Barra de botones del dock/i })).toBeDefined();
 
       useLauncherStore.setState({
         launch: {
@@ -356,8 +353,9 @@ describe('HomeDock Component & Helpers Suite', () => {
           message: 'Descargando librerías...',
         },
       });
+      rerender(<HomeDock />);
 
-      expect(container.firstChild).not.toBeNull();
+      expect(screen.getByText(/45%/)).toBeDefined();
     });
 
     it('renderiza customSvg y customIconUrl y gestiona clicks y redimensionamiento en modo edición HUD', () => {
@@ -381,29 +379,23 @@ describe('HomeDock Component & Helpers Suite', () => {
         },
       });
 
-      const { container } = render(<HomeDock />);
-      const customSvgBtn = container.querySelector('.dock-custom-svg');
-      expect(customSvgBtn).not.toBeNull();
-      if (customSvgBtn) {
-        fireEvent.click(customSvgBtn);
-      }
+      render(<HomeDock />);
+      const customSvgBtn = screen.getByTestId('launch-svg');
+      expect(customSvgBtn).toBeDefined();
+      fireEvent.click(customSvgBtn);
 
-      const imgEl = container.querySelector('img[src="file:///custom_instance_icon.png"]');
-      expect(imgEl).not.toBeNull();
-      if (imgEl && imgEl.parentElement) {
-        fireEvent.click(imgEl.parentElement);
-      }
+      const instancesBtn = screen.getByRole('button', { name: /Instancias/i });
+      expect(instancesBtn).toBeDefined();
+      fireEvent.click(instancesBtn);
 
       // Probar corner resize handle (SE)
-      const seHandle =
-        container.querySelector('.dock-resize-handle-se') ||
-        container.querySelector('[title*="arrastra para cambiar ancho y alto"]');
-      expect(seHandle).not.toBeNull();
-      if (seHandle) {
-        fireEvent.mouseDown(seHandle, { clientX: 100, clientY: 100 });
-        fireEvent.mouseMove(window, { clientX: 160, clientY: 150 });
-        fireEvent.mouseUp(window);
-      }
+      const seHandle = screen.getByRole('button', {
+        name: /arrastra para cambiar ancho y alto/i,
+      });
+      expect(seHandle).toBeDefined();
+      fireEvent.mouseDown(seHandle, { clientX: 100, clientY: 100 });
+      fireEvent.mouseMove(window, { clientX: 160, clientY: 150 });
+      fireEvent.mouseUp(window);
     });
 
     it('renderiza FreeButtonInspectorPopup alternando posicionamiento vertical según posY', () => {
@@ -493,10 +485,13 @@ describe('HomeDock Component & Helpers Suite', () => {
         },
       });
 
-      const { container } = render(<HomeDock />);
+      render(<HomeDock />);
 
       // Verificar que no existen botones anidados (HTML estricto y válido)
-      expect(container.querySelectorAll('button button').length).toBe(0);
+      const buttons = screen.getAllByRole('button');
+      for (const btn of buttons) {
+        expect(within(btn).queryAllByRole('button')).toHaveLength(0);
+      }
 
       const settingsLabel = screen.getByText(/Ajustes/i);
 
@@ -507,12 +502,9 @@ describe('HomeDock Component & Helpers Suite', () => {
       expect(screen.queryByRole('dialog', { name: /Inspector de Botón/i })).toBeNull();
 
       // 2. Doble clic en el icono de Ajustes -> Abre inspector en pestaña "icon"
-      const settingsButton = settingsLabel.closest('button');
-      const settingsIcon = settingsButton?.querySelector('[data-dock-icon="true"]');
-      expect(settingsIcon).not.toBeNull();
-      if (settingsIcon) {
-        fireEvent.doubleClick(settingsIcon);
-      }
+      const settingsIcon = screen.getByTestId('dock-icon-settings');
+      expect(settingsIcon).toBeDefined();
+      fireEvent.doubleClick(settingsIcon);
 
       expect(useLauncherStore.getState().selectedDockButtonId).toBe('settings');
       expect(useLauncherStore.getState().isButtonInspectorOpen).toBe(true);
@@ -531,7 +523,10 @@ describe('HomeDock Component & Helpers Suite', () => {
       expect(screen.getByText(/Color o tinte del fondo/i)).toBeDefined();
 
       // Verificar nuevamente que no existen botones anidados
-      expect(container.querySelectorAll('button button').length).toBe(0);
+      const updatedButtons = screen.getAllByRole('button');
+      for (const btn of updatedButtons) {
+        expect(within(btn).queryAllByRole('button')).toHaveLength(0);
+      }
     });
 
     it('restringe las dimensiones del dock en modo barra para que los botones nunca superen el límite permitido', () => {
@@ -546,13 +541,14 @@ describe('HomeDock Component & Helpers Suite', () => {
         },
       });
 
-      const { container } = render(<HomeDock />);
-      const dock = container.querySelector('.home-unified-dock') as HTMLElement;
-      expect(dock).not.toBeNull();
+      render(<HomeDock />);
+      const dock = screen.getByRole('toolbar', { name: /Barra de botones del dock/i });
+      expect(dock).toBeDefined();
 
       // Los botones deben estar acotados al tope permitido (180px para normales y 130px de alto)
-      const firstButton = dock.querySelector('.dock-segment') as HTMLElement;
-      expect(firstButton).not.toBeNull();
+      const buttons = screen.getAllByRole('button');
+      const firstButton = buttons[0];
+      expect(firstButton).toBeDefined();
       expect(parseInt(firstButton.style.width, 10)).toBeLessThanOrEqual(207); // 180px * 1.15 = 207px para start
       expect(parseInt(firstButton.style.height, 10)).toBeLessThanOrEqual(130);
     });
@@ -564,14 +560,14 @@ describe('HomeDock Component & Helpers Suite', () => {
         isButtonInspectorOpen: true,
       });
 
-      const { container } = render(<HomeDock />);
+      render(<HomeDock />);
 
       expect(useLauncherStore.getState().isButtonInspectorOpen).toBe(true);
       expect(screen.getByRole('dialog', { name: /Inspector de Botón/i })).toBeDefined();
 
-      const dockLabels = container.querySelectorAll('.dock-label');
-      expect(dockLabels.length).toBeGreaterThan(0);
-      fireEvent.click(dockLabels[3]); // Botón de Ajustes
+      const dock = screen.getByRole('toolbar', { name: /Barra de botones del dock/i });
+      const settingsLabel = within(dock).getByText(/Ajustes/i);
+      fireEvent.click(settingsLabel); // Botón de Ajustes
 
       // El inspector debe permanecer abierto
       expect(useLauncherStore.getState().isButtonInspectorOpen).toBe(true);

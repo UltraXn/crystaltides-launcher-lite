@@ -19,6 +19,7 @@
     "lint": "tsc --noEmit",
     "typecheck:tests": "tsc --noEmit -p tsconfig.test.json",
     "lint:fast": "oxlint --threads 8 --no-ignore --deny-warnings src",
+    "lint:eslint": "eslint src --cache",
     "doctor": "react-doctor",
     "doctor:ci": "node scripts/check_react_doctor.mjs",
     "doctor:score": "react-doctor --score",
@@ -58,6 +59,8 @@
     "react-doctor": "^0.9.18",
     "typescript": "~5.8.3",
     "vite": "^8.3.4",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "@crystaltides/eslint-config": "workspace:*",
+    "eslint": "^9.39.2"
   }
 }

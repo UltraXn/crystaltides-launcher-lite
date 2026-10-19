@@ -17,6 +17,36 @@ export interface ServerStatusData {
 
 const DEFAULT_SERVER_HOST = 'mc.crystaltidessmp.net';
 
+function extractPlayerName(playerObj: Record<string, unknown>): string {
+  if (typeof playerObj.name_clean === 'string') {
+    return playerObj.name_clean;
+  }
+  if (typeof playerObj.name_raw === 'string') {
+    return playerObj.name_raw;
+  }
+  if (typeof playerObj.name === 'string') {
+    return playerObj.name;
+  }
+  return 'Jugador';
+}
+
+function resolveServerIcon(
+  isOnline: boolean,
+  dataIcon?: string,
+  targetHost = '',
+): string | undefined {
+  if (!isOnline) {
+    return undefined;
+  }
+  if (dataIcon) {
+    return dataIcon;
+  }
+  if (targetHost.includes('crystaltides')) {
+    return '/logo.webp';
+  }
+  return undefined;
+}
+
 export const fetchLiveServerStatus = async (
   host: string = DEFAULT_SERVER_HOST,
 ): Promise<ServerStatusData> => {
@@ -51,14 +81,7 @@ export const fetchLiveServerStatus = async (
           if (typeof p === 'string') return { name: p };
           if (typeof p === 'object' && p !== null) {
             const playerObj = p as Record<string, unknown>;
-            const name =
-              typeof playerObj.name_clean === 'string'
-                ? playerObj.name_clean
-                : typeof playerObj.name_raw === 'string'
-                  ? playerObj.name_raw
-                  : typeof playerObj.name === 'string'
-                    ? playerObj.name
-                    : 'Jugador';
+            const name = extractPlayerName(playerObj);
             const uuid = typeof playerObj.uuid === 'string' ? playerObj.uuid : undefined;
             return { name, uuid };
           }
@@ -66,9 +89,7 @@ export const fetchLiveServerStatus = async (
         })
       : [];
 
-    const icon = isOnline
-      ? data.icon || (targetHost.includes('crystaltides') ? '/logo.webp' : undefined)
-      : undefined;
+    const icon = resolveServerIcon(isOnline, data.icon, targetHost);
 
     return {
       online: isOnline,

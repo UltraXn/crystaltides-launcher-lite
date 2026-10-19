@@ -19,8 +19,68 @@ permissions:
   contents: write
 
 jobs:
+  quality-gate:
+    name: Pre-Release Quality Gate & Verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: TypeScript Typecheck
+        run: pnpm run lint
+
+      - name: Typecheck Test Files
+        run: pnpm run typecheck:tests
+
+      - name: Oxlint Static Analysis
+        run: pnpm run lint:fast
+
+      - name: Run Vitest Suite with Coverage
+        run: pnpm run test:coverage
+
+      - name: Build Frontend Bundle
+        run: pnpm run build
+
+      - name: React Doctor Quality Gate
+        run: pnpm run doctor:ci
+
+      - name: SonarQube Scan
+        uses: sonarsource/sonarqube-scan-action@v5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL || 'https://sonarcloud.io' }}
+        with:
+          args: >
+            -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
+
+      - name: SonarQube Quality Gate
+        uses: sonarsource/sonarqube-quality-gate-action@v1
+        timeout-minutes: 5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL || 'https://sonarcloud.io' }}
+
   build-release:
     name: Build & Publish Standalone Windows Launcher
+    needs: [quality-gate]
     runs-on: windows-latest
     # Release con LTO fat + codegen-units=1: ~9 min en local desde cero, más en runners de CI
     timeout-minutes: 45
