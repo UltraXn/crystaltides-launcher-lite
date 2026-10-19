@@ -1,24 +1,36 @@
 import React from 'react';
 
-export type LauncherSourceType = 'mojang' | 'curseforge' | 'modrinth' | 'prism' | 'multimc' | 'crystaltides' | 'custom' | string;
+export type LauncherSourceType =
+  | 'mojang'
+  | 'curseforge'
+  | 'modrinth'
+  | 'prism'
+  | 'multimc'
+  | 'crystaltides'
+  | 'custom'
+  | 'other';
 
-interface LauncherBrandIconProps {
-  source: LauncherSourceType;
+interface LogoProps {
   size?: number;
   className?: string;
   style?: React.CSSProperties;
 }
 
+interface LauncherBrandIconProps extends LogoProps {
+  source: string;
+}
+
 /**
  * Logotipo oficial de CurseForge (SVG extraído de SimpleIcons / CurseForge Brand Assets)
  */
-export const CurseForgeLogo: React.FC<{ size?: number; style?: React.CSSProperties }> = ({ size = 16, style }) => (
+export const CurseForgeLogo: React.FC<LogoProps> = ({ size = 16, className, style }) => (
   <svg
     width={size}
     height={size}
     viewBox="0 0 24 24"
     fill="none"
     xmlns="http://www.w3.org/2000/svg"
+    className={className}
     style={{ flexShrink: 0, display: 'inline-block', verticalAlign: 'middle', ...style }}
     aria-label="CurseForge"
   >
@@ -32,13 +44,14 @@ export const CurseForgeLogo: React.FC<{ size?: number; style?: React.CSSProperti
 /**
  * Logotipo oficial de Modrinth (SVG extraído de Modrinth Brand Assets / SimpleIcons)
  */
-export const ModrinthLogo: React.FC<{ size?: number; style?: React.CSSProperties }> = ({ size = 16, style }) => (
+export const ModrinthLogo: React.FC<LogoProps> = ({ size = 16, className, style }) => (
   <svg
     width={size}
     height={size}
     viewBox="0 0 24 24"
     fill="none"
     xmlns="http://www.w3.org/2000/svg"
+    className={className}
     style={{ flexShrink: 0, display: 'inline-block', verticalAlign: 'middle', ...style }}
     aria-label="Modrinth"
   >
@@ -52,13 +65,14 @@ export const ModrinthLogo: React.FC<{ size?: number; style?: React.CSSProperties
 /**
  * Logotipo oficial de Prism Launcher (Vector multicolor original de PrismLauncher/develop)
  */
-export const PrismLauncherLogo: React.FC<{ size?: number; style?: React.CSSProperties }> = ({ size = 16, style }) => (
+export const PrismLauncherLogo: React.FC<LogoProps> = ({ size = 16, className, style }) => (
   <svg
     width={size}
     height={size}
     viewBox="0 0 13 13"
     fill="none"
     xmlns="http://www.w3.org/2000/svg"
+    className={className}
     style={{ flexShrink: 0, display: 'inline-block', verticalAlign: 'middle', ...style }}
     aria-label="Prism Launcher"
   >
@@ -81,12 +95,13 @@ export const PrismLauncherLogo: React.FC<{ size?: number; style?: React.CSSPrope
 /**
  * Logotipo oficial de Minecraft Oficial (Cubo de césped isométrico de alta definición)
  */
-export const MinecraftOficialLogo: React.FC<{ size?: number; style?: React.CSSProperties }> = ({ size = 16, style }) => (
+export const MinecraftOficialLogo: React.FC<LogoProps> = ({ size = 16, className, style }) => (
   <img
     src="/icons/minecraft.png"
     alt="Minecraft Oficial"
     width={size}
     height={size}
+    className={className}
     style={{
       imageRendering: 'pixelated',
       flexShrink: 0,
@@ -105,12 +120,13 @@ export const MinecraftOficialLogo: React.FC<{ size?: number; style?: React.CSSPr
 /**
  * Logotipo oficial de CrystalTides
  */
-export const CrystalTidesLogo: React.FC<{ size?: number; style?: React.CSSProperties }> = ({ size = 16, style }) => (
+export const CrystalTidesLogo: React.FC<LogoProps> = ({ size = 16, className, style }) => (
   <img
     src="/logo.webp"
     alt="CrystalTides"
     width={size}
     height={size}
+    className={className}
     style={{
       flexShrink: 0,
       display: 'inline-block',
@@ -128,32 +144,33 @@ export const CrystalTidesLogo: React.FC<{ size?: number; style?: React.CSSProper
 export const LauncherBrandIcon: React.FC<LauncherBrandIconProps> = ({
   source,
   size = 16,
+  className,
   style,
 }) => {
   const norm = source.toLowerCase();
 
   if (norm.includes('curseforge')) {
-    return <CurseForgeLogo size={size} style={style} />;
+    return <CurseForgeLogo size={size} className={className} style={style} />;
   }
 
   if (norm.includes('modrinth')) {
-    return <ModrinthLogo size={size} style={style} />;
+    return <ModrinthLogo size={size} className={className} style={style} />;
   }
 
   if (norm.includes('prism')) {
-    return <PrismLauncherLogo size={size} style={style} />;
+    return <PrismLauncherLogo size={size} className={className} style={style} />;
   }
 
   if (norm.includes('multimc')) {
-    return <PrismLauncherLogo size={size} style={style} />;
+    return <PrismLauncherLogo size={size} className={className} style={style} />;
   }
 
   if (norm.includes('crystaltides')) {
-    return <CrystalTidesLogo size={size} style={style} />;
+    return <CrystalTidesLogo size={size} className={className} style={style} />;
   }
 
   if (norm.includes('mojang') || norm.includes('oficial') || norm.includes('minecraft')) {
-    return <MinecraftOficialLogo size={size} style={style} />;
+    return <MinecraftOficialLogo size={size} className={className} style={style} />;
   }
 
   // Fallback por defecto para carpetas manuales o personalizadas
@@ -167,6 +184,7 @@ export const LauncherBrandIcon: React.FC<LauncherBrandIconProps> = ({
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
+      className={className}
       style={{ flexShrink: 0, display: 'inline-block', verticalAlign: 'middle', ...style }}
     >
       <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" />

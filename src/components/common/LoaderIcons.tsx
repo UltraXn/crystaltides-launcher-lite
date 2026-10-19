@@ -3,7 +3,7 @@ import React from 'react';
 export type LoaderBrand = 'neoforge' | 'fabric' | 'forge' | 'quilt' | 'vanilla';
 
 interface LoaderIconProps {
-  type: LoaderBrand | string;
+  type: string;
   size?: number;
   className?: string;
   style?: React.CSSProperties;
@@ -222,54 +222,70 @@ export const VanillaLogo: React.FC<{ size?: number; style?: React.CSSProperties 
   </svg>
 );
 
+interface LoaderBadgeConfig {
+  bg: string;
+  borderColor: string;
+  iconSrc: string;
+  altText: string;
+  fallbackSvg: React.ReactElement;
+}
+
+const getLoaderBadgeConfig = (norm: string, iconSize: number): LoaderBadgeConfig => {
+  if (norm.includes('neoforge')) {
+    return {
+      bg: 'rgba(234, 88, 12, 0.16)',
+      borderColor: 'rgba(249, 115, 22, 0.35)',
+      iconSrc: '/icons/neoforge.png',
+      altText: 'NeoForge',
+      fallbackSvg: <NeoForgeLogo size={iconSize} />,
+    };
+  }
+  if (norm.includes('fabric')) {
+    return {
+      bg: 'rgba(2, 132, 199, 0.16)',
+      borderColor: 'rgba(56, 189, 248, 0.35)',
+      iconSrc: '/icons/fabric.png',
+      altText: 'Fabric',
+      fallbackSvg: <FabricLogo size={iconSize} />,
+    };
+  }
+  if (norm.includes('quilt')) {
+    return {
+      bg: 'rgba(168, 85, 247, 0.16)',
+      borderColor: 'rgba(192, 132, 252, 0.35)',
+      iconSrc: '/icons/quilt.png',
+      altText: 'Quilt',
+      fallbackSvg: <QuiltLogo size={iconSize} />,
+    };
+  }
+  if (norm.includes('forge')) {
+    return {
+      bg: 'rgba(217, 119, 6, 0.16)',
+      borderColor: 'rgba(234, 179, 8, 0.35)',
+      iconSrc: '/icons/forge.ico',
+      altText: 'Forge',
+      fallbackSvg: <ForgeLogo size={iconSize} />,
+    };
+  }
+  return {
+    bg: 'rgba(34, 197, 94, 0.16)',
+    borderColor: 'rgba(74, 222, 128, 0.35)',
+    iconSrc: '/icons/vanilla.png',
+    altText: 'Vanilla',
+    fallbackSvg: <VanillaLogo size={iconSize} />,
+  };
+};
+
 export const LoaderIconBadge: React.FC<LoaderIconProps> = ({
   type,
   size = 18,
   className = '',
   style,
 }) => {
-  const norm = (type || '').toLowerCase().trim();
+  const norm = (type ?? '').toLowerCase().trim();
   const [imgError, setImgError] = React.useState(false);
-
-  let bg = 'rgba(255, 255, 255, 0.08)';
-  let borderColor = 'rgba(255, 255, 255, 0.12)';
-  let iconSrc = '/icons/vanilla.png';
-  let altText = 'Vanilla';
-  let fallbackSvg = <VanillaLogo size={size - 4} />;
-
-  if (norm.includes('neoforge')) {
-    bg = 'rgba(234, 88, 12, 0.16)';
-    borderColor = 'rgba(249, 115, 22, 0.35)';
-    iconSrc = '/icons/neoforge.png';
-    altText = 'NeoForge';
-    fallbackSvg = <NeoForgeLogo size={size - 4} />;
-  } else if (norm.includes('fabric')) {
-    bg = 'rgba(2, 132, 199, 0.16)';
-    borderColor = 'rgba(56, 189, 248, 0.35)';
-    iconSrc = '/icons/fabric.png';
-    altText = 'Fabric';
-    fallbackSvg = <FabricLogo size={size - 4} />;
-  } else if (norm.includes('quilt')) {
-    bg = 'rgba(168, 85, 247, 0.16)';
-    borderColor = 'rgba(192, 132, 252, 0.35)';
-    iconSrc = '/icons/quilt.png';
-    altText = 'Quilt';
-    fallbackSvg = <QuiltLogo size={size - 4} />;
-  } else if (norm.includes('forge')) {
-    bg = 'rgba(217, 119, 6, 0.16)';
-    borderColor = 'rgba(234, 179, 8, 0.35)';
-    iconSrc = '/icons/forge.ico';
-    altText = 'Forge';
-    fallbackSvg = <ForgeLogo size={size - 4} />;
-  } else {
-    bg = 'rgba(34, 197, 94, 0.16)';
-    borderColor = 'rgba(74, 222, 128, 0.35)';
-    iconSrc = '/icons/vanilla.png';
-    altText = 'Vanilla';
-    fallbackSvg = <VanillaLogo size={size - 4} />;
-  }
-
   const innerSize = Math.max(12, size - 4);
+  const config = getLoaderBadgeConfig(norm, innerSize);
 
   return (
     <span
@@ -281,8 +297,8 @@ export const LoaderIconBadge: React.FC<LoaderIconProps> = ({
         width: size,
         height: size,
         borderRadius: '5px',
-        background: bg,
-        border: `1px solid ${borderColor}`,
+        background: config.bg,
+        border: `1px solid ${config.borderColor}`,
         boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.15)',
         flexShrink: 0,
         overflow: 'hidden',
@@ -291,8 +307,8 @@ export const LoaderIconBadge: React.FC<LoaderIconProps> = ({
     >
       {!imgError ? (
         <img
-          src={iconSrc}
-          alt={altText}
+          src={config.iconSrc}
+          alt={config.altText}
           width={innerSize}
           height={innerSize}
           style={{
@@ -304,14 +320,14 @@ export const LoaderIconBadge: React.FC<LoaderIconProps> = ({
           onError={() => setImgError(true)}
         />
       ) : (
-        fallbackSvg
+        config.fallbackSvg
       )}
     </span>
   );
 };
 
 export const getLoaderImageSrc = (type: string): { src: string; alt: string } => {
-  const norm = (type || '').toLowerCase().trim();
+  const norm = (type ?? '').toLowerCase().trim();
   if (norm.includes('neoforge')) return { src: '/icons/neoforge.png', alt: 'NeoForge' };
   if (norm.includes('fabric')) return { src: '/icons/fabric.png', alt: 'Fabric' };
   if (norm.includes('quilt')) return { src: '/icons/quilt.png', alt: 'Quilt' };
@@ -320,7 +336,7 @@ export const getLoaderImageSrc = (type: string): { src: string; alt: string } =>
 };
 
 export interface LoaderLogoProps {
-  type: LoaderBrand | string;
+  type: string;
   size?: number;
   className?: string;
   style?: React.CSSProperties;
@@ -369,4 +385,3 @@ export const LoaderLogo: React.FC<LoaderLogoProps> = ({
     />
   );
 };
-
