@@ -45,6 +45,174 @@ impl std::fmt::Display for BootMode {
     }
 }
 
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct DeepLinkTarget {
+    pub action: String,
+    pub server: Option<String>,
+    pub profile: Option<String>,
+    #[serde(rename = "rawUri")]
+    pub raw_uri: String,
+}
+
+/// Dominio de los servidores oficiales. El deep link fija el servidor y lanza el juego sin
+/// confirmación, así que una web ajena no debe poder mandar al jugador a otro host.
+const OFFICIAL_SERVER_DOMAIN: &str = "crystaltidessmp.net";
+
+fn is_official_server(server: &str) -> bool {
+    let host = server
+        .split(':')
+        .next()
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    host == OFFICIAL_SERVER_DOMAIN || host.ends_with(&format!(".{OFFICIAL_SERVER_DOMAIN}"))
+}
+
+fn is_valid_server_address(server: &str) -> bool {
+    let s = server.trim();
+    if s.is_empty() || s.len() > 255 {
+        return false;
+    }
+    // Rechazar espacios o caracteres de control
+    if s.chars()
+        .any(|c| c.is_ascii_whitespace() || c.is_ascii_control())
+    {
+        return false;
+    }
+    // Rechazar flags iniciales como "-" o caracteres no permitidos
+    if s.starts_with('-') || s.starts_with('.') || s.ends_with('-') || s.ends_with('.') {
+        return false;
+    }
+    let parts: Vec<&str> = s.split(':').collect();
+    if parts.len() > 2 {
+        return false;
+    }
+    let host = parts[0];
+    if host.is_empty()
+        || host.starts_with('-')
+        || host.starts_with('.')
+        || host.ends_with('-')
+        || host.ends_with('.')
+    {
+        return false;
+    }
+    if host.contains("..") {
+        return false;
+    }
+    if !host
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
+    {
+        return false;
+    }
+    if parts.len() == 2 {
+        let port_str = parts[1];
+        if port_str.is_empty()
+            || port_str.len() > 5
+            || !port_str.chars().all(|c| c.is_ascii_digit())
+        {
+            return false;
+        }
+        if let Ok(port) = port_str.parse::<u32>() {
+            if port == 0 || port > 65535 {
+                return false;
+            }
+        } else {
+            return false;
+        }
+    }
+    true
+}
+
+fn percent_decode(input: &str) -> Option<String> {
+    let bytes = input.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' {
+            if i + 2 < bytes.len() {
+                let h1 = (bytes[i + 1] as char).to_digit(16)?;
+                let h2 = (bytes[i + 2] as char).to_digit(16)?;
+                decoded.push(((h1 << 4) | h2) as u8);
+                i += 3;
+            } else {
+                return None;
+            }
+        } else {
+            decoded.push(bytes[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8(decoded).ok()
+}
+
+pub fn parse_deep_link_arg(args: &[String]) -> Option<DeepLinkTarget> {
+    let scheme_prefix = "crystaltides://";
+    for raw_arg in args {
+        let trimmed_arg = raw_arg.trim().trim_matches('"');
+        if trimmed_arg.len() >= scheme_prefix.len()
+            && trimmed_arg[..scheme_prefix.len()].eq_ignore_ascii_case(scheme_prefix)
+        {
+            let payload = &trimmed_arg[scheme_prefix.len()..];
+            let (action_part, query_part) = match payload.split_once('?') {
+                Some((act, q)) => (act, Some(q)),
+                None => (payload, None),
+            };
+
+            let raw_action = action_part.trim_matches('/');
+            if raw_action.is_empty() || raw_action.len() > 64 {
+                return None;
+            }
+            if !raw_action
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+            {
+                return None;
+            }
+            let action = raw_action.to_ascii_lowercase();
+
+            let mut server: Option<String> = None;
+            let mut profile: Option<String> = None;
+
+            if let Some(query) = query_part {
+                for pair in query.split('&') {
+                    if pair.trim().is_empty() {
+                        continue;
+                    }
+                    let (raw_k, raw_v) = match pair.split_once('=') {
+                        Some((k, v)) => (k, v),
+                        None => (pair, ""),
+                    };
+
+                    let key_decoded = percent_decode(raw_k)?.to_ascii_lowercase();
+                    let val_decoded = percent_decode(raw_v)?;
+
+                    if key_decoded == "server" {
+                        if !is_valid_server_address(&val_decoded)
+                            || !is_official_server(&val_decoded)
+                        {
+                            return None;
+                        }
+                        server = Some(val_decoded);
+                    } else if key_decoded == "profile" {
+                        if !is_valid_instance_id(&val_decoded) {
+                            return None;
+                        }
+                        profile = Some(val_decoded);
+                    }
+                }
+            }
+
+            return Some(DeepLinkTarget {
+                action,
+                server,
+                profile,
+                raw_uri: raw_arg.clone(),
+            });
+        }
+    }
+    None
+}
+
 #[derive(serde::Serialize)]
 pub struct BootContext {
     pub mode: BootMode,
@@ -55,6 +223,8 @@ pub struct BootContext {
     #[serde(rename = "isInstalled")]
     pub is_installed: bool,
     pub os: String,
+    #[serde(rename = "deepLink")]
+    pub deep_link: Option<DeepLinkTarget>,
 }
 
 /// El directorio de instalación tiene que ser uno dedicado (ver `paths::check_dedicated_dir`):
@@ -116,6 +286,7 @@ fn get_boot_context() -> BootContext {
     let current_exe = std::env::current_exe().unwrap_or_default();
     let resolved_install_dir = resolve_install_dir(&current_exe);
     let is_installed = sys::is_app_installed(&resolved_install_dir);
+    let deep_link = parse_deep_link_arg(&args);
 
     // Las actualizaciones (`/UPDATE` del updater) se resuelven antes de crear la ventana,
     // en `self_update::perform_update_handoff` desde `run()`.
@@ -128,6 +299,7 @@ fn get_boot_context() -> BootContext {
             current_exe: current_exe.to_string_lossy().to_string(),
             is_installed,
             os: std::env::consts::OS.to_string(),
+            deep_link,
         };
     }
 
@@ -138,6 +310,7 @@ fn get_boot_context() -> BootContext {
             current_exe: current_exe.to_string_lossy().to_string(),
             is_installed,
             os: std::env::consts::OS.to_string(),
+            deep_link,
         };
     }
 
@@ -176,6 +349,7 @@ fn get_boot_context() -> BootContext {
         current_exe: current_exe.to_string_lossy().to_string(),
         is_installed,
         os: std::env::consts::OS.to_string(),
+        deep_link,
     }
 }
 
@@ -1833,5 +2007,91 @@ mod tests {
         assert!(!empty_jar.exists());
         // El jar base válido sí debe estar presente
         assert!(cp.contains("1.21.1.jar"));
+    }
+
+    #[test]
+    fn test_parse_deep_link_arg_valid() {
+        let args = vec![
+            "launcher.exe".to_string(),
+            "crystaltides://join?server=mc.crystaltidessmp.net&profile=default".to_string(),
+        ];
+        let target = parse_deep_link_arg(&args).expect("should parse deep link");
+        assert_eq!(target.action, "join");
+        assert_eq!(target.server.as_deref(), Some("mc.crystaltidessmp.net"));
+        assert_eq!(target.profile.as_deref(), Some("default"));
+        assert_eq!(
+            target.raw_uri,
+            "crystaltides://join?server=mc.crystaltidessmp.net&profile=default"
+        );
+    }
+
+    #[test]
+    fn test_parse_deep_link_arg_with_port_and_case_insensitive() {
+        let args = vec![
+            "\"CRYSTALTIDES://launch?server=Play.CrystalTidesSMP.net:25565&profile=custom_profile_1\""
+                .to_string(),
+        ];
+        let target = parse_deep_link_arg(&args).expect("should parse case-insensitive");
+        assert_eq!(target.action, "launch");
+        assert_eq!(
+            target.server.as_deref(),
+            Some("Play.CrystalTidesSMP.net:25565")
+        );
+        assert_eq!(target.profile.as_deref(), Some("custom_profile_1"));
+    }
+
+    #[test]
+    fn test_parse_deep_link_arg_rejects_non_official_servers() {
+        for server in [
+            "play.server.com",
+            "evilcrystaltidessmp.net",
+            "crystaltidessmp.net.evil.com:25565",
+            "127.0.0.1",
+        ] {
+            let args = vec![format!("crystaltides://join?server={server}")];
+            assert!(
+                parse_deep_link_arg(&args).is_none(),
+                "{server} debe rechazarse"
+            );
+        }
+        let apex = vec!["crystaltides://join?server=crystaltidessmp.net".to_string()];
+        assert!(parse_deep_link_arg(&apex).is_some());
+    }
+
+    #[test]
+    fn test_parse_deep_link_arg_rejects_malicious_jvm_injection() {
+        // Intento de inyectar flag de JVM vía server
+        let malicious_server_flag = vec![
+            "crystaltides://join?server=-Dorg.lwjgl.librarypath=/evil&profile=default".to_string(),
+        ];
+        assert!(parse_deep_link_arg(&malicious_server_flag).is_none());
+
+        // Intento de inyección de comando / espacios
+        let malicious_spaces =
+            vec!["crystaltides://join?server=mc.net%20--jvm-arg%3Dbad&profile=default".to_string()];
+        assert!(parse_deep_link_arg(&malicious_spaces).is_none());
+
+        // Intento de caracteres de control o puntos dobles
+        let malicious_traversal_host =
+            vec!["crystaltides://join?server=mc..evil.net&profile=default".to_string()];
+        assert!(parse_deep_link_arg(&malicious_traversal_host).is_none());
+    }
+
+    #[test]
+    fn test_parse_deep_link_arg_rejects_malicious_profile_traversal() {
+        // Path traversal en profile
+        let malicious_profile =
+            vec!["crystaltides://join?server=mc.crystaltidessmp.net&profile=../evil".to_string()];
+        assert!(parse_deep_link_arg(&malicious_profile).is_none());
+
+        let malicious_profile_slash =
+            vec!["crystaltides://join?server=mc.crystaltidessmp.net&profile=dir/name".to_string()];
+        assert!(parse_deep_link_arg(&malicious_profile_slash).is_none());
+    }
+
+    #[test]
+    fn test_parse_deep_link_arg_none_when_no_deep_link() {
+        let normal_args = vec!["launcher.exe".to_string(), "--install".to_string()];
+        assert!(parse_deep_link_arg(&normal_args).is_none());
     }
 }

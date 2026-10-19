@@ -188,6 +188,7 @@ pub fn register_system_app(
 
     // 2. Registro oficial de Windows en HKCU (instantáneo vía Win32 Registry)
     write_uninstall_registry(target_exe, install_dir)?;
+    register_url_protocol(target_exe)?;
 
     crate::logger::log(
         "INFO",
@@ -198,6 +199,62 @@ pub fn register_system_app(
         ),
     );
 
+    Ok(())
+}
+
+#[allow(unsafe_code)]
+fn register_url_protocol(target_exe: &Path) -> Result<(), String> {
+    let target_exe_clean = target_exe.to_string_lossy().replace('/', "\\");
+    let base_key = "Software\\Classes\\crystaltides\0";
+    let base_utf16: Vec<u16> = base_key.encode_utf16().collect();
+
+    let cmd_key = "Software\\Classes\\crystaltides\\shell\\open\\command\0";
+    let cmd_utf16: Vec<u16> = cmd_key.encode_utf16().collect();
+
+    // SAFETY: RegCreateKeyW y RegSetValueExW en HKCU para asociar crystaltides://
+    unsafe {
+        let set_value = |key: HKEY, name: &str, val: &str| -> Result<(), String> {
+            let name_utf16: Vec<u16> = if name.is_empty() {
+                vec![0]
+            } else {
+                format!("{}\0", name).encode_utf16().collect()
+            };
+            let val_utf16: Vec<u16> = format!("{}\0", val).encode_utf16().collect();
+            let data_bytes = std::slice::from_raw_parts(
+                val_utf16.as_ptr() as *const u8,
+                val_utf16.len() * std::mem::size_of::<u16>(),
+            );
+            RegSetValueExW(
+                key,
+                PCWSTR(name_utf16.as_ptr()),
+                None,
+                REG_SZ,
+                Some(data_bytes),
+            )
+            .ok()
+            .map_err(|e| format!("Error en RegSetValueExW para {}: {}", name, e))
+        };
+
+        let mut hkey_base = HKEY::default();
+        let res_base = RegCreateKeyW(
+            HKEY_CURRENT_USER,
+            PCWSTR(base_utf16.as_ptr()),
+            &mut hkey_base,
+        );
+        if res_base.is_ok() && !hkey_base.is_invalid() {
+            let _ = set_value(hkey_base, "", "URL:CrystalTides Protocol");
+            let _ = set_value(hkey_base, "URL Protocol", "");
+            let _ = RegCloseKey(hkey_base);
+        }
+
+        let mut hkey_cmd = HKEY::default();
+        let res_cmd = RegCreateKeyW(HKEY_CURRENT_USER, PCWSTR(cmd_utf16.as_ptr()), &mut hkey_cmd);
+        if res_cmd.is_ok() && !hkey_cmd.is_invalid() {
+            let cmd_str = format!("\"{}\" \"%1\"", target_exe_clean);
+            let _ = set_value(hkey_cmd, "", &cmd_str);
+            let _ = RegCloseKey(hkey_cmd);
+        }
+    }
     Ok(())
 }
 
@@ -227,6 +284,17 @@ fn delete_uninstall_registry() {
                 let _ = RegDeleteKeyW(parent_hkey, PCWSTR(sub_utf16.as_ptr()));
             }
             let _ = RegCloseKey(parent_hkey);
+        }
+
+        // Eliminar también la asociación de protocolo Software\Classes\crystaltides
+        for sub in &[
+            "Software\\Classes\\crystaltides\\shell\\open\\command\0",
+            "Software\\Classes\\crystaltides\\shell\\open\0",
+            "Software\\Classes\\crystaltides\\shell\0",
+            "Software\\Classes\\crystaltides\0",
+        ] {
+            let sub_utf16: Vec<u16> = sub.encode_utf16().collect();
+            let _ = RegDeleteKeyW(HKEY_CURRENT_USER, PCWSTR(sub_utf16.as_ptr()));
         }
     }
 }

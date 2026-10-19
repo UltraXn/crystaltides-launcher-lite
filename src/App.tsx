@@ -56,6 +56,12 @@ interface BootContext {
   currentExe: string;
   isInstalled: boolean;
   os: string;
+  deepLink?: {
+    action: string;
+    server?: string | null;
+    profile?: string | null;
+    rawUri: string;
+  } | null;
 }
 
 export const App: React.FC = () => {
@@ -70,10 +76,12 @@ export const App: React.FC = () => {
     gameDir?: string;
     offendingMod?: string;
     suggestedAction?: CrashDiagnosis['suggested_action'];
+    crashType?: CrashDiagnosis['crash_type'];
   }>({
     reason: 'Incompatibilidad de mods o fallo de memoria de Java',
     details: 'java.lang.OutOfMemoryError: Java heap space',
     code: 1,
+    crashType: 'GENERIC_CRASH',
   });
 
   const currentView = useLauncherStore((s: LauncherState) => s.currentView);
@@ -152,6 +160,28 @@ export const App: React.FC = () => {
     initBoot();
   }, []);
 
+  const deepLinkHandledRef = React.useRef(false);
+
+  // 1.1 Manejo de Deep Linking crystaltides:// (1-Click Web-to-Game Launch).
+  // Se aplica una sola vez al llegar a home: reaplicarlo en cada cambio de vista
+  // pisaría el servidor o la instancia que el usuario elija después.
+  useEffect(() => {
+    const deepLink = bootContext?.mode === 'launcher' ? bootContext.deepLink : null;
+    if (!deepLink || deepLinkHandledRef.current || currentView !== 'home') return;
+    deepLinkHandledRef.current = true;
+
+    const { server, profile, action } = deepLink;
+    if (server) {
+      launcherActions.setServerHost(server);
+    }
+    if (profile && useLauncherStore.getState().instances.some((i) => i.id === profile)) {
+      launcherActions.selectInstance(profile);
+    }
+    if (action === 'join' || action === 'launch') {
+      void launcherActions.startLaunchFlow();
+    }
+  }, [bootContext, currentView]);
+
   // 2. Cargar cuentas, listeners y verificación autónoma de actualizaciones en modo Launcher
   useEffect(() => {
     if (bootContext?.mode === 'launcher') {
@@ -198,6 +228,7 @@ interface CrashPayload {
     gameDir?: string;
     offendingMod?: string;
     suggestedAction?: CrashDiagnosis['suggested_action'];
+    crashType?: CrashDiagnosis['crash_type'];
   };
   isOom: boolean;
 }
@@ -236,6 +267,7 @@ const buildCrashPayload = async (
       gameDir,
       offendingMod: diagnosis.offending_mod,
       suggestedAction: diagnosis.suggested_action,
+      crashType: diagnosis.crash_type,
     },
   };
 };
@@ -580,6 +612,7 @@ const buildCrashPayload = async (
               gameDir={crashData.gameDir}
               offendingMod={crashData.offendingMod}
               suggestedAction={crashData.suggestedAction}
+              crashType={crashData.crashType}
             />
 
             {/* Pantalla Especial de Falta de RAM (La Nubecita) */}

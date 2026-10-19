@@ -10,11 +10,67 @@ import {
   RotateCcw,
   ShieldAlert,
   CloudLightning,
+  Send,
 } from 'lucide-react';
+import { useLauncherStore } from '../../store/launcherStore';
+import { translations, type TranslationDictionary } from '../../i18n';
+import { CrashDiagnosis } from '../../services/crashDoctorService';
 
 const LogViewerModal = React.lazy(() =>
   import('./LogViewerModal').then((m) => ({ default: m.LogViewerModal }))
 );
+
+type TelemetryStatus = 'idle' | 'sending' | 'sent' | 'error';
+
+const TELEMETRY_ICONS: Record<TelemetryStatus, React.ReactNode> = {
+  idle: <Send size={14} />,
+  sending: <RefreshCw size={14} className="crash-spin" />,
+  sent: <Check size={14} color="#34d399" />,
+  error: <AlertOctagon size={14} color="#fb7185" />,
+};
+
+interface CrashTelemetryButtonProps {
+  diagnosis: CrashDiagnosis;
+  exitCode: number;
+  t: TranslationDictionary['crashModal'];
+}
+
+/** Envía el diagnóstico sanitizado solo cuando el usuario pulsa el botón. */
+const CrashTelemetryButton: React.FC<CrashTelemetryButtonProps> = ({ diagnosis, exitCode, t }) => {
+  const [status, setStatus] = useState<TelemetryStatus>('idle');
+  const labels: Record<TelemetryStatus, string> = {
+    idle: t.sendReport,
+    sending: t.sendingReport,
+    sent: t.reportSent,
+    error: t.reportFailed,
+  };
+
+  const handleSend = async () => {
+    setStatus('sending');
+    const ok = await import('../../services/crashDoctorService')
+      .then((m) => m.submitCrashTelemetry(diagnosis, exitCode))
+      .catch(() => false);
+    if (ok) {
+      setStatus('sent');
+      return;
+    }
+    setStatus('error');
+    setTimeout(() => setStatus('idle'), 3000);
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleSend}
+      disabled={status === 'sending' || status === 'sent'}
+      title={t.sendReportTooltip}
+      className="crash-btn-secondary"
+    >
+      {TELEMETRY_ICONS[status]}
+      <span>{labels[status]}</span>
+    </button>
+  );
+};
 
 interface CrashReportModalProps {
   isOpen: boolean;
@@ -26,13 +82,8 @@ interface CrashReportModalProps {
   exitCode?: number;
   gameDir?: string;
   offendingMod?: string;
-  suggestedAction?:
-    | 'INCREASE_RAM'
-    | 'DISABLE_MOD'
-    | 'UPDATE_GPU_DRIVER'
-    | 'RESET_OPTIONS'
-    | 'UPDATE_JAVA'
-    | 'VIEW_LOGS';
+  suggestedAction?: CrashDiagnosis['suggested_action'];
+  crashType?: CrashDiagnosis['crash_type'];
 }
 
 export const CrashReportModal: React.FC<CrashReportModalProps> = ({
@@ -40,13 +91,20 @@ export const CrashReportModal: React.FC<CrashReportModalProps> = ({
   onClose,
   onRetry,
   onOpenOomAssistant,
-  crashReason = 'Incompatibilidad de mods o fallo de memoria de Java',
-  crashDetails = 'java.lang.OutOfMemoryError: Java heap space',
+  crashReason,
+  crashDetails,
   exitCode = 1,
   gameDir,
   offendingMod,
   suggestedAction,
+  crashType = 'GENERIC_CRASH',
 }) => {
+  const language = useLauncherStore((s) => s.language);
+  const t = translations[language].crashModal;
+
+  const effectiveReason = crashReason || t.defaultReason;
+  const effectiveDetails = crashDetails || t.defaultDetails;
+
   const [copied, setCopied] = useState(false);
   const [isLogViewerOpen, setIsLogViewerOpen] = useState(false);
   const [isFixing, setIsFixing] = useState(false);
@@ -91,7 +149,7 @@ export const CrashReportModal: React.FC<CrashReportModalProps> = ({
   };
 
   const handleCopyReport = async () => {
-    const report = `[CrystalTides Crash Report]\nMotivo: ${crashReason}\nCódigo de salida: ${exitCode}\nDetalles:\n${crashDetails}`;
+    const report = `${t.reportHeader}\n${t.reportReason}: ${effectiveReason}\n${t.reportExitCode}: ${exitCode}\n${t.reportDetails}:\n${effectiveDetails}`;
     try {
       await navigator.clipboard.writeText(report);
       setCopied(true);
@@ -115,7 +173,7 @@ export const CrashReportModal: React.FC<CrashReportModalProps> = ({
             type="button"
             onClick={onClose}
             className="crash-modal-close-btn"
-            aria-label="Cerrar reporte de error"
+            aria-label={t.closeAria}
           >
             <X size={16} />
           </button>
@@ -136,12 +194,12 @@ export const CrashReportModal: React.FC<CrashReportModalProps> = ({
                   letterSpacing: '-0.015em',
                 }}
               >
-                El juego se cerró inesperadamente
+                {t.title}
               </h3>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                 <span className="crash-exit-badge">
                   <span className="crash-exit-dot" />
-                  Código de salida: {exitCode}
+                  {t.exitCodeBadge.replace('{code}', String(exitCode))}
                 </span>
               </div>
             </div>
@@ -160,11 +218,11 @@ export const CrashReportModal: React.FC<CrashReportModalProps> = ({
                   textTransform: 'uppercase',
                 }}
               >
-                Crash Doctor • Diagnóstico inteligente
+                {t.doctorBadge}
               </span>
             </div>
             <div style={{ fontSize: '13px', lineHeight: 1.45, color: '#f1f5f9', fontWeight: 500 }}>
-              {crashReason}
+              {effectiveReason}
             </div>
           </div>
 
@@ -201,7 +259,9 @@ export const CrashReportModal: React.FC<CrashReportModalProps> = ({
               >
                 <ShieldAlert size={15} />
                 <span>
-                  {isFixing ? 'Desactivando...' : `Desactivar "${offendingMod}" y Reintentar`}
+                  {isFixing
+                    ? t.disablingMod
+                    : t.disableModAction.replace('{mod}', offendingMod)}
                 </span>
               </button>
             </div>
@@ -217,7 +277,7 @@ export const CrashReportModal: React.FC<CrashReportModalProps> = ({
                 className="crash-fix-btn crash-fix-options"
               >
                 <RotateCcw size={15} className={isFixing ? 'crash-spin' : ''} />
-                <span>{isFixing ? 'Restableciendo...' : 'Restablecer options.txt y Reintentar'}</span>
+                <span>{isFixing ? t.resettingOptions : t.resetOptionsAction}</span>
               </button>
             </div>
           )}
@@ -226,7 +286,7 @@ export const CrashReportModal: React.FC<CrashReportModalProps> = ({
           {(suggestedAction === 'INCREASE_RAM' ||
             exitCode === 137 ||
             /out of memory|heap space|could not reserve/i.test(
-              crashReason + ' ' + (crashDetails || ''),
+              effectiveReason + ' ' + effectiveDetails,
             )) &&
             onOpenOomAssistant && (
               <div style={{ marginBottom: '16px' }}>
@@ -239,7 +299,7 @@ export const CrashReportModal: React.FC<CrashReportModalProps> = ({
                   className="crash-fix-btn crash-fix-oom"
                 >
                   <CloudLightning size={15} />
-                  <span>Solucionar Falta de RAM (La Nubecita)</span>
+                  <span>{t.fixOomAssistant}</span>
                 </button>
               </div>
             )}
@@ -262,40 +322,53 @@ export const CrashReportModal: React.FC<CrashReportModalProps> = ({
                     fontFamily: 'ui-monospace, monospace',
                   }}
                 >
-                  DETALLE DEL ERROR / STACK TRACE
+                  {t.stackTraceHeader}
                 </span>
               </div>
               <button
                 type="button"
                 onClick={handleCopyReport}
                 className="crash-terminal-copy-btn"
-                title="Copiar detalles del error"
+                title={t.copyReport}
               >
                 {copied ? <Check size={11} color="#34d399" /> : <Copy size={11} />}
-                <span>{copied ? 'Copiado' : 'Copiar'}</span>
+                <span>{copied ? t.copied : t.copy}</span>
               </button>
             </div>
-            <pre className="crash-terminal-body">{crashDetails}</pre>
+            <pre className="crash-terminal-body">{effectiveDetails}</pre>
           </div>
 
           {/* Acciones principales */}
           <div className="crash-actions-row">
             <button type="button" onClick={onRetry} className="crash-btn-primary">
               <RefreshCw size={14} className={isFixing ? 'crash-spin' : ''} />
-              <span>Reintentar</span>
+              <span>{t.retry}</span>
             </button>
             <button type="button" onClick={handleCopyReport} className="crash-btn-secondary">
               {copied ? <Check size={14} color="#34d399" /> : <Copy size={14} />}
-              <span>{copied ? '¡Copiado!' : 'Copiar reporte'}</span>
+              <span>{copied ? t.reportCopied : t.copyReport}</span>
             </button>
+            <CrashTelemetryButton
+              diagnosis={{
+                crash_type: crashType,
+                title: effectiveReason,
+                explanation: effectiveDetails,
+                offending_mod: offendingMod,
+                recommendation: '',
+                suggested_action: suggestedAction,
+                log_snippet: effectiveDetails,
+              }}
+              exitCode={exitCode}
+              t={t}
+            />
             <button
               type="button"
               onClick={() => setIsLogViewerOpen(true)}
-              title="Ver registros detallados de Minecraft"
+              title={t.viewLogsTooltip}
               className="crash-btn-tertiary"
             >
               <FileText size={14} />
-              <span>Ver Registros</span>
+              <span>{t.viewLogs}</span>
             </button>
           </div>
         </div>

@@ -52,9 +52,10 @@ pub(crate) fn render(target_exe: &Path, install_dir: &Path) -> String {
          Name=CrystalTides Launcher\n\
          GenericName=Minecraft Launcher\n\
          Comment=CrystalTides Launcher - Papyrus Edition\n\
-         Exec={exec}\n\
+         Exec={exec} %u\n\
          Path={work_dir}\n\
          Terminal=false\n\
+         MimeType=x-scheme-handler/crystaltides;\n\
          Categories=Game;ActionGame;\n\
          StartupWMClass=net.crystaltides.launcher\n"
     )
@@ -79,10 +80,11 @@ mod tests {
         );
         assert_eq!(
             line(&c, "Exec="),
-            "\"/home/ana/Mis Juegos/CrystalTides Launcher\""
+            "\"/home/ana/Mis Juegos/CrystalTides Launcher\" %u"
         );
         // Path no lleva comillas: serían parte literal del directorio
         assert_eq!(line(&c, "Path="), "/home/ana/Mis Juegos");
+        assert_eq!(line(&c, "MimeType="), "x-scheme-handler/crystaltides;");
     }
 
     #[test]
@@ -90,14 +92,14 @@ mod tests {
         let c = render(Path::new("/opt/a\"b`c$d%u/launcher"), Path::new("/opt"));
         assert_eq!(
             line(&c, "Exec="),
-            "\"/opt/a\\\\\"b\\\\`c\\\\$d%%u/launcher\""
+            "\"/opt/a\\\\\"b\\\\`c\\\\$d%%u/launcher\" %u"
         );
     }
 
     #[test]
     fn barra_invertida_literal_queda_cuadruplicada_en_exec() {
         let c = render(Path::new("/opt/a\\b/launcher"), Path::new("/opt/a\\b"));
-        assert_eq!(line(&c, "Exec="), "\"/opt/a\\\\\\\\b/launcher\"");
+        assert_eq!(line(&c, "Exec="), "\"/opt/a\\\\\\\\b/launcher\" %u");
         assert_eq!(line(&c, "Path="), "/opt/a\\\\b");
     }
 

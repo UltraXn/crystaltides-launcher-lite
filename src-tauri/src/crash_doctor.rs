@@ -253,6 +253,151 @@ fn match_diagnosis_patterns(text: &str, exit_code: Option<i32>) -> CrashDiagnosi
     }
 }
 
+/// Token conocido cuyo valor (lo que va tras el prefijo) se redacta.
+struct SecretRule {
+    prefix: &'static str,
+    ignore_case: bool,
+    replacement: &'static str,
+    /// Caracteres que se saltan entre el prefijo y el valor.
+    separators: &'static [char],
+    /// Caracteres que cierran el valor, además del espacio en blanco.
+    terminators: &'static [char],
+}
+
+const SECRET_RULES: &[SecretRule] = &[
+    SecretRule {
+        prefix: "--accessToken",
+        ignore_case: true,
+        replacement: "--accessToken [REDACTED]",
+        separators: &['=', ' ', '\t'],
+        terminators: &['"', '\''],
+    },
+    SecretRule {
+        prefix: "--uuid",
+        ignore_case: true,
+        replacement: "--uuid [REDACTED]",
+        separators: &['=', ' ', '\t'],
+        terminators: &['"', '\''],
+    },
+    SecretRule {
+        prefix: "Session ID is ",
+        ignore_case: false,
+        replacement: "Session ID is [REDACTED]",
+        separators: &[' ', '\t'],
+        terminators: &[',', '"', '\''],
+    },
+    SecretRule {
+        prefix: "Bearer ",
+        ignore_case: false,
+        replacement: "Bearer [REDACTED]",
+        separators: &[' ', '\t'],
+        terminators: &['"', '\'', ','],
+    },
+];
+
+const REDACTED_USER: &str = "[USER]";
+
+fn starts_with_at(chars: &[char], i: usize, prefix: &str, ignore_case: bool) -> bool {
+    prefix.chars().enumerate().all(|(offset, p)| {
+        chars
+            .get(i + offset)
+            .is_some_and(|c| *c == p || (ignore_case && c.eq_ignore_ascii_case(&p)))
+    })
+}
+
+fn skip_while(chars: &[char], mut i: usize, pred: impl Fn(char) -> bool) -> usize {
+    while i < chars.len() && pred(chars[i]) {
+        i += 1;
+    }
+    i
+}
+
+fn is_path_separator(c: char) -> bool {
+    c == '\\' || c == '/'
+}
+
+/// Redacta el valor de un token conocido; devuelve el índice tras el valor.
+fn redact_secret(chars: &[char], i: usize, out: &mut String) -> Option<usize> {
+    let rule = SECRET_RULES
+        .iter()
+        .find(|r| starts_with_at(chars, i, r.prefix, r.ignore_case))?;
+    out.push_str(rule.replacement);
+    let value_start = skip_while(chars, i + rule.prefix.len(), |c| {
+        rule.separators.contains(&c)
+    });
+    Some(skip_while(chars, value_start, |c| {
+        !c.is_whitespace() && !rule.terminators.contains(&c)
+    }))
+}
+
+/// Prefijo de perfil de Windows (`C:\Users\` o `C:/Users/`) en `i`, ya normalizado.
+fn windows_profile_prefix(chars: &[char], i: usize) -> Option<String> {
+    let drive = *chars.get(i)?;
+    let sep = *chars.get(i + 2)?;
+    let matches = drive.is_ascii_alphabetic()
+        && chars.get(i + 1) == Some(&':')
+        && is_path_separator(sep)
+        && starts_with_at(chars, i + 3, "users", true)
+        && chars.get(i + 8).is_some_and(|c| is_path_separator(*c));
+    matches.then(|| format!("{drive}:{sep}Users{sep}"))
+}
+
+/// Redacta el nombre de usuario de una ruta de perfil (Windows, Linux o macOS);
+/// devuelve el índice tras el nombre y su separador.
+fn redact_user_path(chars: &[char], i: usize, out: &mut String) -> Option<usize> {
+    let (prefix, user_start, terminators): (String, usize, &[char]) =
+        if let Some(prefix) = windows_profile_prefix(chars, i) {
+            (prefix, i + 9, &['\\', '/', '"', '\''])
+        } else if starts_with_at(chars, i, "/home/", false) {
+            ("/home/".to_string(), i + 6, &['/', '"', '\''])
+        } else if starts_with_at(chars, i, "/Users/", false) {
+            ("/Users/".to_string(), i + 7, &['/', '"', '\''])
+        } else {
+            return None;
+        };
+
+    let user_end = skip_while(chars, user_start, |c| {
+        !c.is_whitespace() && !terminators.contains(&c)
+    });
+    if chars[user_start..user_end]
+        .iter()
+        .copied()
+        .eq(REDACTED_USER.chars())
+    {
+        return None;
+    }
+
+    out.push_str(&prefix);
+    out.push_str(REDACTED_USER);
+    match chars.get(user_end) {
+        Some(&sep) if is_path_separator(sep) => {
+            out.push(sep);
+            Some(user_end + 1)
+        }
+        _ => Some(user_end),
+    }
+}
+
+pub fn sanitize_crash_log(raw: &str) -> String {
+    let chars: Vec<char> = raw.chars().collect();
+    let mut out = String::with_capacity(raw.len());
+    let mut i = 0;
+
+    while i < chars.len() {
+        let redacted =
+            redact_secret(&chars, i, &mut out).or_else(|| redact_user_path(&chars, i, &mut out));
+        match redacted {
+            Some(next) => i = next,
+            None => {
+                out.push(chars[i]);
+                i += 1;
+            }
+        }
+    }
+
+    out
+}
+
 pub fn analyze_latest_crash_sync(
     game_dir: &str,
     exit_code: Option<i32>,
@@ -267,7 +412,10 @@ pub fn analyze_latest_crash_sync(
 
     if latest_crash_text.is_empty() {
         if let Some(code) = exit_code {
-            if let Some(diag) = check_oom_exit_code(code) {
+            if let Some(mut diag) = check_oom_exit_code(code) {
+                if let Some(snippet) = diag.log_snippet.as_mut() {
+                    *snippet = sanitize_crash_log(snippet);
+                }
                 return Ok(diag);
             }
         }
@@ -288,7 +436,7 @@ pub fn analyze_latest_crash_sync(
         });
     }
 
-    let diag = match_diagnosis_patterns(&latest_crash_text, exit_code);
+    let mut diag = match_diagnosis_patterns(&latest_crash_text, exit_code);
     if diag.title.contains("Quilt") {
         let quilt_cache = base.join(".cache").join("quilt_loader");
         if quilt_cache.exists() {
@@ -297,10 +445,17 @@ pub fn analyze_latest_crash_sync(
     }
     if diag.crash_type == CrashType::GenericCrash {
         if let Some(code) = exit_code {
-            if let Some(oom_diag) = check_oom_exit_code(code) {
+            if let Some(mut oom_diag) = check_oom_exit_code(code) {
+                if let Some(snippet) = oom_diag.log_snippet.as_mut() {
+                    *snippet = sanitize_crash_log(snippet);
+                }
                 return Ok(oom_diag);
             }
         }
+    }
+
+    if let Some(snippet) = diag.log_snippet.as_mut() {
+        *snippet = sanitize_crash_log(snippet);
     }
 
     Ok(diag)
@@ -713,5 +868,60 @@ mod tests {
         assert!(res_enable.is_ok());
         assert!(jar_path.exists());
         assert!(!disabled_path.exists());
+    }
+
+    #[test]
+    fn test_sanitize_crash_log_redacts_tokens_and_user_paths() {
+        let raw = r#"Exception in thread "main" java.lang.RuntimeException
+    Arguments: --username Player1 --accessToken e4d98a00-1122-3344-5566-778899aabbcc --version 1.21.1
+    Session ID is token-secret-xyz-789
+    Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.doNotLeak
+    Loaded config from C:\Users\john_doe\AppData\Roaming\.minecraft\options.txt
+    Loading asset /home/penguin/.minecraft/assets/indexes/1.21.json
+    Cache path /Users/steve/Library/Application Support/minecraft/cache
+"#;
+
+        let sanitized = sanitize_crash_log(raw);
+
+        // Tokens
+        assert!(!sanitized.contains("e4d98a00-1122-3344-5566-778899aabbcc"));
+        assert!(sanitized.contains("--accessToken [REDACTED]"));
+
+        assert!(!sanitized.contains("token-secret-xyz-789"));
+        assert!(sanitized.contains("Session ID is [REDACTED]"));
+
+        assert!(!sanitized.contains("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"));
+        assert!(sanitized.contains("Bearer [REDACTED]"));
+
+        // User paths
+        assert!(!sanitized.contains("john_doe"));
+        assert!(sanitized.contains(r"C:\Users\[USER]\AppData\Roaming\.minecraft\options.txt"));
+
+        assert!(!sanitized.contains("penguin"));
+        assert!(sanitized.contains("/home/[USER]/.minecraft/assets/indexes/1.21.json"));
+
+        assert!(!sanitized.contains("steve"));
+        assert!(sanitized.contains("/Users/[USER]/Library/Application Support/minecraft/cache"));
+    }
+
+    #[test]
+    fn test_sanitize_crash_log_variantes_y_idempotencia() {
+        let raw = "--ACCESSTOKEN=abc123 --uuid 0f1e2d D:/users/ana/x \"Bearer tok\" Session ID is s1,next";
+        let sanitized = sanitize_crash_log(raw);
+        assert_eq!(
+            sanitized,
+            "--accessToken [REDACTED] --uuid [REDACTED] D:/Users/[USER]/x \"Bearer [REDACTED]\" Session ID is [REDACTED],next"
+        );
+        // Volver a sanitizar no cambia nada (no se redacta "[USER]" ni "[REDACTED]" dos veces)
+        assert_eq!(sanitize_crash_log(&sanitized), sanitized);
+        // Sin coincidencias el texto queda intacto, incluidos caracteres no ASCII
+        assert_eq!(sanitize_crash_log("Créditos: 5 → OK"), "Créditos: 5 → OK");
+    }
+
+    #[test]
+    fn test_sanitize_crash_log_idempotent_on_already_redacted() {
+        let input = "Path: C:\\Users\\[USER]\\AppData and /home/[USER]/.minecraft";
+        let out = sanitize_crash_log(input);
+        assert_eq!(out, input);
     }
 }

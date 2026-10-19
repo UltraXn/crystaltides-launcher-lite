@@ -81,3 +81,41 @@ export const resetOptionsTxt = async (gameDir: string): Promise<string> => {
     throw err;
   }
 };
+
+/**
+ * Envía telemetría de crash sanitizada a la API central de CrystalTides de forma no bloqueante y segura.
+ */
+export const submitCrashTelemetry = async (
+  diagnosis: CrashDiagnosis,
+  exitCode?: number | null,
+  mcVersion?: string,
+): Promise<boolean> => {
+  try {
+    const baseUrl = import.meta.env.VITE_API_URL || 'https://api.crystaltidessmp.net';
+    const endpoint = `${baseUrl}/api/launcher/crash-report`;
+
+    const payload = {
+      crashType: diagnosis.crash_type,
+      exitCode: exitCode ?? null,
+      title: diagnosis.title.slice(0, 200),
+      offendingMod: diagnosis.offending_mod ?? null,
+      mcVersion: mcVersion ?? undefined,
+      os: typeof navigator !== 'undefined' ? navigator.platform : undefined,
+      logSnippet: (diagnosis.log_snippet ?? diagnosis.explanation ?? '').slice(0, 8000),
+    };
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(4000),
+    });
+
+    return response.ok;
+  } catch (err) {
+    console.warn('[CrashDoctor] Telemetría de crash silenciada ante error o timeout:', err);
+    return false;
+  }
+};
