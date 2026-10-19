@@ -358,9 +358,8 @@ export const BottomBarPlayerWidget: React.FC<BottomBarPlayerWidgetProps> = ({
         />
       )}
       {isEditingHud && (
-        <div
-          role="button"
-          tabIndex={0}
+        <button
+          type="button"
           aria-label="Arrastrar perfil"
           onMouseDown={(e) => {
             e.stopPropagation();
@@ -387,7 +386,7 @@ export const BottomBarPlayerWidget: React.FC<BottomBarPlayerWidgetProps> = ({
           }}
         >
           <GripHorizontal size={14} />
-        </div>
+        </button>
       )}
       <div className="papyrus-player-pill">
         <button
@@ -500,9 +499,8 @@ export const BottomBarSocialsWidget: React.FC<BottomBarSocialsWidgetProps> = ({
         />
       )}
       {isEditingHud && (
-        <div
-          role="button"
-          tabIndex={0}
+        <button
+          type="button"
           aria-label="Arrastrar redes sociales"
           onMouseDown={(e) => {
             e.stopPropagation();
@@ -529,7 +527,7 @@ export const BottomBarSocialsWidget: React.FC<BottomBarSocialsWidgetProps> = ({
           }}
         >
           <GripHorizontal size={14} />
-        </div>
+        </button>
       )}
       <div className="papyrus-social-dock">
         <a
@@ -593,7 +591,7 @@ export const ServerLogoIcon: React.FC<ServerLogoIconProps> = ({ online, icon, se
     );
   }
 
-  const effectiveIcon = icon || `https://api.mcstatus.io/v2/icon/${encodeURIComponent(serverHost)}`;
+  const effectiveIcon = icon ?? `https://api.mcstatus.io/v2/icon/${encodeURIComponent(serverHost)}`;
 
   return (
     <img
@@ -617,6 +615,520 @@ export const ServerLogoIcon: React.FC<ServerLogoIconProps> = ({ online, icon, se
   );
 };
 
+const resolveServerWidgetZIndex = (isEditingHud: boolean, isHovered: boolean): number => {
+  if (isEditingHud) return 950;
+  if (isHovered) return 1000;
+  return 30;
+};
+
+const resolveServerChipTitle = (
+  officialServerLabel: string,
+  currentHost: string,
+  online: boolean,
+  ping?: number,
+): string => {
+  const pingStr = online ? `${ping}ms` : '--';
+  return `${officialServerLabel}: ${currentHost} • Ping: ${pingStr}`;
+};
+
+const resolveEmptyPlayersMessage = (
+  online: boolean,
+  playersCount: number,
+  offlineLabel: string,
+  noPlayersLabel: string,
+  listHiddenLabel: string,
+): string => {
+  if (!online) return offlineLabel;
+  if (playersCount === 0) return noPlayersLabel;
+  return `${playersCount} ${listHiddenLabel}`;
+};
+
+interface ServerPlayerListProps {
+  visiblePlayers: Array<{ name: string; uuid?: string }>;
+  isFew: boolean;
+  hoveredPlayerName: string | null;
+  setHoveredPlayerName: (name: string | null) => void;
+  extraCount: number;
+  morePlayersLabel: string;
+}
+
+const ServerPlayerList: React.FC<ServerPlayerListProps> = ({
+  visiblePlayers,
+  isFew,
+  hoveredPlayerName,
+  setHoveredPlayerName,
+  extraCount,
+  morePlayersLabel,
+}) => {
+  if (isFew) {
+    return (
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(2, 1fr)',
+          gap: '6px',
+          maxHeight: '130px',
+          overflowY: 'auto',
+          paddingRight: '2px',
+        }}
+      >
+        {visiblePlayers.map((p, idx) => (
+          <div
+            key={p.uuid ?? `${p.name}-${idx}`}
+            title={p.name}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              background: 'rgba(255, 255, 255, 0.05)',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
+              borderRadius: '6px',
+              padding: '3px 6px',
+              overflow: 'hidden',
+            }}
+          >
+            <img
+              src={`https://mc-heads.net/avatar/${encodeURIComponent(p.name)}/24`}
+              alt={p.name}
+              width={18}
+              height={18}
+              style={{
+                borderRadius: '3px',
+                flexShrink: 0,
+                backgroundColor: '#1e293b',
+              }}
+              onError={(e) => {
+                (e.currentTarget as HTMLImageElement).style.display = 'none';
+              }}
+            />
+            <span
+              style={{
+                fontSize: '10.5px',
+                fontWeight: 600,
+                color: '#e2e8f0',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {p.name}
+            </span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(6, 1fr)',
+          gap: '6px',
+          maxHeight: '140px',
+          overflowY: 'auto',
+          paddingRight: '2px',
+          alignItems: 'center',
+        }}
+      >
+        {visiblePlayers.map((p, idx) => {
+          const isPlayerHovered = hoveredPlayerName === p.name;
+          return (
+            <button
+              type="button"
+              key={p.uuid ?? `${p.name}-${idx}`}
+              title={p.name}
+              aria-label={p.name}
+              onMouseEnter={() => setHoveredPlayerName(p.name)}
+              onMouseLeave={() => setHoveredPlayerName(null)}
+              onFocus={() => setHoveredPlayerName(p.name)}
+              onBlur={() => setHoveredPlayerName(null)}
+              style={{
+                width: '28px',
+                height: '28px',
+                padding: 0,
+                borderRadius: '4px',
+                border: isPlayerHovered
+                  ? '1px solid #38bdf8'
+                  : '1px solid rgba(255, 255, 255, 0.12)',
+                boxShadow: isPlayerHovered ? '0 0 8px rgba(56, 189, 248, 0.5)' : 'none',
+                transform: isPlayerHovered ? 'scale(1.15)' : 'scale(1)',
+                transition: 'all 0.15s ease',
+                cursor: 'pointer',
+                overflow: 'hidden',
+                backgroundColor: '#1e293b',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+                outline: 'none',
+              }}
+            >
+              <img
+                src={`https://mc-heads.net/avatar/${encodeURIComponent(p.name)}/28`}
+                alt={p.name}
+                width={28}
+                height={28}
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover',
+                }}
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).style.display = 'none';
+                }}
+              />
+            </button>
+          );
+        })}
+
+        {extraCount > 0 && (
+          <div
+            title={`+${extraCount} jugadores más conectados`}
+            style={{
+              width: '28px',
+              height: '28px',
+              borderRadius: '4px',
+              background: 'rgba(56, 189, 248, 0.14)',
+              border: '1px solid rgba(56, 189, 248, 0.35)',
+              color: '#38bdf8',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '9.5px',
+              fontWeight: 700,
+              fontFamily: 'monospace',
+              cursor: 'default',
+              flexShrink: 0,
+            }}
+          >
+            +{extraCount > 99 ? '99+' : extraCount}
+          </div>
+        )}
+      </div>
+
+      {extraCount > 0 && (
+        <div
+          style={{
+            fontSize: '9.5px',
+            color: '#94a3b8',
+            textAlign: 'center',
+            marginTop: '6px',
+          }}
+        >
+          {morePlayersLabel}
+        </div>
+      )}
+    </div>
+  );
+};
+
+interface ServerStatusPopoverProps {
+  serverStatus: LauncherState['serverStatus'];
+  currentHost: string;
+  isEditingIp: boolean;
+  inputIp: string;
+  setInputIp: (val: string) => void;
+  setIsEditingIp: (val: boolean) => void;
+  handleSaveIp: () => void;
+  handleCancelIp: () => void;
+  hoveredPlayerName: string | null;
+  setHoveredPlayerName: (name: string | null) => void;
+  t: ReturnType<typeof useT>;
+}
+
+const ServerStatusPopover: React.FC<ServerStatusPopoverProps> = ({
+  serverStatus,
+  currentHost,
+  isEditingIp,
+  inputIp,
+  setInputIp,
+  setIsEditingIp,
+  handleSaveIp,
+  handleCancelIp,
+  hoveredPlayerName,
+  setHoveredPlayerName,
+  t,
+}) => {
+  const rawList = serverStatus.playersList ?? [];
+  const totalReportedPlayers = Math.max(serverStatus.playersCount ?? 0, rawList.length);
+  const hasPlayers = rawList.length > 0;
+  const isFew = rawList.length <= 6 && totalReportedPlayers <= 6;
+  const MAX_HEADS = 24;
+  const visiblePlayers = isFew ? rawList : rawList.slice(0, MAX_HEADS);
+  const extraCount = Math.max(0, totalReportedPlayers - visiblePlayers.length);
+
+  return (
+    <div
+      data-testid="server-status-popover"
+      style={{
+        position: 'absolute',
+        bottom: 'calc(100% + 10px)',
+        right: 0,
+        minWidth: '270px',
+        maxWidth: '320px',
+        background: 'rgba(10, 14, 22, 0.96)',
+        backdropFilter: 'blur(20px)',
+        border: '1px solid rgba(255, 255, 255, 0.14)',
+        borderRadius: '12px',
+        padding: '12px 14px',
+        boxShadow: '0 16px 40px rgba(0, 0, 0, 0.8), 0 0 20px rgba(56, 189, 248, 0.12)',
+        color: '#f8fafc',
+        zIndex: 1050,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '10px',
+        pointerEvents: 'auto',
+      }}
+    >
+      {/* Header: Server Hostname & Edit IP */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          paddingBottom: '8px',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+          gap: '8px',
+        }}
+      >
+        {!isEditingIp ? (
+          <>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                overflow: 'hidden',
+              }}
+            >
+              <ServerLogoIcon
+                online={serverStatus.online}
+                icon={serverStatus.icon}
+                serverHost={currentHost}
+              />
+              <span
+                title={currentHost}
+                style={{
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  color: '#ffffff',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {currentHost}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsEditingIp(true)}
+              title={t.bottomBar?.changeServerIp ?? 'Cambiar IP del servidor'}
+              aria-label="Editar IP del servidor"
+              style={{
+                background: 'rgba(255, 255, 255, 0.06)',
+                border: '1px solid rgba(255, 255, 255, 0.12)',
+                color: '#94a3b8',
+                borderRadius: '6px',
+                padding: '3px 6px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                fontSize: '10px',
+                fontWeight: 600,
+                flexShrink: 0,
+              }}
+            >
+              <Pencil size={11} />
+              <span>IP</span>
+            </button>
+          </>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', width: '100%' }}>
+            <input
+              type="text"
+              value={inputIp}
+              onChange={(e) => setInputIp(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleSaveIp();
+                if (e.key === 'Escape') handleCancelIp();
+              }}
+              autoFocus
+              placeholder="mc.crystaltidessmp.net"
+              style={{
+                flex: 1,
+                background: 'rgba(0, 0, 0, 0.5)',
+                border: '1px solid rgba(56, 189, 248, 0.5)',
+                borderRadius: '6px',
+                padding: '4px 8px',
+                color: '#ffffff',
+                fontSize: '11px',
+                outline: 'none',
+              }}
+            />
+            <button
+              type="button"
+              onClick={handleSaveIp}
+              title="Guardar"
+              aria-label="Guardar nueva IP"
+              style={{
+                background: 'rgba(34, 197, 94, 0.2)',
+                border: '1px solid rgba(34, 197, 94, 0.4)',
+                color: '#4ade80',
+                borderRadius: '6px',
+                padding: '4px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+              }}
+            >
+              <Check size={12} />
+            </button>
+            <button
+              type="button"
+              onClick={handleCancelIp}
+              title="Cancelar"
+              aria-label="Cancelar cambio de IP"
+              style={{
+                background: 'rgba(239, 68, 68, 0.2)',
+                border: '1px solid rgba(239, 68, 68, 0.4)',
+                color: '#f87171',
+                borderRadius: '6px',
+                padding: '4px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+              }}
+            >
+              <X size={12} />
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Status & Stats info row */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          fontSize: '11px',
+          color: '#94a3b8',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span
+            data-testid="server-status-dot"
+            style={{
+              width: '7px',
+              height: '7px',
+              borderRadius: '50%',
+              backgroundColor: serverStatus.online ? '#22c55e' : '#ef4444',
+              boxShadow: serverStatus.online
+                ? '0 0 6px rgba(34, 197, 94, 0.7)'
+                : '0 0 6px rgba(239, 68, 68, 0.7)',
+              display: 'inline-block',
+            }}
+          />
+          <span
+            data-testid="server-status-text"
+            style={{ fontWeight: 600, color: serverStatus.online ? '#4ade80' : '#f87171' }}
+          >
+            {serverStatus.online
+              ? (t.bottomBar?.online ?? 'En línea')
+              : (t.bottomBar?.offline ?? 'Sin conexión')}
+          </span>
+        </div>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            fontVariantNumeric: 'tabular-nums',
+          }}
+        >
+          <span>Ping: {serverStatus.online ? `${serverStatus.ping}ms` : '--'}</span>
+          <span>•</span>
+          <span>
+            {serverStatus.playersCount} / {serverStatus.maxPlayers}
+          </span>
+        </div>
+      </div>
+
+      {/* Connected Players / Heads */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            fontSize: '10.5px',
+            fontWeight: 600,
+            color: '#94a3b8',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <Users size={12} style={{ color: '#cbd5e1' }} />
+            <span>
+              {hoveredPlayerName
+                ? `Jugador: ${hoveredPlayerName}`
+                : (t.bottomBar?.connectedPlayers ?? 'Jugadores Conectados')}
+            </span>
+          </div>
+          {!isFew && hasPlayers && (
+            <span
+              style={{
+                fontSize: '9.5px',
+                color: '#64748b',
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {totalReportedPlayers} en línea
+            </span>
+          )}
+        </div>
+
+        {hasPlayers ? (
+          <ServerPlayerList
+            visiblePlayers={visiblePlayers}
+            isFew={isFew}
+            hoveredPlayerName={hoveredPlayerName}
+            setHoveredPlayerName={setHoveredPlayerName}
+            extraCount={extraCount}
+            morePlayersLabel={(
+              t.bottomBar?.morePlayersOnServer ?? '+{count} jugadores más'
+            ).replace('{count}', String(extraCount))}
+          />
+        ) : (
+          <div
+            style={{
+              background: 'rgba(255, 255, 255, 0.03)',
+              border: '1px dashed rgba(255, 255, 255, 0.08)',
+              borderRadius: '6px',
+              padding: '8px',
+              textAlign: 'center',
+              fontSize: '10.5px',
+              color: '#64748b',
+            }}
+          >
+            {resolveEmptyPlayersMessage(
+              serverStatus.online,
+              serverStatus.playersCount,
+              t.bottomBar?.offline ?? 'Sin conexión',
+              t.bottomBar?.noPlayersConnected ?? 'No hay jugadores conectados.',
+              t.bottomBar?.playersListHidden ??
+                'jugadores conectados (lista oculta por el servidor).',
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 export interface BottomBarServerWidgetProps {
   drag: WidgetDragReturn;
   isEditingHud: boolean;
@@ -634,14 +1146,14 @@ export const BottomBarServerWidget: React.FC<BottomBarServerWidgetProps> = ({
 }) => {
   const [isHovered, setIsHovered] = useState(false);
   const [isEditingIp, setIsEditingIp] = useState(false);
-  const [inputIp, setInputIp] = useState(serverStatus.serverHost || 'mc.crystaltidessmp.net');
+  const [inputIp, setInputIp] = useState(serverStatus.serverHost ?? 'mc.crystaltidessmp.net');
   const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [hoveredPlayerName, setHoveredPlayerName] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isEditingIp) {
-      setInputIp(serverStatus.serverHost || 'mc.crystaltidessmp.net');
+      setInputIp(serverStatus.serverHost ?? 'mc.crystaltidessmp.net');
     }
   }, [serverStatus.serverHost, isEditingIp]);
 
@@ -671,553 +1183,156 @@ export const BottomBarServerWidget: React.FC<BottomBarServerWidgetProps> = ({
   };
 
   const handleCancelIp = () => {
-    setInputIp(serverStatus.serverHost || 'mc.crystaltidessmp.net');
+    setInputIp(serverStatus.serverHost ?? 'mc.crystaltidessmp.net');
     setIsEditingIp(false);
   };
 
-  const currentHost = serverStatus.serverHost || 'mc.crystaltidessmp.net';
-  const rawList = serverStatus.playersList ?? [];
-  const totalReportedPlayers = Math.max(serverStatus.playersCount ?? 0, rawList.length);
-  const hasPlayers = rawList.length > 0;
-  const isFew = rawList.length <= 6 && totalReportedPlayers <= 6;
-  const MAX_HEADS = 24;
-  const visiblePlayers = isFew ? rawList : rawList.slice(0, MAX_HEADS);
-  const extraCount = Math.max(0, totalReportedPlayers - visiblePlayers.length);
+  const currentHost = serverStatus.serverHost ?? 'mc.crystaltidessmp.net';
 
   return (
-    <>
-      {/* 3. Server Status Widget */}
-      <div
-        ref={drag.serverStatusRef}
-        role="toolbar"
-        tabIndex={0}
-        aria-label="Widget de estado del servidor"
-        onMouseDown={(e) => drag.startDrag('serverStatus', e, drag.serverStatusRef)}
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={handleMouseLeave}
-        style={{
-          position: 'absolute',
-          left: `${statPos.x}%`,
-          top: `${statPos.y}%`,
-          transform: 'translate(-50%, -50%)',
-          zIndex: isEditingHud ? 950 : isHovered ? 1000 : 30,
-          whiteSpace: 'nowrap',
-          flexShrink: 0,
-          userSelect: 'none',
-          cursor: getWidgetCursor(isEditingHud, drag.draggingWidget === 'serverStatus'),
-          transition:
-            drag.draggingWidget === 'serverStatus'
-              ? 'none'
-              : 'top 0.35s cubic-bezier(0.16, 1, 0.3, 1), left 0.35s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease',
-          outline: getWidgetOutline(
-            isEditingHud,
-            drag.draggingWidget === 'serverStatus',
-            drag.isColliding,
-          ),
-          outlineOffset: '4px',
-          borderRadius: '999px',
-        }}
-      >
-        {isEditingHud && (
-          <WidgetCoordinateBadge
-            x={statPos.x}
-            y={statPos.y}
-            isDragging={drag.draggingWidget === 'serverStatus'}
-            isColliding={drag.isColliding}
-            label={t.hudEditor.collision}
-          />
-        )}
-        {isEditingHud && (
-          <div
-            role="button"
-            tabIndex={0}
-            aria-label="Arrastrar estado del servidor"
-            onMouseDown={(e) => {
-              e.stopPropagation();
-              drag.startDrag('serverStatus', e, drag.serverStatusRef);
-            }}
-            style={{
-              position: 'absolute',
-              bottom: 'calc(100% + 6px)',
-              left: '50%',
-              transform: 'translateX(-50%)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: 'rgba(12, 17, 24, 0.88)',
-              border: '1px solid rgba(56, 189, 248, 0.4)',
-              backdropFilter: 'blur(8px)',
-              borderRadius: '9999px',
-              padding: '3px 10px',
-              color: '#38bdf8',
-              boxShadow: '0 2px 10px rgba(0, 0, 0, 0.5), 0 0 12px rgba(56, 189, 248, 0.25)',
-              cursor: drag.draggingWidget === 'serverStatus' ? 'grabbing' : 'grab',
-              userSelect: 'none',
-              zIndex: 10,
-            }}
-          >
-            <GripHorizontal size={14} />
-          </div>
-        )}
-        <div
-          className="papyrus-server-chip"
-          title={`${t.bottomBar?.officialServer ?? 'Servidor'}: ${currentHost} • Ping: ${serverStatus.online ? `${serverStatus.ping}ms` : '--'}`}
+    <div
+      ref={drag.serverStatusRef}
+      role="toolbar"
+      tabIndex={0}
+      aria-label="Widget de estado del servidor"
+      onMouseDown={(e) => {
+        if ((e.target as HTMLElement).closest('[data-testid="server-status-popover"]')) {
+          return;
+        }
+        drag.startDrag('serverStatus', e, drag.serverStatusRef);
+      }}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      style={{
+        position: 'absolute',
+        left: `${statPos.x}%`,
+        top: `${statPos.y}%`,
+        transform: 'translate(-50%, -50%)',
+        zIndex: resolveServerWidgetZIndex(isEditingHud, isHovered),
+        whiteSpace: 'nowrap',
+        flexShrink: 0,
+        userSelect: 'none',
+        cursor: getWidgetCursor(isEditingHud, drag.draggingWidget === 'serverStatus'),
+        transition:
+          drag.draggingWidget === 'serverStatus'
+            ? 'none'
+            : 'top 0.35s cubic-bezier(0.16, 1, 0.3, 1), left 0.35s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease',
+        outline: getWidgetOutline(
+          isEditingHud,
+          drag.draggingWidget === 'serverStatus',
+          drag.isColliding,
+        ),
+        outlineOffset: '4px',
+        borderRadius: '999px',
+      }}
+    >
+      {isEditingHud && (
+        <WidgetCoordinateBadge
+          x={statPos.x}
+          y={statPos.y}
+          isDragging={drag.draggingWidget === 'serverStatus'}
+          isColliding={drag.isColliding}
+          label={t.hudEditor.collision}
+        />
+      )}
+      {isEditingHud && (
+        <button
+          type="button"
+          aria-label="Arrastrar estado del servidor"
+          onMouseDown={(e) => {
+            e.stopPropagation();
+            drag.startDrag('serverStatus', e, drag.serverStatusRef);
+          }}
+          style={{
+            position: 'absolute',
+            bottom: 'calc(100% + 6px)',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'rgba(12, 17, 24, 0.88)',
+            border: '1px solid rgba(56, 189, 248, 0.4)',
+            backdropFilter: 'blur(8px)',
+            borderRadius: '9999px',
+            padding: '3px 10px',
+            color: '#38bdf8',
+            boxShadow: '0 2px 10px rgba(0, 0, 0, 0.5), 0 0 12px rgba(56, 189, 248, 0.25)',
+            cursor: drag.draggingWidget === 'serverStatus' ? 'grabbing' : 'grab',
+            userSelect: 'none',
+            zIndex: 10,
+          }}
         >
-          <span
-            style={{
-              width: '8px',
-              height: '8px',
-              minWidth: '8px',
-              minHeight: '8px',
-              borderRadius: '50%',
-              backgroundColor: serverStatus.online ? '#22c55e' : '#ef4444',
-              boxShadow: serverStatus.online
-                ? '0 0 8px rgba(34, 197, 94, 0.7)'
-                : '0 0 8px rgba(239, 68, 68, 0.7)',
-              display: 'inline-block',
-              flexShrink: 0,
-            }}
-          />
-          <span
-            style={{
-              fontWeight: 600,
-              color: serverStatus.online ? '#f8fafc' : '#f87171',
-              whiteSpace: 'nowrap',
-              fontVariantNumeric: 'tabular-nums',
-            }}
-          >
-            {serverStatus.online
-              ? `${serverStatus.playersCount} ${t.bottomBar?.online ?? 'en línea'}`
-              : (t.bottomBar?.offline ?? 'Sin conexión')}
-          </span>
-          <span style={{ color: '#64748b', flexShrink: 0 }}>•</span>
-          <span
-            style={{
-              color: '#94a3b8',
-              fontSize: '11px',
-              whiteSpace: 'nowrap',
-              fontVariantNumeric: 'tabular-nums',
-              flexShrink: 0,
-            }}
-          >
-            {serverStatus.online ? `${serverStatus.ping}ms` : '--'}
-          </span>
-        </div>
-
-        {/* Hover Popover with connected players & custom IP */}
-        {!isEditingHud && isHovered && (
-          <div
-            data-testid="server-status-popover"
-            style={{
-              position: 'absolute',
-              bottom: 'calc(100% + 10px)',
-              right: 0,
-              minWidth: '270px',
-              maxWidth: '320px',
-              background: 'rgba(10, 14, 22, 0.96)',
-              backdropFilter: 'blur(20px)',
-              border: '1px solid rgba(255, 255, 255, 0.14)',
-              borderRadius: '12px',
-              padding: '12px 14px',
-              boxShadow: '0 16px 40px rgba(0, 0, 0, 0.8), 0 0 20px rgba(56, 189, 248, 0.12)',
-              color: '#f8fafc',
-              zIndex: 1050,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '10px',
-              pointerEvents: 'auto',
-            }}
-            onClick={(e) => e.stopPropagation()}
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            {/* Header: Server Hostname & Edit IP */}
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                paddingBottom: '8px',
-                borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-                gap: '8px',
-              }}
-            >
-              {!isEditingIp ? (
-                <>
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      overflow: 'hidden',
-                    }}
-                  >
-                    <ServerLogoIcon
-                      online={serverStatus.online}
-                      icon={serverStatus.icon}
-                      serverHost={currentHost}
-                    />
-                    <span
-                      title={currentHost}
-                      style={{
-                        fontSize: '12px',
-                        fontWeight: 700,
-                        color: '#ffffff',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {currentHost}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setIsEditingIp(true)}
-                    title={t.bottomBar?.changeServerIp ?? 'Cambiar IP del servidor'}
-                    aria-label="Editar IP del servidor"
-                    style={{
-                      background: 'rgba(255, 255, 255, 0.06)',
-                      border: '1px solid rgba(255, 255, 255, 0.12)',
-                      color: '#94a3b8',
-                      borderRadius: '6px',
-                      padding: '3px 6px',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      fontSize: '10px',
-                      fontWeight: 600,
-                      flexShrink: 0,
-                    }}
-                  >
-                    <Pencil size={11} />
-                    <span>IP</span>
-                  </button>
-                </>
-              ) : (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', width: '100%' }}>
-                  <input
-                    type="text"
-                    value={inputIp}
-                    onChange={(e) => setInputIp(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') handleSaveIp();
-                      if (e.key === 'Escape') handleCancelIp();
-                    }}
-                    autoFocus
-                    placeholder="mc.crystaltidessmp.net"
-                    style={{
-                      flex: 1,
-                      background: 'rgba(0, 0, 0, 0.5)',
-                      border: '1px solid rgba(56, 189, 248, 0.5)',
-                      borderRadius: '6px',
-                      padding: '4px 8px',
-                      color: '#ffffff',
-                      fontSize: '11px',
-                      outline: 'none',
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={handleSaveIp}
-                    title="Guardar"
-                    aria-label="Guardar nueva IP"
-                    style={{
-                      background: 'rgba(34, 197, 94, 0.2)',
-                      border: '1px solid rgba(34, 197, 94, 0.4)',
-                      color: '#4ade80',
-                      borderRadius: '6px',
-                      padding: '4px',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                    }}
-                  >
-                    <Check size={12} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleCancelIp}
-                    title="Cancelar"
-                    aria-label="Cancelar cambio de IP"
-                    style={{
-                      background: 'rgba(239, 68, 68, 0.2)',
-                      border: '1px solid rgba(239, 68, 68, 0.4)',
-                      color: '#f87171',
-                      borderRadius: '6px',
-                      padding: '4px',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                    }}
-                  >
-                    <X size={12} />
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Status & Stats info row */}
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                fontSize: '11px',
-                color: '#94a3b8',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span
-                  data-testid="server-status-dot"
-                  style={{
-                    width: '7px',
-                    height: '7px',
-                    borderRadius: '50%',
-                    backgroundColor: serverStatus.online ? '#22c55e' : '#ef4444',
-                    boxShadow: serverStatus.online
-                      ? '0 0 6px rgba(34, 197, 94, 0.7)'
-                      : '0 0 6px rgba(239, 68, 68, 0.7)',
-                    display: 'inline-block',
-                  }}
-                />
-                <span
-                  data-testid="server-status-text"
-                  style={{ fontWeight: 600, color: serverStatus.online ? '#4ade80' : '#f87171' }}
-                >
-                  {serverStatus.online
-                    ? (t.bottomBar?.online ?? 'En línea')
-                    : (t.bottomBar?.offline ?? 'Sin conexión')}
-                </span>
-              </div>
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  fontVariantNumeric: 'tabular-nums',
-                }}
-              >
-                <span>Ping: {serverStatus.online ? `${serverStatus.ping}ms` : '--'}</span>
-                <span>•</span>
-                <span>
-                  {serverStatus.playersCount} / {serverStatus.maxPlayers}
-                </span>
-              </div>
-            </div>
-
-            {/* Connected Players / Heads */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  fontSize: '10.5px',
-                  fontWeight: 600,
-                  color: '#94a3b8',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                  <Users size={12} style={{ color: '#cbd5e1' }} />
-                  <span>
-                    {hoveredPlayerName
-                      ? `Jugador: ${hoveredPlayerName}`
-                      : (t.bottomBar?.connectedPlayers ?? 'Jugadores Conectados')}
-                  </span>
-                </div>
-                {!isFew && hasPlayers && (
-                  <span
-                    style={{
-                      fontSize: '9.5px',
-                      color: '#64748b',
-                      fontVariantNumeric: 'tabular-nums',
-                    }}
-                  >
-                    {totalReportedPlayers} en línea
-                  </span>
-                )}
-              </div>
-
-              {hasPlayers ? (
-                isFew ? (
-                  /* Modo Pocos Jugadores: Cabezas + Nombres */
-                  <div
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'repeat(2, 1fr)',
-                      gap: '6px',
-                      maxHeight: '130px',
-                      overflowY: 'auto',
-                      paddingRight: '2px',
-                    }}
-                  >
-                    {visiblePlayers.map((p, idx) => (
-                      <div
-                        key={p.uuid || `${p.name}-${idx}`}
-                        title={p.name}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '6px',
-                          background: 'rgba(255, 255, 255, 0.05)',
-                          border: '1px solid rgba(255, 255, 255, 0.08)',
-                          borderRadius: '6px',
-                          padding: '3px 6px',
-                          overflow: 'hidden',
-                        }}
-                      >
-                        <img
-                          src={`https://mc-heads.net/avatar/${encodeURIComponent(p.name)}/24`}
-                          alt={p.name}
-                          width={18}
-                          height={18}
-                          style={{
-                            borderRadius: '3px',
-                            flexShrink: 0,
-                            backgroundColor: '#1e293b',
-                          }}
-                          onError={(e) => {
-                            (e.currentTarget as HTMLImageElement).style.display = 'none';
-                          }}
-                        />
-                        <span
-                          style={{
-                            fontSize: '10.5px',
-                            fontWeight: 600,
-                            color: '#e2e8f0',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          {p.name}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  /* Modo Muchos / Demasiados Jugadores: Solo Cabezas con tooltip y contador extra */
-                  <div>
-                    <div
-                      style={{
-                        display: 'grid',
-                        gridTemplateColumns: 'repeat(6, 1fr)',
-                        gap: '6px',
-                        maxHeight: '140px',
-                        overflowY: 'auto',
-                        paddingRight: '2px',
-                        alignItems: 'center',
-                      }}
-                    >
-                      {visiblePlayers.map((p, idx) => {
-                        const isPlayerHovered = hoveredPlayerName === p.name;
-                        return (
-                          <div
-                            key={p.uuid || `${p.name}-${idx}`}
-                            title={p.name}
-                            onMouseEnter={() => setHoveredPlayerName(p.name)}
-                            onMouseLeave={() => setHoveredPlayerName(null)}
-                            style={{
-                              width: '28px',
-                              height: '28px',
-                              borderRadius: '4px',
-                              border: isPlayerHovered
-                                ? '1px solid #38bdf8'
-                                : '1px solid rgba(255, 255, 255, 0.12)',
-                              boxShadow: isPlayerHovered ? '0 0 8px rgba(56, 189, 248, 0.5)' : 'none',
-                              transform: isPlayerHovered ? 'scale(1.15)' : 'scale(1)',
-                              transition: 'all 0.15s ease',
-                              cursor: 'pointer',
-                              overflow: 'hidden',
-                              backgroundColor: '#1e293b',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              flexShrink: 0,
-                            }}
-                          >
-                            <img
-                              src={`https://mc-heads.net/avatar/${encodeURIComponent(p.name)}/28`}
-                              alt={p.name}
-                              width={28}
-                              height={28}
-                              style={{
-                                width: '100%',
-                                height: '100%',
-                                objectFit: 'cover',
-                              }}
-                              onError={(e) => {
-                                (e.currentTarget as HTMLImageElement).style.display = 'none';
-                              }}
-                            />
-                          </div>
-                        );
-                      })}
-
-                      {extraCount > 0 && (
-                        <div
-                          title={`+${extraCount} jugadores más conectados`}
-                          style={{
-                            width: '28px',
-                            height: '28px',
-                            borderRadius: '4px',
-                            background: 'rgba(56, 189, 248, 0.14)',
-                            border: '1px solid rgba(56, 189, 248, 0.35)',
-                            color: '#38bdf8',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: '9.5px',
-                            fontWeight: 700,
-                            fontFamily: 'monospace',
-                            cursor: 'default',
-                            flexShrink: 0,
-                          }}
-                        >
-                          +{extraCount > 99 ? '99+' : extraCount}
-                        </div>
-                      )}
-                    </div>
-
-                    {extraCount > 0 && (
-                      <div
-                        style={{
-                          fontSize: '9.5px',
-                          color: '#94a3b8',
-                          textAlign: 'center',
-                          marginTop: '6px',
-                        }}
-                      >
-                        {t.bottomBar.morePlayersOnServer.replace('{count}', String(extraCount))}
-                      </div>
-                    )}
-                  </div>
-                )
-              ) : (
-                <div
-                  style={{
-                    background: 'rgba(255, 255, 255, 0.03)',
-                    border: '1px dashed rgba(255, 255, 255, 0.08)',
-                    borderRadius: '6px',
-                    padding: '8px',
-                    textAlign: 'center',
-                    fontSize: '10.5px',
-                    color: '#64748b',
-                  }}
-                >
-                  {!serverStatus.online
-                    ? (t.bottomBar?.offline ?? 'Sin conexión')
-                    : serverStatus.playersCount === 0
-                      ? (t.bottomBar?.noPlayersConnected ?? 'No hay jugadores conectados.')
-                      : `${serverStatus.playersCount} ${t.bottomBar?.playersListHidden ?? 'jugadores conectados (lista oculta por el servidor).'}`}
-                </div>
-              )}
-            </div>
-          </div>
+          <GripHorizontal size={14} />
+        </button>
+      )}
+      <div
+        className="papyrus-server-chip"
+        title={resolveServerChipTitle(
+          t.bottomBar?.officialServer ?? 'Servidor',
+          currentHost,
+          serverStatus.online,
+          serverStatus.ping,
         )}
+      >
+        <span
+          style={{
+            width: '8px',
+            height: '8px',
+            minWidth: '8px',
+            minHeight: '8px',
+            borderRadius: '50%',
+            backgroundColor: serverStatus.online ? '#22c55e' : '#ef4444',
+            boxShadow: serverStatus.online
+              ? '0 0 8px rgba(34, 197, 94, 0.7)'
+              : '0 0 8px rgba(239, 68, 68, 0.7)',
+            display: 'inline-block',
+            flexShrink: 0,
+          }}
+        />
+        <span
+          style={{
+            fontWeight: 600,
+            color: serverStatus.online ? '#f8fafc' : '#f87171',
+            whiteSpace: 'nowrap',
+            fontVariantNumeric: 'tabular-nums',
+          }}
+        >
+          {serverStatus.online
+            ? `${serverStatus.playersCount} ${t.bottomBar?.online ?? 'en línea'}`
+            : (t.bottomBar?.offline ?? 'Sin conexión')}
+        </span>
+        <span style={{ color: '#64748b', flexShrink: 0 }}>•</span>
+        <span
+          style={{
+            color: '#94a3b8',
+            fontSize: '11px',
+            whiteSpace: 'nowrap',
+            fontVariantNumeric: 'tabular-nums',
+            flexShrink: 0,
+          }}
+        >
+          {serverStatus.online ? `${serverStatus.ping}ms` : '--'}
+        </span>
       </div>
-    </>
+
+      {/* Hover Popover with connected players & custom IP */}
+      {!isEditingHud && isHovered && (
+        <ServerStatusPopover
+          serverStatus={serverStatus}
+          currentHost={currentHost}
+          isEditingIp={isEditingIp}
+          inputIp={inputIp}
+          setInputIp={setInputIp}
+          setIsEditingIp={setIsEditingIp}
+          handleSaveIp={handleSaveIp}
+          handleCancelIp={handleCancelIp}
+          hoveredPlayerName={hoveredPlayerName}
+          setHoveredPlayerName={setHoveredPlayerName}
+          t={t}
+        />
+      )}
+    </div>
   );
 };
 

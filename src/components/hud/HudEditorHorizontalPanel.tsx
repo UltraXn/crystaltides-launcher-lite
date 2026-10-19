@@ -452,9 +452,7 @@ const HorizontalPresetAndActionControls: React.FC<HorizontalPresetProps> = ({
         }}
       >
         <Check size={13} strokeWidth={3} />
-        <span style={{ whiteSpace: 'nowrap' }}>
-          {isNarrow ? 'Listo' : 'Listo'}
-        </span>
+        <span style={{ whiteSpace: 'nowrap' }}>Listo</span>
       </button>
     </>
   );
