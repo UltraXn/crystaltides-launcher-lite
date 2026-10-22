@@ -2331,7 +2331,7 @@ dependencies = [
 name = "launcher-lite-tauri"
 version = "0.1.2"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "dirs 6.0.0",
  "fastnbt",
  "flate2",
