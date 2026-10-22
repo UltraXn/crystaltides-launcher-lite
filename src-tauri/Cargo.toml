@@ -20,7 +20,7 @@ tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 # Sin la feature "zip": arrastra zip 4.x (RUSTSEC-2026-0367/0368/0369, sin parche en 4.x)
 # y el updater descarga un .exe firmado, no un .zip ni un .tar.gz.
-tauri-plugin-updater = { version = "~2.13.3", default-features = false, features = ["rustls-tls", "system-proxy"] }
+tauri-plugin-updater = { version = "~2.14.0", default-features = false, features = ["rustls-tls", "system-proxy"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
